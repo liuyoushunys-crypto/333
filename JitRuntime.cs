@@ -221,13 +221,23 @@ public static class JitRuntime
     {
         if (ReferenceEquals(a, b)) return Const.TRUE;
         if (a is null || b is null) return Const.FALSE;
-        if (a.GetType() == b.GetType())
-        {
-            if (a is int or long or BigInteger or SchemeFraction or double or Complex)
-                return a.Equals(b) ? Const.TRUE : Const.FALSE;
-            if (a is string s) return s == (string)b ? Const.TRUE : Const.FALSE;
-            if (a is SchemeChar sc) return sc.Codepoint == ((SchemeChar)b).Codepoint ? Const.TRUE : Const.FALSE;
-        }
+        if (a is long la && b is long lb) return la == lb ? Const.TRUE : Const.FALSE;
+        if (a is long la2 && b is int ib2) return la2 == ib2 ? Const.TRUE : Const.FALSE;
+        if (a is int ia3 && b is long lb3) return ia3 == lb3 ? Const.TRUE : Const.FALSE;
+        if (a is int ia4 && b is int ib4) return ia4 == ib4 ? Const.TRUE : Const.FALSE;
+        if (a is BigInteger ba && b is BigInteger bb) return ba == bb ? Const.TRUE : Const.FALSE;
+        if (a is BigInteger ba2 && b is long lb5) return ba2 == lb5 ? Const.TRUE : Const.FALSE;
+        if (a is long la6 && b is BigInteger bb6) return la6 == bb6 ? Const.TRUE : Const.FALSE;
+        if (a is BigInteger ba7 && b is int ib7) return ba7 == ib7 ? Const.TRUE : Const.FALSE;
+        if (a is int ia8 && b is BigInteger bb8) return ia8 == bb8 ? Const.TRUE : Const.FALSE;
+        if (a is SchemeFraction fa && b is SchemeFraction fb) return fa.Equals(fb) ? Const.TRUE : Const.FALSE;
+        if (a is SchemeFraction fa2 && b is long lf) return fa2.Equals(new SchemeFraction(lf, 1)) ? Const.TRUE : Const.FALSE;
+        if (a is long lf2 && b is SchemeFraction fb2) return fb2.Equals(new SchemeFraction(lf2, 1)) ? Const.TRUE : Const.FALSE;
+        if (a is double da && b is double db) return da == db ? Const.TRUE : Const.FALSE;
+        if (a is double da2 && b is long dl) return da2 == dl ? Const.TRUE : Const.FALSE;
+        if (a is long dl2 && b is double db2) return dl2 == db2 ? Const.TRUE : Const.FALSE;
+        if (a is string s && b is string sb) return s == sb ? Const.TRUE : Const.FALSE;
+        if (a is SchemeChar sca && b is SchemeChar scb) return sca.Codepoint == scb.Codepoint ? Const.TRUE : Const.FALSE;
         return Const.FALSE;
     }
 
@@ -242,14 +252,25 @@ public static class JitRuntime
         if (a is null || b is null) return Const.FALSE;
         if (a is SchemeVector va && b is SchemeVector vb)
             return va.Data.SequenceEqual(vb.Data, EqualityComparer<object?>.Create((x, y) => Equal2(x, y) == Const.TRUE)) ? Const.TRUE : Const.FALSE;
-        if (a.GetType() == b.GetType())
-        {
-            if (a is int or long or BigInteger or SchemeFraction or double or Complex)
-                return a.Equals(b) ? Const.TRUE : Const.FALSE;
-            if (a is string s) return s == (string)b ? Const.TRUE : Const.FALSE;
-            if (a is SchemeChar sc) return sc.Codepoint == ((SchemeChar)b).Codepoint ? Const.TRUE : Const.FALSE;
-            if (a is SchemeString ssa && b is SchemeString ssb) return ssa.ToString() == ssb.ToString() ? Const.TRUE : Const.FALSE;
-        }
+        if (a is SchemeString ssa && b is SchemeString ssb) return ssa.ToString() == ssb.ToString() ? Const.TRUE : Const.FALSE;
+        if (a is string sa && b is string sb) return sa == sb ? Const.TRUE : Const.FALSE;
+        if (a is long la && b is long lb) return la == lb ? Const.TRUE : Const.FALSE;
+        if (a is long la2 && b is int ib2) return la2 == ib2 ? Const.TRUE : Const.FALSE;
+        if (a is int ia3 && b is long lb3) return ia3 == lb3 ? Const.TRUE : Const.FALSE;
+        if (a is int ia4 && b is int ib4) return ia4 == ib4 ? Const.TRUE : Const.FALSE;
+        if (a is BigInteger ba && b is BigInteger bb) return ba == bb ? Const.TRUE : Const.FALSE;
+        if (a is BigInteger ba2 && b is long lb5) return ba2 == lb5 ? Const.TRUE : Const.FALSE;
+        if (a is long la6 && b is BigInteger bb6) return la6 == bb6 ? Const.TRUE : Const.FALSE;
+        if (a is BigInteger ba7 && b is int ib7) return ba7 == ib7 ? Const.TRUE : Const.FALSE;
+        if (a is int ia8 && b is BigInteger bb8) return ia8 == bb8 ? Const.TRUE : Const.FALSE;
+        if (a is SchemeFraction fa && b is SchemeFraction fb) return fa.Equals(fb) ? Const.TRUE : Const.FALSE;
+        if (a is SchemeFraction fa2 && b is long lf) return fa2.Equals(new SchemeFraction(lf, 1)) ? Const.TRUE : Const.FALSE;
+        if (a is long lf2 && b is SchemeFraction fb2) return fb2.Equals(new SchemeFraction(lf2, 1)) ? Const.TRUE : Const.FALSE;
+        if (a is double da && b is double db) return da == db ? Const.TRUE : Const.FALSE;
+        if (a is double da2 && b is long dl) return da2 == dl ? Const.TRUE : Const.FALSE;
+        if (a is long dl2 && b is double db2) return dl2 == db2 ? Const.TRUE : Const.FALSE;
+        if (a is SchemeChar sca && b is SchemeChar scb) return sca.Codepoint == scb.Codepoint ? Const.TRUE : Const.FALSE;
+        if (a is Sym syma && b is Sym symb) return syma.Name == symb.Name ? Const.TRUE : Const.FALSE;
         return Const.FALSE;
     }
 

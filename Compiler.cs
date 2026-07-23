@@ -34,6 +34,20 @@ public static class Compiler
         return true;
     }
 
+    static string SafeFileName(string name)
+    {
+        var sb = new StringBuilder();
+        foreach (var ch in name)
+        {
+            if (ch == '?' || ch == '!' || ch == '<' || ch == '>' || ch == '=' ||
+                ch == '*' || ch == '|' || ch == ':' || ch == '"' || ch == '/' || ch == '\\')
+                sb.Append($"_{(int)ch:x2}");
+            else
+                sb.Append(ch);
+        }
+        return sb.ToString();
+    }
+
     public static CompiledLambda? CompileLambdaProc(LambdaProc lp)
     {
         if (!ShouldJit(lp)) return null;
@@ -45,7 +59,7 @@ public static class Compiler
             if (lp.Name is not null)
             {
                 var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
-                var cacheFile = Path.Combine(cacheDir, lp.Name + ".json");
+                var cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + ".json");
                 var bodySrc = Printer.Format(lp.Body);
 
                 if (File.Exists(cacheFile))
