@@ -236,6 +236,7 @@ public static class JitRuntime
         if (a is double da && b is double db) return da == db ? Const.TRUE : Const.FALSE;
         if (a is double da2 && b is long dl) return da2 == dl ? Const.TRUE : Const.FALSE;
         if (a is long dl2 && b is double db2) return dl2 == db2 ? Const.TRUE : Const.FALSE;
+        if (a is Complex cxa && b is Complex cxb) return cxa == cxb ? Const.TRUE : Const.FALSE;
         if (a is string s && b is string sb) return s == sb ? Const.TRUE : Const.FALSE;
         if (a is SchemeChar sca && b is SchemeChar scb) return sca.Codepoint == scb.Codepoint ? Const.TRUE : Const.FALSE;
         return Const.FALSE;
@@ -252,8 +253,10 @@ public static class JitRuntime
         if (a is null || b is null) return Const.FALSE;
         if (a is SchemeVector va && b is SchemeVector vb)
             return va.Data.SequenceEqual(vb.Data, EqualityComparer<object?>.Create((x, y) => Equal2(x, y) == Const.TRUE)) ? Const.TRUE : Const.FALSE;
-        if (a is SchemeString ssa && b is SchemeString ssb) return ssa.ToString() == ssb.ToString() ? Const.TRUE : Const.FALSE;
-        if (a is string sa && b is string sb) return sa == sb ? Const.TRUE : Const.FALSE;
+        if (a is SchemeString ssa2 && b is string sb2) return ssa2.ToString() == sb2 ? Const.TRUE : Const.FALSE;
+        if (a is string sa2 && b is SchemeString ssb2) return sa2 == ssb2.ToString() ? Const.TRUE : Const.FALSE;
+        if (a is SchemeString ssa3 && b is SchemeString ssb3) return ssa3.ToString() == ssb3.ToString() ? Const.TRUE : Const.FALSE;
+        if (a is string sa3 && b is string sb3) return sa3 == sb3 ? Const.TRUE : Const.FALSE;
         if (a is long la && b is long lb) return la == lb ? Const.TRUE : Const.FALSE;
         if (a is long la2 && b is int ib2) return la2 == ib2 ? Const.TRUE : Const.FALSE;
         if (a is int ia3 && b is long lb3) return ia3 == lb3 ? Const.TRUE : Const.FALSE;
@@ -269,6 +272,7 @@ public static class JitRuntime
         if (a is double da && b is double db) return da == db ? Const.TRUE : Const.FALSE;
         if (a is double da2 && b is long dl) return da2 == dl ? Const.TRUE : Const.FALSE;
         if (a is long dl2 && b is double db2) return dl2 == db2 ? Const.TRUE : Const.FALSE;
+        if (a is Complex cxa && b is Complex cxb) return cxa == cxb ? Const.TRUE : Const.FALSE;
         if (a is SchemeChar sca && b is SchemeChar scb) return sca.Codepoint == scb.Codepoint ? Const.TRUE : Const.FALSE;
         if (a is Sym syma && b is Sym symb) return syma.Name == symb.Name ? Const.TRUE : Const.FALSE;
         return Const.FALSE;
