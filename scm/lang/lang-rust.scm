@@ -1,0 +1,93 @@
+(display "=== lang-rust loaded ===\n")
+(define-syntax fn (syntax-rules (->) ((_ name (args ...) -> type body ...) (define name (lambda (args ...) body ...))) ((_ name (args ...) body ...) (define name (lambda (args ...) body ...)))))
+(define-syntax def (syntax-rules (=) ((_ name = val) (define name val)) ((_ name) (define name #f))))
+(define-syntax let-mut (syntax-rules (=) ((_ name = val) (define name val))))
+(define-syntax set (syntax-rules (=) ((_ name = val) (set! name val))))
+(define-syntax ret (syntax-rules () ((_ x) x)))
+(define-macro (match expr . arms) `(cond ,@(map (lambda (arm) `((equal? ,expr (quote ,(car arm))) ,@(cdr arm))) arms) (else (error "match: no match"))))
+(define-macro (loop . body) (quasiquote (while #t (begin (unquote-splicing body))))))
+(define-syntax while (syntax-rules () ((_ cond body ...) (do () ((not cond)) body ...))))
+(define-syntax for-in (syntax-rules (in) ((_ x in iter body ...) (for-each (lambda (x) body ...) iter))))
+(define-macro (println . args) (if (null? args) `(newline) `(begin (display (format ,(car args) ,@(cdr args))) (newline))))
+(define-macro (vec . elts) (quasiquote (list (unquote-splicing elts))))
+(define-syntax Some (syntax-rules () ((_ x) x)))
+(define-syntax None (syntax-rules () ((_) #f)))
+(define-syntax push (syntax-rules () ((_ vec val) (set! vec (append vec (list val))))))
+(define-macro (pop vec) (quasiquote (let ((__v (car (reverse (unquote vec))))) (set! (unquote vec) (reverse (cdr (reverse (unquote vec))))) __v)))
+(define-syntax len (syntax-rules () ((_ x) (length x))))
+;; (fn fact (n) (if #{n <= 1} 1 (* n (fact #{n - 1}))))
+;; (let x = 42) (println "x = ~a" x)
+;; (match 42 (1 (println "one")) (42 (println "the answer")))
+;; (let v = (vec 1 2 3)) (push v 4) (println "len=~a" (len v))
+;; (for-in i in (iota 3) (println "i=~a" i))
+
+(display "--- demos ---\n")
+(fn fib (n)
+  (let-mut a = 0)
+  (let-mut b = 1)
+  (define (iter i)
+    (if (< i n)
+      (begin
+        (let-mut t = (+ a b))
+        (set a = b)
+        (set b = t)
+        (iter (+ i 1)))))
+  (iter 0)
+  (display "fib(") (display n) (display ") = ") (display a) (newline))
+(fib 10)
+
+(fn classify (n)
+  (match (zero? #{n % 2})
+    (#t (display n) (display " is even") (newline))
+    (#f (display n) (display " is odd") (newline))))
+(classify 7)
+
+(fn filter-pos (lst)
+  (let-mut result = (vec))
+  (define (walk xs)
+    (if (pair? xs)
+      (begin
+        (if (> (car xs) 0)
+          (push result (car xs)))
+        (walk (cdr xs)))))
+  (walk lst)
+  (display "positives: ") (display result) (newline))
+(filter-pos (list 3 -1 0 5 -2 7))
+
+(display "--- demos ---\n")
+
+;; --- 1. fizzbuzz ---
+;; (fn fizzbuzz (n)
+;;   (for-in i in (iota n)
+;;     (let-mut msg = "")
+;;     (if (zero? (modulo #{i + 1} 3)) (set! msg = "Fizz"))
+;;     (if (zero? (modulo #{i + 1} 5)) (set! msg = (string-append msg "Buzz")))
+;;     (if (== msg "") (println "~a" #{i + 1}) (println "~a" msg))))
+;; (fizzbuzz 15)
+
+;; --- 2. vector sum ---
+;; (fn vec-sum (lst)
+;;   (let-mut total = 0)
+;;   (for-in x in lst
+;;     (set! total = #{total + x}))
+;;   (println "sum = ~a" total))
+;; (vec-sum (list 10 20 30 40))
+
+;; --- 3. factorial with loop ---
+;; (fn fact (n)
+;;   (let-mut result = 1)
+;;   (let-mut i = 1)
+;;   (while #{i <= n}
+;;     (set! result = #{result * i})
+;;     (set! i = #{i + 1}))
+;;   (println "~a! = ~a" n result))
+;; (fact 6)
+
+;; --- 4. filter positives ---
+;; (fn pos-only (lst)
+;;   (let-mut out = (vec))
+;;   (for-in x in lst
+;;     (if #{x > 0} (push out x)))
+;;   (println "positives: ~a" out)
+;;   (println "count: ~a" (len out)))
+;; (pos-only (list 3 -1 0 5 -2 7))

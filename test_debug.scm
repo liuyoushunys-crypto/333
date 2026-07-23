@@ -1,0 +1,5 @@
+(display "before define\n")
+(define (f x) (> x 1/2))
+(display "after define\n")
+(f 3/4)
+(display "after call\n")
