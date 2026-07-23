@@ -1050,7 +1050,7 @@ public static class PrimitiveRegistry
                     var thunkResult = p.Thunk!();
                     if (thunkResult is LambdaProc lp)
                     {
-                        var nenv = new Env(lp.ClosureEnv);
+                        var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
                         var r = Evaluator.SeqTailCall(lp.Body, nenv);
                         while (r is TailCall tcr) r = Evaluator.EvalCore(tcr.Expr, tcr.Env);
                         p.Val = r;
@@ -1664,8 +1664,8 @@ public static class PrimitiveRegistry
         if (proc is Func<object?[], object?> fn) return fn(args);
         if (proc is LambdaProc lp)
         {
-            var nenv = new Env(lp.ClosureEnv);
-            Evaluator.BindParams(lp.Params, [.. args], nenv);
+            var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
+            Evaluator.BindParams(lp.Params, args, nenv);
             var r = Evaluator.SeqTailCall(lp.Body, nenv);
             while (r is TailCall tc) r = Evaluator.Eval(tc.Expr, tc.Env);
             return r;

@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Numerics;
 using Miniscm.Eval;
 using Miniscm.Types;
 using Void = Miniscm.Types.Void;
@@ -232,7 +233,33 @@ public static class Compiler
                     return new LiteralAst(ac.Car);
                 if (va.Name == "cdr" && av is Cell ac2)
                     return new LiteralAst(ac2.Cdr);
+                if (va.Name == "number?")
+                    return new LiteralAst(IsNumeric(av) ? Const.TRUE : Const.FALSE);
+                if (va.Name == "boolean?")
+                    return new LiteralAst(av == Const.TRUE || av == Const.FALSE ? Const.TRUE : Const.FALSE);
+                if (va.Name == "symbol?")
+                    return new LiteralAst(av is Sym ? Const.TRUE : Const.FALSE);
+                if (va.Name == "string?")
+                    return new LiteralAst(av is string or SchemeString ? Const.TRUE : Const.FALSE);
+                if (va.Name == "zero?")
+                    return new LiteralAst(NumericHelper.IsZero(av) ? Const.TRUE : Const.FALSE);
+                if (va.Name == "even?")
+                    return new LiteralAst(NumericHelper.IsEven(av) ? Const.TRUE : Const.FALSE);
+                if (va.Name == "odd?")
+                    return new LiteralAst(!NumericHelper.IsEven(av) ? Const.TRUE : Const.FALSE);
             }
+
+            if (proc is VarAst vaList && args.Count >= 1 && args.All(a => a is LiteralAst) && vaList.Name == "list")
+            {
+                var items = args.Cast<LiteralAst>().Select(la => la.Val).ToList();
+                object? list = Const.NIL;
+                for (int i = items.Count - 1; i >= 0; i--)
+                    list = new Cell(items[i], list);
+                return new LiteralAst(list);
+            }
+
+            if (proc is VarAst vaCons && args.Count == 2 && args[0] is LiteralAst lcar && args[1] is LiteralAst lcdr && vaCons.Name == "cons")
+                return new LiteralAst(new Cell(lcar.Val, lcdr.Val));
 
             if (proc is VarAst va2 && args.Count == 2 && args[0] is LiteralAst ll && args[1] is LiteralAst lr)
             {
@@ -252,6 +279,9 @@ public static class Compiler
                             "<=" => new LiteralAst(NumericHelper.Compare(lv, rv) <= 0 ? Const.TRUE : Const.FALSE),
                             ">=" => new LiteralAst(NumericHelper.Compare(lv, rv) >= 0 ? Const.TRUE : Const.FALSE),
                             "=" => new LiteralAst(NumericHelper.Compare(lv, rv) == 0 ? Const.TRUE : Const.FALSE),
+                            "quotient" => new LiteralAst(NumericHelper.Quotient(lv, rv)),
+                            "remainder" => new LiteralAst(NumericHelper.Remainder(lv, rv)),
+                            "modulo" => new LiteralAst(NumericHelper.Modulo(lv, rv)),
                             _ => (AstNode)an
                         };
                     }
@@ -538,6 +568,13 @@ public static class Compiler
             return stmts;
         }
 
+        static readonly HashSet<string> CrNames =
+        [
+            "caar", "cadr", "cdar", "cddr",
+            "caaar", "caadr", "cadar", "caddr",
+            "cdaar", "cdadr", "cddar", "cdddr",
+        ];
+
         // ── Try inline operation ──
 
         Expression? TryInlineOp(AppAst node)
@@ -551,6 +588,17 @@ public static class Compiler
             if (nArgs == 1)
             {
                 var arg = CompileExpr(node.Args[0]);
+
+                if (CrNames.Contains(op))
+                {
+                    var expr = arg;
+                    for (int i = op.Length - 2; i >= 1; i--)
+                        expr = op[i] == 'a'
+                            ? Expression.Call(typeof(JitRuntime), "CarOf", null, expr)
+                            : Expression.Call(typeof(JitRuntime), "CdrOf", null, expr);
+                    return expr;
+                }
+
                 return op switch
                 {
                     "car" => Expression.Call(typeof(JitRuntime), "CarOf", null, arg),
@@ -564,40 +612,194 @@ public static class Compiler
                     "not" => Expression.Condition(
                         Expression.ReferenceEqual(arg, ObjConst(Const.FALSE)),
                         ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
+                    "number?" => Expression.Condition(
+                        Expression.OrElse(
+                            Expression.TypeIs(arg, typeof(long)),
+                            Expression.OrElse(
+                                Expression.TypeIs(arg, typeof(double)),
+                                Expression.OrElse(
+                                    Expression.TypeIs(arg, typeof(SchemeFraction)),
+                                    Expression.TypeIs(arg, typeof(BigInteger))))),
+                        ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
+                    "boolean?" => Expression.Condition(
+                        Expression.OrElse(
+                            Expression.ReferenceEqual(arg, ObjConst(Const.TRUE)),
+                            Expression.ReferenceEqual(arg, ObjConst(Const.FALSE))),
+                        ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
+                    "symbol?" => Expression.Condition(
+                        Expression.TypeIs(arg, typeof(Sym)),
+                        ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
+                    "string?" => Expression.Condition(
+                        Expression.OrElse(
+                            Expression.TypeIs(arg, typeof(string)),
+                            Expression.TypeIs(arg, typeof(SchemeString))),
+                        ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
+                    "zero?" => Expression.Condition(
+                        Expression.Call(typeof(NumericHelper), "IsZero", null, arg),
+                        ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
+                    "even?" => Expression.Condition(
+                        Expression.Call(typeof(NumericHelper), "IsEven", null, arg),
+                        ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
+                    "odd?" => Expression.Condition(
+                        Expression.Not(Expression.Call(typeof(NumericHelper), "IsEven", null, arg)),
+                        ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
+                    "reverse" => Expression.Call(typeof(JitRuntime), "Reverse1", null, arg),
+                    "string-length" => Expression.Call(typeof(JitRuntime), "StringLength", null, arg),
+                    "vector-length" => Expression.Call(typeof(JitRuntime), "VectorLength", null, arg),
+                    "length" => Expression.Call(typeof(JitRuntime), "ListLength", null, arg),
                     _ => null
                 };
             }
 
-            if (nArgs >= 2 && (op == "+" || op == "-" || op == "*"))
+            if (nArgs >= 2 && (op == "+" || op == "-" || op == "*" || op == "/"))
             {
-                string helper = op switch { "+" => "Add", "-" => "Sub", "*" => "Mul", _ => "Add" };
-                var dbg = Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG");
-                if (dbg is not null) Console.Error.WriteLine($"TryInlineOp {op} helper={helper} nArgs={nArgs}");
+                string helper = op switch { "+" => "Add", "-" => "Sub", "*" => "Mul", "/" => "Div", _ => "Add" };
                 Expression curr = Expression.Convert(CompileExpr(node.Args[0]), typeof(object));
                 for (int i = 1; i < nArgs; i++)
                 {
                     var nextExpr = Expression.Convert(CompileExpr(node.Args[i]), typeof(object));
-                    if (dbg is not null) Console.Error.WriteLine($"  iter {i}: curr.Type={curr.Type.Name} next.Type={nextExpr.Type.Name}");
                     curr = Expression.Call(typeof(NumericHelper), helper, null, curr, nextExpr);
-                    if (dbg is not null) Console.Error.WriteLine($"  result type={curr.Type.Name}");
                 }
                 return curr;
             }
 
-            if (nArgs == 2 && op == "eq?")
+            if (op == "list" && nArgs <= 5)
             {
-                var left = CompileExpr(node.Args[0]);
-                var right = CompileExpr(node.Args[1]);
-                return Expression.Condition(
-                    Expression.OrElse(
-                        Expression.ReferenceEqual(left, right),
-                        Expression.AndAlso(
-                            Expression.IsTrue(
-                                Expression.NotEqual(left, Expression.Constant(null, typeof(object)))),
-                            Expression.Call(
-                                left, typeof(object).GetMethod("Equals", [typeof(object)])!,
-                                right))),
-                    ObjConst(Const.TRUE), ObjConst(Const.FALSE));
+                var nilConst = ObjConst(Const.NIL);
+                Expression result = nilConst;
+                for (int i = nArgs - 1; i >= 0; i--)
+                {
+                    var elem = CompileExpr(node.Args[i]);
+                    result = Expression.New(typeof(Cell).GetConstructor([typeof(object), typeof(object)])!, elem, result);
+                }
+                return result;
+            }
+
+            if (nArgs == 2)
+            {
+                if (op == "eq?")
+                {
+                    var left = CompileExpr(node.Args[0]);
+                    var right = CompileExpr(node.Args[1]);
+                    return Expression.Condition(
+                        Expression.OrElse(
+                            Expression.ReferenceEqual(left, right),
+                            Expression.AndAlso(
+                                Expression.IsTrue(
+                                    Expression.NotEqual(left, Expression.Constant(null, typeof(object)))),
+                                Expression.Call(
+                                    left, typeof(object).GetMethod("Equals", [typeof(object)])!,
+                                    right))),
+                        ObjConst(Const.TRUE), ObjConst(Const.FALSE));
+                }
+                if (op == "cons")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.New(typeof(Cell).GetConstructor([typeof(object), typeof(object)])!, a, b);
+                }
+                if (op == "=" || op == "<" || op == ">" || op == "<=" || op == ">=")
+                {
+                    var left = CompileExpr(node.Args[0]);
+                    var right = CompileExpr(node.Args[1]);
+                    var cmp = Expression.Call(typeof(NumericHelper), "Compare", null, left, right);
+                    var zero = Expression.Constant(0);
+                    Expression cond = op switch
+                    {
+                        "=" => Expression.Equal(cmp, zero),
+                        "<" => Expression.LessThan(cmp, zero),
+                        ">" => Expression.GreaterThan(cmp, zero),
+                        "<=" => Expression.LessThanOrEqual(cmp, zero),
+                        ">=" => Expression.GreaterThanOrEqual(cmp, zero),
+                        _ => Expression.Equal(cmp, zero),
+                    };
+                    return Expression.Condition(cond, ObjConst(Const.TRUE), ObjConst(Const.FALSE));
+                }
+                if (op == "quotient" || op == "remainder" || op == "modulo")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    string helper = op switch
+                    {
+                        "quotient" => "Quotient",
+                        "remainder" => "Remainder",
+                        "modulo" => "Modulo",
+                        _ => "Quotient",
+                    };
+                    return Expression.Call(typeof(NumericHelper), helper, null, a, b);
+                }
+                if (op == "append")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Append2", null, a, b);
+                }
+                if (op == "string-append")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "StringAppend2", null, a, b);
+                }
+                if (op == "string-ref")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "StringRef", null, a, b);
+                }
+                if (op == "vector-ref")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "VectorRef", null, a, b);
+                }
+                if (op == "list-tail")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "ListTail", null, a, b);
+                }
+                if (op == "list-ref")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "ListRef", null, a, b);
+                }
+                if (op == "memq")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Memq", null, a, b);
+                }
+                if (op == "assq")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Assq", null, a, b);
+                }
+                if (op == "eqv?")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Eqv", null, a, b);
+                }
+                if (op == "equal?")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Equal2", null, a, b);
+                }
+                if (op == "member")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Member", null, a, b);
+                }
+                if (op == "assoc")
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Assoc", null, a, b);
+                }
             }
 
             return null;

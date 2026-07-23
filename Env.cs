@@ -2,10 +2,16 @@ namespace Miniscm.Types;
 
 public class Env
 {
-    public Dictionary<string, object?> Data { get; } = [];
+    public Dictionary<string, object?> Data { get; }
     public Env? Parent { get; }
 
-    public Env(Env? parent = null) => Parent = parent;
+    public Env(Env? parent = null) : this(parent, 0) { }
+
+    public Env(Env? parent, int capacity)
+    {
+        Parent = parent;
+        Data = capacity > 0 ? new Dictionary<string, object?>(capacity) : [];
+    }
 
     public object? Lookup(string name)
     {

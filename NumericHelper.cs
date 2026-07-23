@@ -312,6 +312,15 @@ public static class NumericHelper
         _ => false
     };
 
+    public static bool IsEven(object? x) => x switch
+    {
+        int i => i % 2 == 0,
+        long l => l % 2 == 0,
+        BigInteger bi => bi.IsEven,
+        SchemeFraction f => f.Num.IsEven,
+        _ => false
+    };
+
     public static long ToLong(object? x) => x switch
     {
         int i => i,

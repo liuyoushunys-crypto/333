@@ -559,25 +559,25 @@ public static class Evaluator
 
                 if (lp.CompiledVersion is CompiledLambda cv)
                 {
-                    var argsList = EvalArgsToList(curArgs, env);
-                    var r2 = cv.Invoke(lp.ClosureEnv, argsList.ToArray());
+                    var argsArr = EvalArgsToArray(curArgs, env);
+                    var r2 = cv.Invoke(lp.ClosureEnv, argsArr);
                     if (r2 is TailCall tc2) { expr = tc2.Expr; env = tc2.Env; continue; }
                     return r2;
                 }
 
-                var nenv = new Env(lp.ClosureEnv);
-                BindParams(lp.Params, EvalArgsToList(curArgs, env), nenv);
+                var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
+                BindParams(lp.Params, EvalArgsToArray(curArgs, env), nenv);
                 var r3 = SeqTailCall(lp.Body, nenv);
                 if (r3 is TailCall tc3) { expr = tc3.Expr; env = tc3.Env; continue; }
                 return r3;
             }
 
-            var evaledArgs = EvalArgsToList(curArgs, env);
+            var evaledArgs = EvalArgsToArray(curArgs, env);
 
             // Primitive functions (Func<object?[], object?>)
             if (proc is Func<object?[], object?> fn)
             {
-                var r3 = fn(evaledArgs.ToArray());
+                var r3 = fn(evaledArgs);
                 if (r3 is TailCall tc3) { expr = tc3.Expr; env = tc3.Env; continue; }
                 return r3;
             }
@@ -585,7 +585,7 @@ public static class Evaluator
             // Other delegate
             if (proc is Delegate d)
             {
-                var r3 = d.DynamicInvoke([.. evaledArgs]);
+                var r3 = d.DynamicInvoke(evaledArgs);
                 if (r3 is TailCall tc3) { expr = tc3.Expr; env = tc3.Env; continue; }
                 return r3;
             }
@@ -635,7 +635,7 @@ public static class Evaluator
                 if (callable is LambdaProc lp)
                 {
                     var nenv = new Env(lp.ClosureEnv);
-                    BindParams(lp.Params, [expr], nenv);
+                    BindParams(lp.Params, new object?[] { expr }, nenv);
                     r = SeqTailCall(lp.Body, nenv);
                 }
                 else if (callable is Delegate d)
@@ -665,12 +665,48 @@ public static class Evaluator
         return r;
     }
 
+    public static object?[] EvalArgsToArray(object? args, Env env)
+    {
+        int cnt = 0;
+        var cur = args;
+        while (cur is Cell) { cnt++; cur = ((Cell)cur).Cdr; }
+        var arr = new object?[cnt];
+        cur = args;
+        for (int i = 0; i < cnt; i++)
+        {
+            var c = (Cell)cur;
+            arr[i] = EvalCore(c.Car, env);
+            cur = c.Cdr;
+        }
+        return arr;
+    }
+
     public static List<object?> EvalArgsToList(object? args, Env env)
     {
         var evaled = new List<object?>();
         var cur = args;
         while (cur is Cell c) { evaled.Add(EvalCore(c.Car, env)); cur = c.Cdr; }
         return evaled;
+    }
+
+    public static void BindParams(List<string> @params, object?[] evaledArgs, Env nenv)
+    {
+        int pi = 0;
+        for (int i = 0; i < @params.Count; i++)
+        {
+            var p = @params[i];
+            if (p.StartsWith("rest:"))
+            {
+                int len = evaledArgs.Length - pi;
+                object? rest = Const.NIL;
+                for (int j = evaledArgs.Length - 1; j >= pi; j--)
+                    rest = new Cell(evaledArgs[j], rest);
+                nenv.Data[p[5..]] = rest;
+                break;
+            }
+            if (pi < evaledArgs.Length) nenv.Data[p] = evaledArgs[pi];
+            pi++;
+        }
     }
 
     public static void BindParams(List<string> @params, List<object?> evaledArgs, Env nenv)
