@@ -1,10 +1,20 @@
 using System.Linq.Expressions;
 using System.Numerics;
+using System.Text;
+using System.Text.Json;
 using Miniscm.Eval;
+using Miniscm.Reader;
 using Miniscm.Types;
 using Void = Miniscm.Types.Void;
 
 namespace Miniscm.Compiler;
+
+class CacheEntry
+{
+    public string? Hash { get; set; }
+    public string? Name { get; set; }
+    public List<string>? Body { get; set; }
+}
 
 public static class Compiler
 {
@@ -29,15 +39,64 @@ public static class Compiler
         if (!ShouldJit(lp)) return null;
         try
         {
-            // Step 1: Macro-expand body
+            // Step 1: Macro-expand body (with cache)
             var bodyForms = new List<object?>();
             var cur = lp.Body;
-            while (cur is Cell c)
+            if (lp.Name is not null)
             {
-                var expanded = Evaluator.MacroExpand(c.Car, lp.ClosureEnv);
-                bodyForms.Add(expanded);
-                cur = c.Cdr;
+                var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
+                var cacheFile = Path.Combine(cacheDir, lp.Name + ".json");
+                var bodySrc = Printer.Format(lp.Body);
+
+                if (File.Exists(cacheFile))
+                {
+                    try
+                    {
+                        var json = File.ReadAllText(cacheFile);
+                        var entry = JsonSerializer.Deserialize<CacheEntry>(json);
+                        if (entry?.Hash == bodySrc && entry.Body is not null)
+                        {
+                            foreach (var s in entry.Body)
+                                bodyForms.Add(Parser.Read(s));
+                            if (bodyForms.Count > 0)
+                                goto afterExpand;
+                        }
+                    }
+                    catch { }
+                    bodyForms.Clear();
+                }
+
+                while (cur is Cell c)
+                {
+                    var expanded = Evaluator.MacroExpand(c.Car, lp.ClosureEnv);
+                    bodyForms.Add(expanded);
+                    cur = c.Cdr;
+                }
+
+                try
+                {
+                    Directory.CreateDirectory(cacheDir);
+                    var entry = new CacheEntry
+                    {
+                        Hash = bodySrc,
+                        Name = lp.Name,
+                        Body = bodyForms.Select(f => Printer.Format(f)).ToList()
+                    };
+                    var json = JsonSerializer.Serialize(entry, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(cacheFile, json);
+                }
+                catch { }
             }
+            else
+            {
+                while (cur is Cell c)
+                {
+                    var expanded = Evaluator.MacroExpand(c.Car, lp.ClosureEnv);
+                    bodyForms.Add(expanded);
+                    cur = c.Cdr;
+                }
+            }
+            afterExpand:;
 
             // Step 2: Convert to AST
             var bodyAsts = bodyForms.Select(ToAst).ToList();
@@ -799,6 +858,30 @@ public static class Compiler
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
                     return Expression.Call(typeof(JitRuntime), "Assoc", null, a, b);
+                }
+                if (op == "map" && nArgs == 2)
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Map1", null, a, b);
+                }
+                if (op == "filter" && nArgs == 2)
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "Filter1", null, a, b);
+                }
+                if (op == "for-each" && nArgs == 2)
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "ForEach1", null, a, b);
+                }
+                if (op == "apply" && nArgs == 2)
+                {
+                    var a = CompileExpr(node.Args[0]);
+                    var b = CompileExpr(node.Args[1]);
+                    return Expression.Call(typeof(JitRuntime), "ApplyList", null, a, b);
                 }
             }
 

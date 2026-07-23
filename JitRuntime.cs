@@ -274,4 +274,48 @@ public static class JitRuntime
         }
         return Const.FALSE;
     }
+
+    public static object? Map1(object? f, object? lst)
+    {
+        var items = new List<object?>();
+        var cur = lst;
+        while (cur is Cell c)
+        {
+            items.Add(Invoke(f, [c.Car], Evaluator.GlobalEnv));
+            cur = c.Cdr;
+        }
+        return items.ToCell();
+    }
+
+    public static object? Filter1(object? pred, object? lst)
+    {
+        var items = new List<object?>();
+        var cur = lst;
+        while (cur is Cell c)
+        {
+            if (Invoke(pred, [c.Car], Evaluator.GlobalEnv) == Const.TRUE)
+                items.Add(c.Car);
+            cur = c.Cdr;
+        }
+        return items.ToCell();
+    }
+
+    public static object? ForEach1(object? f, object? lst)
+    {
+        var cur = lst;
+        while (cur is Cell c)
+        {
+            Invoke(f, [c.Car], Evaluator.GlobalEnv);
+            cur = c.Cdr;
+        }
+        return Const.VOID;
+    }
+
+    public static object? ApplyList(object? f, object? lst)
+    {
+        var args = new List<object?>();
+        var cur = lst;
+        while (cur is Cell c) { args.Add(c.Car); cur = c.Cdr; }
+        return Invoke(f, args.ToArray(), Evaluator.GlobalEnv);
+    }
 }

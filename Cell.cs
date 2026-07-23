@@ -120,9 +120,16 @@ public static class CellHelper
 
     public static object? ToCell(this IEnumerable<object?> items)
     {
-        object? list = Const.NIL;
-        foreach (var x in items.Reverse()) list = new Cell(x, list);
-        return list;
+        object? head = Const.NIL;
+        Cell? tail = null;
+        foreach (var x in items)
+        {
+            var n = new Cell(x, Const.NIL);
+            if (tail is null) head = n;
+            else tail.Cdr = n;
+            tail = n;
+        }
+        return head;
     }
 
     public static object? Car(this object? v) => (v as Cell)?.Car;
