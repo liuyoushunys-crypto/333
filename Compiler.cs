@@ -673,12 +673,14 @@ public static class Compiler
                         ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
                     "number?" => Expression.Condition(
                         Expression.OrElse(
-                            Expression.TypeIs(arg, typeof(long)),
+                            Expression.TypeIs(arg, typeof(int)),
                             Expression.OrElse(
-                                Expression.TypeIs(arg, typeof(double)),
+                                Expression.TypeIs(arg, typeof(long)),
                                 Expression.OrElse(
-                                    Expression.TypeIs(arg, typeof(SchemeFraction)),
-                                    Expression.TypeIs(arg, typeof(BigInteger))))),
+                                    Expression.TypeIs(arg, typeof(double)),
+                                    Expression.OrElse(
+                                        Expression.TypeIs(arg, typeof(SchemeFraction)),
+                                        Expression.TypeIs(arg, typeof(BigInteger)))))),
                         ObjConst(Const.TRUE), ObjConst(Const.FALSE)),
                     "boolean?" => Expression.Condition(
                         Expression.OrElse(
