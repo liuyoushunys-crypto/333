@@ -6,46 +6,32 @@ using Miniscm.Eval;
 using Miniscm.Reader;
 using Miniscm.Types;
 using Void = Miniscm.Types.Void;
-
 namespace Miniscm.Compiler;
-
 class CacheEntry
 {
     public string? Hash { get; set; }
     public string? Name { get; set; }
     public List<string>? Body { get; set; }
 }
-
 public static class Compiler
 {
     static readonly HashSet<string> SkipJitNames =
     [
-        "flip", "complement", "const", "identity", "check", "test", "t-eq",
-        "assq", "assoc", "memq", "member", "memv",
-        "sx-match", "sx-match-sym", "sx-match-ellipsis", "sx-match-ellipsis-loop",
-        "sx-expand", "sx-expand-ellipsis", "sx-expand-ellipsis-novar", "sx-expand-ellipsis-var",
-        "sx-repeat", "sx-repeat-loop", "sx-ellipsis-vars", "sx-ellipsis-vars-loop",
-        "sx-dispatch", "sx-sub-bindings", "sx-accum-ellipsis", "sx-pattern-vars",
-        "sx-merge-vars", "sx-lookup", "sx-merge-bindings", "sx-rev-append", "sx-reverse",
-        "sx-find-list-count", "sx-make-macro-binding", "sx-let-syntax",
-        "sx-gen-temps", "sx-syntax-case", "sx-eval-tmpl", "sx-check-fender",
-        "sx-with-syntax", "sx-eval-body", "sx-with-bindings", "sx-get-bindings",
-        "sx-set-bindings!", "qq-walk", "qq-walk-list", "qq-walk-list-helper",
-        "qq-walk-vector", "qq-walk-vector-helper", "qq-process-el", "qq-build-list",
-        "qq-reverse", "qq-reverse-helper", "qq-append-lists", "qq-handle-tail"
+        "flip",
+        "complement",
+        "const",
+        "identity",
+        "check",
+        "test",
+        "t-eq"
     ];
-
     static bool ShouldJit(LambdaProc lp)
     {
         var name = lp.Name;
         if (name is null) return false;
-        if (name.StartsWith("not:g") || name.StartsWith("void:g") ||
-            name.StartsWith("loop") || name.StartsWith("do-step") || name.StartsWith("case-"))
-            return false;
         if (SkipJitNames.Contains(name)) return false;
         return true;
     }
-
     static string SafeFileName(string name)
     {
         var sb = new StringBuilder();
@@ -60,6 +46,12 @@ public static class Compiler
         return sb.ToString();
     }
 
+    // 内容 hash: 用 body 源码的 SHA256 前 16 位, 保证不同内容不同文件, 同名不覆盖
+    static string BodyHash(string bodySrc)
+    {
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(bodySrc));
+        return Convert.ToHexString(bytes)[..16];
+    }
     public static CompiledLambda? CompileLambdaProc(LambdaProc lp)
     {
         if (!ShouldJit(lp)) return null;
@@ -71,9 +63,9 @@ public static class Compiler
             if (lp.Name is not null)
             {
                 var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
-                var cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + ".json");
                 var bodySrc = Printer.Format(lp.Body);
-
+                // 用内容 hash 命名缓存文件, 避免同名函数(不同内容)互相覆盖
+                var cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + "_" + BodyHash(bodySrc) + ".json");
                 if (File.Exists(cacheFile))
                 {
                     try
@@ -91,14 +83,12 @@ public static class Compiler
                     catch { }
                     bodyForms.Clear();
                 }
-
                 while (cur is Cell c)
                 {
                     var expanded = Evaluator.MacroExpand(c.Car, lp.ClosureEnv);
                     bodyForms.Add(expanded);
                     cur = c.Cdr;
                 }
-
                 try
                 {
                     Directory.CreateDirectory(cacheDir);
@@ -123,40 +113,32 @@ public static class Compiler
                 }
             }
             afterExpand:;
-
             // Step 2: Convert to AST
             var bodyAsts = bodyForms.Select(ToAst).ToList();
             var cleanedParams = lp.Params.Select(CleanParamName).ToList();
             var lexicalVars = new HashSet<string>(cleanedParams);
-
             // Step 3: Closure check
             foreach (var astNode in bodyAsts)
                 if (HasNestedClosure(astNode, lexicalVars))
                     return null;
-
             // Step 3b: Check for self-recursion inside nested lambdas
             // This pattern (created by `let` expansion) causes stack overflow
             // because each self-recursion re-creates and re-invokes the inner lambda
             // through the interpreter, growing the C# call stack.
             if (lp.Name is not null && HasSelfRecursionInNestedLambda(bodyAsts, lp.Name))
                 return null;
-
             // Step 4: Constant folding
             var foldedBody = bodyAsts.Select(FoldConstants).ToList();
-
             // Step 5: Compile to expression tree
             var compiler = new AstExprCompiler(lp.Name, cleanedParams, lp.IsSimple, lexicalVars);
             var bodyExprs = compiler.CompileStmtSeq(foldedBody, true);
-
             if (bodyExprs.Count == 0)
                 bodyExprs = [Expression.Goto(compiler.BreakLabel, ObjConst(Const.VOID))];
-
             var loop = Expression.Loop(
                 Expression.Block(bodyExprs),
                 compiler.BreakLabel,
                 compiler.ContinueLabel
             );
-
             // Build final lambda: (env, args) => { params...; loop; }
             var allVars = new List<ParameterExpression>(compiler.ParamVars);
             allVars.AddRange(compiler.AdditionalVars);
@@ -164,10 +146,8 @@ public static class Compiler
                 allVars,
                 compiler.AssignStmts.Concat([loop])
             );
-
             var lambda = Expression.Lambda<Func<Env, object?[], object?>>(
                 lambdaBody, compiler.EnvParam, compiler.ArgsParam);
-
             var func = lambda.Compile();
             return new CompiledLambda(func, lp.Params, lp.ClosureEnv, lp.IsSimple);
         }
@@ -179,15 +159,11 @@ public static class Compiler
             return null;
         }
     }
-
     internal static string CleanParamName(string p) =>
         p.StartsWith("rest:") ? p[5..] : p;
-
     internal static Expression ConstVal(object? v) => Expression.Constant(v);
     internal static Expression ObjConst(object? v) => Expression.Constant(v, typeof(object));
-
     // ── Scheme → AST ──
-
     internal static AstNode ToAst(object? expr)
     {
         if (expr is Sym s)
@@ -196,15 +172,12 @@ public static class Compiler
                 return new LiteralAst(s);
             return new VarAst(s.Name);
         }
-
         if (expr is Cell cell)
         {
             var op = cell.Car;
             var args = cell.Cdr;
-
             if (op == Sym.QUOTE)
                 return new LiteralAst(args is Cell ac ? ac.Car : Const.NIL);
-
             if (op == Sym.IF)
             {
                 var argsC = args as Cell;
@@ -216,7 +189,6 @@ public static class Compiler
                     elseExpr = ToAst(r.Car);
                 return new IfAst(test, thenExpr, elseExpr);
             }
-
             if (op == Sym.LAMBDA)
             {
                 var (parsedParams, hasRest) = ParseParamList(
@@ -225,10 +197,8 @@ public static class Compiler
                     args is Cell a2 ? a2.Cdr : Const.NIL);
                 return new LambdaAst(parsedParams, bodyExprs, !hasRest, RawBody: args is Cell raw ? raw.Cdr : Const.NIL);
             }
-
             if (op == Sym.BEGIN)
                 return new BeginAst(ParseBody(args));
-
             if (op == Sym.DEFINE)
             {
                 if (args is not Cell da) return new LiteralAst(Const.VOID);
@@ -243,24 +213,20 @@ public static class Compiler
                 var valExpr = da.Cdr is Cell d2 ? d2.Car : Const.NIL;
                 return new DefineAst(pat.AsString(), ToAst(valExpr));
             }
-
             if (op == Sym.SETBANG)
             {
                 var sa = args as Cell;
                 return new SetBangAst(sa?.Car.AsString() ?? "",
                     ToAst(sa?.Cdr is Cell sc ? sc.Car : Const.NIL));
             }
-
             var procAst = ToAst(op);
             var argAsts = new List<AstNode>();
             var cur = args;
             while (cur is Cell cc) { argAsts.Add(ToAst(cc.Car)); cur = cc.Cdr; }
             return new AppAst(procAst, argAsts);
         }
-
         return new LiteralAst(expr);
     }
-
     internal static (List<string> Params, bool HasRest) ParseParamList(object? cell)
     {
         var @params = new List<string>();
@@ -274,7 +240,6 @@ public static class Compiler
         }
         return (@params, hasRest);
     }
-
     internal static List<AstNode> ParseBody(object? body)
     {
         var result = new List<AstNode>();
@@ -282,9 +247,7 @@ public static class Compiler
         while (cur is Cell c) { result.Add(ToAst(c.Car)); cur = c.Cdr; }
         return result;
     }
-
     // ── Constant Folding ──
-
     internal static AstNode FoldConstants(AstNode node)
     {
         if (node is IfAst ifn)
@@ -296,15 +259,12 @@ public static class Compiler
                 return lv.Val is Sym sv && sv == Const.FALSE ? els : then;
             return new IfAst(test, then, els);
         }
-
         if (node is BeginAst bn)
             return new BeginAst(bn.Exprs.Select(FoldConstants).ToList());
-
         if (node is AppAst an)
         {
             var proc = FoldConstants(an.Proc);
             var args = an.Args.Select(FoldConstants).ToList();
-
             if (proc is VarAst va && args.Count >= 1 && args[0] is LiteralAst la0)
             {
                 var av = la0.Val;
@@ -333,7 +293,6 @@ public static class Compiler
                 if (va.Name == "odd?")
                     return new LiteralAst(!NumericHelper.IsEven(av) ? Const.TRUE : Const.FALSE);
             }
-
             if (proc is VarAst vaList && args.Count >= 1 && args.All(a => a is LiteralAst) && vaList.Name == "list")
             {
                 var items = args.Cast<LiteralAst>().Select(la => la.Val).ToList();
@@ -342,10 +301,8 @@ public static class Compiler
                     list = new Cell(items[i], list);
                 return new LiteralAst(list);
             }
-
             if (proc is VarAst vaCons && args.Count == 2 && args[0] is LiteralAst lcar && args[1] is LiteralAst lcdr && vaCons.Name == "cons")
                 return new LiteralAst(new Cell(lcar.Val, lcdr.Val));
-
             if (proc is VarAst va2 && args.Count == 2 && args[0] is LiteralAst ll && args[1] is LiteralAst lr)
             {
                 var lv = ll.Val; var rv = lr.Val;
@@ -373,10 +330,8 @@ public static class Compiler
                     catch { }
                 }
             }
-
             return new AppAst(proc, args);
         }
-
         if (node is LambdaAst ln)
             return new LambdaAst(ln.Params, ln.Body.Select(FoldConstants).ToList(), ln.IsSimple, RawBody: ln.RawBody);
         if (node is DefineAst dn)
@@ -385,11 +340,8 @@ public static class Compiler
             return new SetBangAst(sn.Name, FoldConstants(sn.Val));
         return node;
     }
-
     static bool IsNumeric(object? v) => v is int or long or System.Numerics.BigInteger or double or SchemeFraction;
-
     // ── Closure Detection ──
-
     internal static bool HasNestedClosure(AstNode node, HashSet<string> localVars)
     {
         if (node is VarAst or LiteralAst) return false;
@@ -412,7 +364,6 @@ public static class Compiler
         if (node is BeginAst b) return b.Exprs.Any(e => HasNestedClosure(e, localVars));
         return false;
     }
-
     internal static bool RefersOuterVar(AstNode node, HashSet<string> outerVars, HashSet<string> innerParams)
     {
         if (node is VarAst v) return outerVars.Contains(v.Name) && !innerParams.Contains(v.Name);
@@ -431,9 +382,7 @@ public static class Compiler
         if (node is BeginAst b) return b.Exprs.Any(e => RefersOuterVar(e, outerVars, innerParams));
         return false;
     }
-
     // ── Mutation detection for self-recursion safety ──
-
     static bool HasMutation(AstNode node, string varName)
     {
         if (node is SetBangAst s) return s.Name == varName;
@@ -443,7 +392,6 @@ public static class Compiler
         if (node is LambdaAst la) { if (la.Params.Select(CleanParamName).Contains(varName)) return false; return la.Body.Any(e => HasMutation(e, varName)); }
         return false;
     }
-
     static bool HasSelfRecursionInNestedLambda(List<AstNode> body, string selfName)
     {
         foreach (var node in body)
@@ -451,7 +399,6 @@ public static class Compiler
                 return true;
         return false;
     }
-
     static bool ScanNestedSelfRecursion(AstNode node, string selfName)
     {
         if (node is LambdaAst la)
@@ -468,7 +415,6 @@ public static class Compiler
             return ScanNestedSelfRecursion(ifn.Test, selfName) || ScanNestedSelfRecursion(ifn.Then, selfName) || ScanNestedSelfRecursion(ifn.Else, selfName);
         return false;
     }
-
     static bool ContainsCallTo(AstNode node, string name)
     {
         return node switch
@@ -479,10 +425,7 @@ public static class Compiler
             _ => false
         };
     }
-
-
     // ── Expression Tree Compiler ──
-
     internal class AstExprCompiler
     {
         public string? SelfName { get; }
@@ -497,7 +440,6 @@ public static class Compiler
         public LabelTarget ContinueLabel { get; }
         public ParameterExpression EnvParam { get; }
         public ParameterExpression ArgsParam { get; }
-
         public AstExprCompiler(string? selfName, List<string> cleanedParams,
             bool isSimple, HashSet<string> lexicalVars)
         {
@@ -509,12 +451,10 @@ public static class Compiler
             ContinueLabel = Expression.Label();
             EnvParam = Expression.Parameter(typeof(Env), "env");
             ArgsParam = Expression.Parameter(typeof(object?[]), "args");
-
             ParamVars = new List<ParameterExpression>();
             AdditionalVars = new List<ParameterExpression>();
             AssignStmts = new List<Expression>();
             ParamIndexMap = new Dictionary<string, int>();
-
             for (int i = 0; i < cleanedParams.Count; i++)
             {
                 var pv = Expression.Variable(typeof(object), cleanedParams[i]);
@@ -527,9 +467,7 @@ public static class Compiler
                         ObjConst(Const.NIL))));
             }
         }
-
         // ── Compile statement sequences ──
-
         public List<Expression> CompileStmtSeq(List<AstNode> nodes, bool isTail)
         {
             var stmts = new List<Expression>();
@@ -537,9 +475,7 @@ public static class Compiler
                 stmts.AddRange(CompileStmt(nodes[i], isTail && i == nodes.Count - 1));
             return stmts;
         }
-
         // ── Compile a single statement ──
-
         public List<Expression> CompileStmt(AstNode node, bool isTail)
         {
             if (node is IfAst ifn)
@@ -552,10 +488,8 @@ public static class Compiler
                     Expression.Block(thenStmts),
                     Expression.Block(elseStmts))];
             }
-
             if (node is BeginAst bn)
                 return CompileStmtSeq(bn.Exprs, isTail);
-
             if (node is SetBangAst sn)
             {
                 var valExpr = CompileExpr(sn.Val);
@@ -573,21 +507,18 @@ public static class Compiler
                 if (isTail) return [Expression.Goto(BreakLabel, call)];
                 return [call];
             }
-
             // Tail position AppAst → check self-recursion, cross-call, inline
             if (isTail && node is AppAst app && app.Proc is VarAst pv)
             {
                 // Self-recursion
                 if (SelfName is not null && pv.Name == SelfName && IsSimple)
                     return CompileSelfTailCall(app);
-
                 // Inline ops
                 if (!LexicalVars.Contains(pv.Name))
                 {
                     var inl = TryInlineOp(app);
                     if (inl is not null)
                         return [Expression.Goto(BreakLabel, Expression.Convert(inl, typeof(object)))];
-
                     // Cross-function tail call (not immutable primitive, not local)
                     if (SelfName is not null && !JitRuntime.ImmutablePrimitives.Contains(pv.Name))
                     {
@@ -599,11 +530,9 @@ public static class Compiler
                                 procExpr, argsArray, EnvParam))];
                     }
                 }
-
                 // Regular call
                     return [Expression.Goto(BreakLabel, Expression.Convert(CompileAppCall(app), typeof(object)))];
             }
-
             if (isTail)
             {
                 if (node is AppAst app2)
@@ -615,19 +544,15 @@ public static class Compiler
                 }
                 return [Expression.Goto(BreakLabel, Expression.Convert(CompileExpr(node), typeof(object)))];
             }
-
             // Non-tail: evaluate and discard
             return [CompileExpr(node)];
         }
-
         // ── Self-recursion tail call ──
-
         List<Expression> CompileSelfTailCall(AppAst node)
         {
             var stmts = new List<Expression>();
             int nParams = Params.Count;
             int nArgs = node.Args.Count;
-
             var temps = new List<ParameterExpression>();
             var tempAssigns = new List<Expression>();
             for (int i = 0; i < nArgs && i < nParams; i++)
@@ -644,36 +569,28 @@ public static class Compiler
                 AdditionalVars.Add(temp);
                 tempAssigns.Add(Expression.Assign(temp, ObjConst(Const.NIL)));
             }
-
             tempAssigns.AddRange(temps.Select((t, i) =>
                 Expression.Assign(ParamVars[i], t)));
-
             stmts.AddRange(tempAssigns);
             stmts.Add(Expression.Goto(ContinueLabel));
             return stmts;
         }
-
         static readonly HashSet<string> CrNames =
         [
             "caar", "cadr", "cdar", "cddr",
             "caaar", "caadr", "cadar", "caddr",
             "cdaar", "cdadr", "cddar", "cdddr",
         ];
-
         // ── Try inline operation ──
-
         Expression? TryInlineOp(AppAst node)
         {
             if (node.Proc is not VarAst vn || LexicalVars.Contains(vn.Name))
                 return null;
-
             var op = vn.Name;
             var nArgs = node.Args.Count;
-
             if (nArgs == 1)
             {
                 var arg = CompileExpr(node.Args[0]);
-
                 if (CrNames.Contains(op))
                 {
                     var expr = arg;
@@ -683,7 +600,6 @@ public static class Compiler
                             : Expression.Call(typeof(JitRuntime), "CdrOf", null, expr);
                     return expr;
                 }
-
                 return op switch
                 {
                     "car" => Expression.Call(typeof(JitRuntime), "CarOf", null, arg),
@@ -737,7 +653,6 @@ public static class Compiler
                     _ => null
                 };
             }
-
             if (nArgs >= 2 && (op == "+" || op == "-" || op == "*" || op == "/"))
             {
                 string helper = op switch { "+" => "Add", "-" => "Sub", "*" => "Mul", "/" => "Div", _ => "Add" };
@@ -749,7 +664,6 @@ public static class Compiler
                 }
                 return curr;
             }
-
             if (op == "list" && nArgs <= 5)
             {
                 var nilConst = ObjConst(Const.NIL);
@@ -761,7 +675,6 @@ public static class Compiler
                 }
                 return result;
             }
-
             if (nArgs == 2)
             {
                 if (op == "eq?")
@@ -787,8 +700,8 @@ public static class Compiler
                 }
                 if (op == "=" || op == "<" || op == ">" || op == "<=" || op == ">=")
                 {
-                    var left = CompileExpr(node.Args[0]);
-                    var right = CompileExpr(node.Args[1]);
+                    var left = Expression.Convert(CompileExpr(node.Args[0]), typeof(object));
+                    var right = Expression.Convert(CompileExpr(node.Args[1]), typeof(object));
                     var cmp = Expression.Call(typeof(NumericHelper), "Compare", null, left, right);
                     var zero = Expression.Constant(0);
                     Expression cond = op switch
@@ -912,12 +825,9 @@ public static class Compiler
                     return Expression.Call(typeof(JitRuntime), "ApplyList", null, a, b);
                 }
             }
-
             return null;
         }
-
         // ── Compile application call ──
-
         Expression CompileAppCall(AppAst node)
         {
             var procExpr = CompileExpr(node.Proc);
@@ -926,14 +836,11 @@ public static class Compiler
             return Expression.Call(typeof(JitRuntime), "Invoke", null,
                 procExpr, argsArray, EnvParam);
         }
-
         // ── Compile expression (returns a value) ──
-
         public Expression CompileExpr(AstNode node)
         {
             if (node is LiteralAst lit)
                 return ConstVal(lit.Val);
-
             if (node is VarAst vn)
             {
                 var name = vn.Name;
@@ -941,7 +848,6 @@ public static class Compiler
                     return ParamVars[idx];
                 return Expression.Call(EnvParam, "Lookup", null, ConstVal(name));
             }
-
             if (node is IfAst ifn)
             {
                 var test = CompileExpr(ifn.Test);
@@ -950,7 +856,6 @@ public static class Compiler
                     CompileExpr(ifn.Then),
                     CompileExpr(ifn.Else));
             }
-
             if (node is BeginAst bn)
             {
                 if (bn.Exprs.Count == 0) return ObjConst(Const.VOID);
@@ -958,14 +863,12 @@ public static class Compiler
                 var allExprs = bn.Exprs.Select(CompileExpr).ToList();
                 return Expression.Block(allExprs);
             }
-
             if (node is DefineAst dn)
             {
                 var valExpr = CompileExpr(dn.Val);
                 // define returns the name symbol (or void)
                 return Expression.Call(EnvParam, "Define", null, ConstVal(dn.Name), valExpr);
             }
-
             if (node is SetBangAst sn)
             {
                 var valExpr = CompileExpr(sn.Val);
@@ -974,21 +877,18 @@ public static class Compiler
                 return Expression.Call(typeof(JitRuntime), "EnvSetVar", null,
                     EnvParam, ConstVal(sn.Name), valExpr);
             }
-
             if (node is LambdaAst ln)
             {
                 return Expression.Call(typeof(JitRuntime), "MakeLambda", null,
                     ConstVal(ln.Params), ConstVal(ln.IsSimple), EnvParam,
                     ConstVal(ln.RawBody ?? Const.NIL));
             }
-
             if (node is AppAst an)
             {
                 var inl = TryInlineOp(an);
                 if (inl is not null) return inl;
                 return CompileAppCall(an);
             }
-
             return ObjConst(Const.VOID);
         }
     }

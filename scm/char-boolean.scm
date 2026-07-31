@@ -15,9 +15,9 @@
 (define char-iso-control? char-control?)
 
 ;; ============= 布尔 =============
-(define (atom? x) (not (pair? x)))
-(define void-sentinel (void))
-(define (void? x) (eq? x void-sentinel))
+;; [commented: dup with boot-min] (define (atom? x) (not (pair? x)))
+;; [commented: dup with boot-min] (define void-sentinel (void))
+;; [commented: dup with boot-min] (define (void? x) (eq? x void-sentinel))
 
 (unless (defined? 'symbol=?)
   (define (symbol=? . args)

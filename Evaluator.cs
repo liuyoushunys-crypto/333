@@ -1,5 +1,4 @@
 using Miniscm.Types;
-using Miniscm.Macro;
 using Miniscm.Reader;
 using Miniscm.Compiler;
 using Void = Miniscm.Types.Void;
@@ -56,33 +55,15 @@ public static class Evaluator
         Put(Sym.DEFINE, HDefine);
         Put(Sym.SETBANG, HSet);
         Put(Sym.SETF, HSetf);
-        // 注: quasiquote 保留为 C# 特殊形式 (HQQ)。
-        //     define-macro 展开体在宏定义环境求值, 无法访问调用方词法环境,
-        //     而 quasiquote 的 unquote 需要在调用方环境求值 (如 define-record-type/cut
-        //     的宏体内使用反引号引用局部变量)。
-        //     方案: C# 暴露 the-environment 接口, Scheme 端可用
-        //     (eval expr (the-environment)) 在调用方词法环境求值,
-        //     从而把 quasiquote 迁移为 define-macro (见 boot-min.scm Phase 1)。
+        // 注: quasiquote 等已迁移到 Scheme (boot-min.scm)。
+        //     the-environment 是 C# 暴露给 Scheme 的桥接接口:
+        //     Scheme 端用 (eval expr (the-environment)) 在调用方词法环境求值
+        //     unquote, 使 quasiquote/define-syntax 等可在 Scheme 自举实现。
         Put(Sym.THE_ENVIRONMENT, HTheEnvironment);
-        // quasiquote 已迁移为 define-macro (boot-min.scm Phase 1):
-        //   用 the-environment 接口在调用方词法环境求值 unquote。
-        // Put(Sym.QQ, HQQ);
-        // Put(Sym.QS, HQS);
         Put(Sym.UNQUOTE, HUnquote);
         Put(Sym.UNSPLICE, HUnquote);
         Put(Sym.USYNTAX, HUnquote);
-        // Put(Sym.SR, HSyntaxRules);
         Put(Sym.DM, HDefineMacro);
-        // Put(Sym.DS, HDefineSyntax);
-        // Put(Sym.LS, HLetSyntax);
-        // Put(Sym.LRS, HLetrecSyntax);
-        // Put(Sym.IMPORT, HImport);
-        // Put(Sym.SYNTAX, HSyntax);
-        // Put(Sym.SC, HSyntaxCase);
-        // Put(Sym.WS, HWithSyntax);
-        // Put(Sym.GT, HGenerateTemporaries);
-        // Put(Sym.DEBUG, HDebug);
-        // Put(Sym.DBGTRACE, HDebugTrace);
     }
 
     // ── Special Forms ──
@@ -179,25 +160,6 @@ public static class Evaluator
         throw new Exception($"set!: invalid place: {place}");
     }
 
-    private static object? HQQ(object? args, Env env) => QQ(args is Cell c ? c.Car : Const.NIL, env);
-
-    private static object? HQS(object? args, Env env)
-    {
-        var expr = args is Cell c ? c.Car : Const.NIL;
-        var expanded = TemplateExpander.ScExpandSyntax(expr, env);
-        return new SyntaxObject(QQ(expanded, env));
-    }
-
-    private static object? HSyntaxRules(object? args, Env env)
-    {
-        if (args is not Cell a) throw new Exception("bad syntax-rules form");
-        var lits = a.Car;
-        var rules = new List<Cell>();
-        var cur = a.Cdr;
-        while (cur is Cell rc) { if (rc.Car is Cell r) rules.Add(r); cur = rc.Cdr; }
-        return new SyntaxTrans(lits, rules, env);
-    }
-
     private static object? HDefineMacro(object? args, Env env)
     {
         if (args is not Cell a) throw new Exception("bad define-macro form");
@@ -214,248 +176,6 @@ public static class Evaluator
         else
             env.Data[a.Car.AsString()] = ("macro", new List<string>(), a.Cdr, env, true);
         return Sym.Intern(a.Car.AsString());
-    }
-
-    private static object? HDefineSyntax(object? args, Env env)
-    {
-        if (args is not Cell a) throw new Exception("bad define-syntax form");
-        var name = a.Car.AsString();
-        var trans = Eval(a.Cdr is Cell c ? c.Car : Const.NIL, env);
-        if (trans is SyntaxTrans st) env.Data[name] = st;
-        else if (trans is ValueTuple<string, object?> && trans is ("lambda", _, _, _)) env.Data[name] = trans;
-        else if (trans is LambdaProc || trans is Delegate) env.Data[name] = ("syntax-macro-callable", trans);
-        return Sym.Intern(name);
-    }
-
-    private static object? HLetSyntax(object? args, Env env)
-    {
-        if (args is not Cell a) return Const.VOID;
-        var bindings = a.Car;
-        var body = a.Cdr;
-        var nenv = new Env(env);
-        var cur = bindings;
-        while (cur is Cell bc)
-        {
-            var b = bc.Car;
-            if (b is Cell cb)
-            {
-                var n = cb.Car;
-                var texpr = cb.Cdr is Cell tc ? tc.Car : Const.NIL;
-                nenv.Data[n.AsString()] = Eval(texpr, env);
-            }
-            cur = bc.Cdr;
-        }
-        return SeqTailCall(body, nenv);
-    }
-
-    private static object? HLetrecSyntax(object? args, Env env)
-    {
-        if (args is not Cell a) return Const.VOID;
-        var bindings = a.Car;
-        var body = a.Cdr;
-        var nenv = new Env(env);
-        var cur = bindings;
-        while (cur is Cell bc)
-        {
-            var b = bc.Car;
-            if (b is Cell cb)
-            {
-                var n = cb.Car;
-                var texpr = cb.Cdr is Cell tc ? tc.Car : Const.NIL;
-                nenv.Data[n.AsString()] = Eval(texpr, nenv);
-            }
-            cur = bc.Cdr;
-        }
-        return SeqTailCall(body, nenv);
-    }
-
-    private static object? HImport(object? args, Env env) => Const.VOID;
-
-    private static object? HSyntax(object? args, Env env)
-    {
-        var expr = args is Cell c ? c.Car : Const.NIL;
-        var b = TemplateExpander.ScCollectPatternBindings(env);
-        return new SyntaxObject(TemplateExpander.ExpandTmpl(expr, b, null));
-    }
-
-    private static object? HSyntaxCase(object? args, Env env)
-    {
-        if (args is not Cell a) throw new Exception("bad syntax-case form");
-        var exprVal = Eval(a.Car, env);
-        var literals = a.Cdr is Cell c ? c.Car : Const.NIL;
-        var clauses = a.Cdr is Cell c2 ? c2.Cdr : Const.NIL;
-        var datum = (exprVal as SyntaxObject)?.Expr ?? exprVal;
-
-        var lits = new HashSet<string>();
-        var curLit = literals;
-        while (curLit is Cell lc) { var l = lc.Car; if (l is Sym) lits.Add(l.AsString()); curLit = lc.Cdr; }
-
-        var curClause = clauses;
-        while (curClause is Cell cc)
-        {
-            var clause = cc.Car;
-            if (clause is Cell cl)
-            {
-                var pat = cl.Car;
-                var restCl = cl.Cdr;
-                var hasFender = restCl is Cell rc && rc.Cdr is Cell && rc.Cdr is not Nil;
-                var fender = hasFender ? (restCl is Cell r1 ? r1.Car : Const.NIL) : null;
-                var tmpl = hasFender ? (restCl is Cell r1a ? (r1a.Cdr is Cell r2 ? r2.Car : Const.NIL) : Const.NIL)
-                                      : (restCl is Cell r3 ? r3.Car : Const.NIL);
-
-                var b = PatternMatcher.Match(pat, datum, lits);
-                if (b is not null)
-                {
-                    var nenv = new Env(env);
-                    foreach (var (k, v) in b)
-                        nenv.Define(Sym.Intern(k), new SyntaxObject(v));
-                    if (hasFender)
-                    {
-                        if (fender is not null)
-                        {
-                            var fv = Eval(fender, nenv);
-                            if (fv is Sym ft && ft == Const.FALSE) { curClause = cc.Cdr; continue; }
-                        }
-                    }
-                    return new TailCall(tmpl, nenv);
-                }
-            }
-            curClause = cc.Cdr;
-        }
-        throw new Exception("syntax-case: no match");
-    }
-
-    private static object? HWithSyntax(object? args, Env env)
-    {
-        if (args is not Cell a) return Const.VOID;
-        var bindings = a.Car;
-        var body = a.Cdr;
-        var nenv = new Env(env);
-        var cur = bindings;
-        while (cur is Cell bc)
-        {
-            var b = bc.Car;
-            if (b is Cell cb)
-            {
-                var pat = cb.Car;
-                var expr = cb.Cdr is Cell ex ? ex.Car : Const.NIL;
-                var val = Eval(expr, env);
-                var valSo = (val as SyntaxObject)?.Expr ?? val;
-                var result = PatternMatcher.Match(pat, valSo, []);
-                if (result is not null)
-                {
-                    foreach (var (k, v) in result)
-                        nenv.Data[Sym.Intern(k)] = new SyntaxObject(v);
-                }
-            }
-            cur = bc.Cdr;
-        }
-        return SeqTailCall(body, nenv);
-    }
-
-    private static object? HGenerateTemporaries(object? args, Env env)
-    {
-        var lst = args is Cell c ? Eval(c.Car, env) : Const.NIL;
-        lst = (lst as SyntaxObject)?.Expr ?? lst;
-        if (lst is Cell lc)
-        {
-            var items = new List<object?>();
-            object? cur = lc;
-            while (cur is Cell cc)
-            {
-                Const.GensymCounter++;
-                items.Add(new SyntaxObject(Sym.Intern($"__t{Const.GensymCounter}")));
-                cur = cc.Cdr;
-            }
-            return items.ToCell();
-        }
-        return Const.NIL;
-    }
-
-    private static object? HDebug(object? args, Env env) => Const.VOID;
-
-    private static object? HDebugTrace(object? args, Env env) => Const.VOID;
-
-    // ── Quasiquote ──
-
-    private static object? QQ(object? e, Env env)
-    {
-        if (e is Cell cell)
-        {
-            var items = new List<object?>();
-            object? tail = Const.NIL;
-            var cur = e;
-            while (cur is Cell cc)
-            {
-                var el = cc.Car;
-                if (el is Cell elCell)
-                {
-                    var c = elCell.Car;
-                    if (c == Sym.UNQUOTE || c == Sym.USYNTAX)
-                        items.Add(Eval(elCell.Cdr is Cell uq ? uq.Car : Const.NIL, env));
-                    else if (c == Sym.UNSPLICE || c == Sym.USPLICES)
-                    {
-                        var v = Eval(elCell.Cdr is Cell us ? us.Car : Const.NIL, env);
-                        v = (v as SyntaxObject)?.Expr ?? v;
-                        if (v is Cell vc) { foreach (var x in vc) items.Add(x); }
-                        else if (v is not Nil) items.Add(v);
-                    }
-                    else if (c == Sym.QQ) items.Add(el);
-                    else items.Add(QQ(el, env));
-                }
-                else items.Add(QQ(el, env));
-
-                var curCdr = cc.Cdr;
-                if (curCdr is Cell cc2)
-                {
-                    var cc2c = cc2.Car;
-                    if (cc2c == Sym.UNQUOTE || cc2c == Sym.USYNTAX)
-                    {
-                        var v = Eval(cc2.Cdr is Cell uq2 ? uq2.Car : Const.NIL, env);
-                        v = (v as SyntaxObject)?.Expr ?? v;
-                        for (int i = items.Count - 1; i >= 0; i--) v = new Cell(items[i], v);
-                        return v;
-                    }
-                    if (cc2c == Sym.UNSPLICE || cc2c == Sym.USPLICES)
-                    {
-                        var v = Eval(cc2.Cdr is Cell us2 ? us2.Car : Const.NIL, env);
-                        v = (v as SyntaxObject)?.Expr ?? v;
-                        if (v is Cell vc2) { foreach (var x in vc2) items.Add(x); }
-                        else if (v is not Nil) items.Add(v);
-                        cur = curCdr;
-                        continue;
-                    }
-                }
-                cur = curCdr;
-            }
-            var r = cur is not Nil ? cur : Const.NIL;
-            for (int i = items.Count - 1; i >= 0; i--) r = new Cell(items[i], r);
-            return r;
-        }
-        if (e is SchemeVector sv)
-        {
-            var newData = new List<object?>();
-            foreach (var el in sv.Data)
-            {
-                if (el is Cell elCell)
-                {
-                    var c = elCell.Car;
-                    if (c == Sym.UNQUOTE || c == Sym.USYNTAX)
-                        newData.Add(Eval(elCell.Cdr is Cell uq ? uq.Car : Const.NIL, env));
-                    else if (c == Sym.UNSPLICE || c == Sym.USPLICES)
-                    {
-                        var v = Eval(elCell.Cdr is Cell us ? us.Car : Const.NIL, env);
-                        v = (v as SyntaxObject)?.Expr ?? v;
-                        if (v is Cell vc) { foreach (var x in vc) newData.Add(x); }
-                        else if (v is not Nil) newData.Add(v);
-                    }
-                    else newData.Add(QQ(el, env));
-                }
-                else newData.Add(QQ(el, env));
-            }
-            return new SchemeVector(newData);
-        }
-        return e is Nil ? Const.NIL : e;
     }
 
     // ── Helpers ──
@@ -542,10 +262,10 @@ public static class Evaluator
             else
                 proc = EvalCore(op, env);
 
-            var curArgs = args;
+                var curArgs = args;
 
-            // LambdaProc
-            if (proc is LambdaProc lp)
+                // LambdaProc
+                if (proc is LambdaProc lp)
             {
                 // JIT compilation trigger
                 if (!IsCompiling && lp.CompiledVersion is null && lp.Name is not null)
@@ -603,7 +323,7 @@ public static class Evaluator
                 return r3;
             }
 
-            // Tuple proc (macro, lambda, syntax-macro-callable)
+            // Tuple proc (macro, lambda)
             if (proc is System.Runtime.CompilerServices.ITuple it && it.Length >= 2 && it[0] is string t0)
             {
                 if (t0 == "lambda")
@@ -617,7 +337,6 @@ public static class Evaluator
                         return r4;
                     }
                 }
-                // syntax-macro-callable handled during macro expansion
             }
 
             throw new Exception($"not callable: {Printer.Format(proc)}");
@@ -629,7 +348,7 @@ public static class Evaluator
         if (proc is System.Runtime.CompilerServices.ITuple it && it.Length >= 2 && it[0] is string p0)
         {
             if (p0 == "macro" && it.Length >= 5 && it[1] is List<string> mparams
-                && it[3] is Env mpenv)
+                && it[3] is Env)
             {
                 var mbody = it[2];
                 // 以调用点 env 为父环境, 使宏体内的 the-environment 能访问
@@ -643,32 +362,7 @@ public static class Evaluator
                 while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
                 return (r as SyntaxObject)?.Expr ?? r;
             }
-            if (p0 == "syntax-macro-callable" && it.Length == 2)
-            {
-                var callable = it[1];
-                object? r;
-                if (callable is LambdaProc lp)
-                {
-                    var nenv = new Env(lp.ClosureEnv);
-                    BindParams(lp.Params, new object?[] { expr }, nenv);
-                    r = SeqTailCall(lp.Body, nenv);
-                }
-                else if (callable is Delegate d)
-                {
-                    r = d.DynamicInvoke(expr);
-                }
-                else
-                {
-                    return null;
-                }
-                while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
-                return (r as SyntaxObject)?.Expr ?? r;
-            }
         }
-            if (proc is SyntaxTrans st)
-            {
-                return TemplateExpander.ApplyStx(st, expr);
-            }
         return null;
     }
 

@@ -40,5 +40,4 @@ public static class Const
     public static readonly Eof EOF = Eof.Instance;
     public static readonly Sym TRUE = Sym.Intern("#t");
     public static readonly Sym FALSE = Sym.Intern("#f");
-    public static int GensymCounter = 0;
 }
