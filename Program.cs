@@ -19,7 +19,7 @@ public class Program
         var scmRoot = Path.Combine(projectDir, "..", "miniscm", "scm");
 
         var _libs = new[] {
-            "boot-core.scm", "boot-sugar.scm",
+            "boot-min.scm", "boot-core.scm", "boot-sugar.scm",
             "char-boolean.scm", "numeric.scm",
             "srfi-1-list.scm", "srfi-13-string.scm", "hof-vector.scm",
             "number-theory.scm", "gensym-stream.scm",

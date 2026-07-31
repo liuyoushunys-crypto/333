@@ -732,33 +732,33 @@
 (define (exact-integer? x)
   (and (integer? x) (exact? x)))
 
-(define (assoc obj al . cmp)
-  (if (null? cmp)
-      (let loop ((l al))
-        (and (pair? l)
-             (if (equal? (caar l) obj) (car l)
-                 (loop (cdr l)))))
-      (let ((eq-fn (car cmp)))
-        (let loop ((l al))
-          (and (pair? l)
-               (if (eq-fn (caar l) obj) (car l)
-                   (loop (cdr l))))))))
-
-(define (memv obj lst)
-  (member obj lst eqv?))
-
+;; [commented: dup with C# primitive] (define (assoc obj al . cmp)
+;; [commented: dup with C# primitive]   (if (null? cmp)
+;; [commented: dup with C# primitive]       (let loop ((l al))
+;; [commented: dup with C# primitive]         (and (pair? l)
+;; [commented: dup with C# primitive]              (if (equal? (caar l) obj) (car l)
+;; [commented: dup with C# primitive]                  (loop (cdr l)))))
+;; [commented: dup with C# primitive]       (let ((eq-fn (car cmp)))
+;; [commented: dup with C# primitive]         (let loop ((l al))
+;; [commented: dup with C# primitive]           (and (pair? l)
+;; [commented: dup with C# primitive]                (if (eq-fn (caar l) obj) (car l)
+;; [commented: dup with C# primitive]                    (loop (cdr l))))))))
+;; [commented: dup with C# primitive] 
+;; [commented: dup with C# primitive] (define (memv obj lst)
+;; [commented: dup with C# primitive]   (member obj lst eqv?))
+;; [commented: dup with C# primitive] 
 ;; ── 更多缺失函数 ──
 ;; list? is a builtin with cycle detection
-(define (bitwise-ior . args) (apply bit-ior args))
-(define (member obj lst . eq)
-  (let ((eq-fn (if (null? eq) equal? (car eq))))
-    (let loop ((l lst))
-      (and (pair? l)
-           (if (eq-fn (car l) obj) l
-               (loop (cdr l)))))))
-(define (assq obj al) (assoc obj al eq?))
-(define (assv obj al) (assoc obj al eqv?))
-(define (memq obj lst) (member obj lst eq?))
+;; [commented: dup with C# primitive] (define (bitwise-ior . args) (apply bit-ior args))
+;; [commented: dup with C# primitive] (define (member obj lst . eq)
+;; [commented: dup with C# primitive]   (let ((eq-fn (if (null? eq) equal? (car eq))))
+;; [commented: dup with C# primitive]     (let loop ((l lst))
+;; [commented: dup with C# primitive]       (and (pair? l)
+;; [commented: dup with C# primitive]            (if (eq-fn (car l) obj) l
+;; [commented: dup with C# primitive]                (loop (cdr l)))))))
+;; [commented: dup with C# primitive] (define (assq obj al) (assoc obj al eq?))
+;; [commented: dup with C# primitive] (define (assv obj al) (assoc obj al eqv?))
+;; [commented: dup with C# primitive] (define (memq obj lst) (member obj lst eq?))
 
 
 

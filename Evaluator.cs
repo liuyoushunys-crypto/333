@@ -56,26 +56,39 @@ public static class Evaluator
         Put(Sym.DEFINE, HDefine);
         Put(Sym.SETBANG, HSet);
         Put(Sym.SETF, HSetf);
-        Put(Sym.QQ, HQQ);
-        Put(Sym.QS, HQS);
+        // 注: quasiquote 保留为 C# 特殊形式 (HQQ)。
+        //     define-macro 展开体在宏定义环境求值, 无法访问调用方词法环境,
+        //     而 quasiquote 的 unquote 需要在调用方环境求值 (如 define-record-type/cut
+        //     的宏体内使用反引号引用局部变量)。
+        //     方案: C# 暴露 the-environment 接口, Scheme 端可用
+        //     (eval expr (the-environment)) 在调用方词法环境求值,
+        //     从而把 quasiquote 迁移为 define-macro (见 boot-min.scm Phase 1)。
+        Put(Sym.THE_ENVIRONMENT, HTheEnvironment);
+        // quasiquote 已迁移为 define-macro (boot-min.scm Phase 1):
+        //   用 the-environment 接口在调用方词法环境求值 unquote。
+        // Put(Sym.QQ, HQQ);
+        // Put(Sym.QS, HQS);
         Put(Sym.UNQUOTE, HUnquote);
         Put(Sym.UNSPLICE, HUnquote);
         Put(Sym.USYNTAX, HUnquote);
-        Put(Sym.SR, HSyntaxRules);
+        // Put(Sym.SR, HSyntaxRules);
         Put(Sym.DM, HDefineMacro);
-        Put(Sym.DS, HDefineSyntax);
-        Put(Sym.LS, HLetSyntax);
-        Put(Sym.LRS, HLetrecSyntax);
-        Put(Sym.IMPORT, HImport);
-        Put(Sym.SYNTAX, HSyntax);
-        Put(Sym.SC, HSyntaxCase);
-        Put(Sym.WS, HWithSyntax);
-        Put(Sym.GT, HGenerateTemporaries);
-        Put(Sym.DEBUG, HDebug);
-        Put(Sym.DBGTRACE, HDebugTrace);
+        // Put(Sym.DS, HDefineSyntax);
+        // Put(Sym.LS, HLetSyntax);
+        // Put(Sym.LRS, HLetrecSyntax);
+        // Put(Sym.IMPORT, HImport);
+        // Put(Sym.SYNTAX, HSyntax);
+        // Put(Sym.SC, HSyntaxCase);
+        // Put(Sym.WS, HWithSyntax);
+        // Put(Sym.GT, HGenerateTemporaries);
+        // Put(Sym.DEBUG, HDebug);
+        // Put(Sym.DBGTRACE, HDebugTrace);
     }
 
     // ── Special Forms ──
+
+    // the-environment: 返回当前词法环境对象 (供 (eval expr env) 使用)
+    private static object? HTheEnvironment(object? args, Env env) => env;
 
     private static object? HQuote(object? args, Env env)
     {
@@ -619,7 +632,9 @@ public static class Evaluator
                 && it[3] is Env mpenv)
             {
                 var mbody = it[2];
-                var nenv = new Env(mpenv);
+                // 以调用点 env 为父环境, 使宏体内的 the-environment 能访问
+                // 调用方词法环境 (如 lambda 局部变量), 供 quasiquote 的 unquote 求值。
+                var nenv = new Env(env);
                 var al = new List<object?>();
                 var cur = args;
                 while (cur is Cell c) { al.Add(c.Car); cur = c.Cdr; }

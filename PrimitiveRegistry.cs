@@ -1103,7 +1103,8 @@ public static class PrimitiveRegistry
             }
             catch { return 0; }
         });
-        _b("eval", args => Evaluator.Eval(args[0], Evaluator.GlobalEnv));
+        _b("eval", args => Evaluator.Eval(args[0],
+            args.Length > 1 && args[1] is Env e ? e : Evaluator.GlobalEnv));
         _b("interaction-environment", args => Evaluator.GlobalEnv);
         _b("scheme-report-environment", args => Evaluator.GlobalEnv);
         _b("null-environment", args => Evaluator.GlobalEnv);

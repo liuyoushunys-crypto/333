@@ -20,7 +20,19 @@ public static class Compiler
 {
     static readonly HashSet<string> SkipJitNames =
     [
-        "flip", "complement", "const", "identity", "check", "test", "t-eq"
+        "flip", "complement", "const", "identity", "check", "test", "t-eq",
+        "assq", "assoc", "memq", "member", "memv",
+        "sx-match", "sx-match-sym", "sx-match-ellipsis", "sx-match-ellipsis-loop",
+        "sx-expand", "sx-expand-ellipsis", "sx-expand-ellipsis-novar", "sx-expand-ellipsis-var",
+        "sx-repeat", "sx-repeat-loop", "sx-ellipsis-vars", "sx-ellipsis-vars-loop",
+        "sx-dispatch", "sx-sub-bindings", "sx-accum-ellipsis", "sx-pattern-vars",
+        "sx-merge-vars", "sx-lookup", "sx-merge-bindings", "sx-rev-append", "sx-reverse",
+        "sx-find-list-count", "sx-make-macro-binding", "sx-let-syntax",
+        "sx-gen-temps", "sx-syntax-case", "sx-eval-tmpl", "sx-check-fender",
+        "sx-with-syntax", "sx-eval-body", "sx-with-bindings", "sx-get-bindings",
+        "sx-set-bindings!", "qq-walk", "qq-walk-list", "qq-walk-list-helper",
+        "qq-walk-vector", "qq-walk-vector-helper", "qq-process-el", "qq-build-list",
+        "qq-reverse", "qq-reverse-helper", "qq-append-lists", "qq-handle-tail"
     ];
 
     static bool ShouldJit(LambdaProc lp)

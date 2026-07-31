@@ -50,6 +50,7 @@ public sealed class Sym : IEquatable<Sym>
     public static readonly Sym DEBUG = Intern("%break");
     public static readonly Sym DBGTRACE = Intern("debug-trace");
     public static readonly Sym SETF = Intern("set!-form");
+    public static readonly Sym THE_ENVIRONMENT = Intern("the-environment");
     public static readonly Sym USCORE = Intern("_");
     public static readonly Sym VOID_SYM = Intern("if #f #f");
     public static readonly Sym LT = Intern("<>");

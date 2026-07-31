@@ -55,12 +55,12 @@
 ;;   注意:
 ;;     - 变量并行绑定，不可相互引用
 ;;     - 命名 let 是 named-let / 内循环的惯用写法
-(define-syntax let
-  (syntax-rules ()
-    ((let ((var val) ...) body1 body2 ...)
-     ((lambda (var ...) body1 body2 ...) val ...))
-    ((let name ((var val) ...) body1 body2 ...)
-     ((letrec ((name (lambda (var ...) body1 body2 ...))) name) val ...))))
+;; [commented: dup with boot-min] (define-syntax let
+;; [commented: dup with boot-min]   (syntax-rules ()
+;; [commented: dup with boot-min]     ((let ((var val) ...) body1 body2 ...)
+;; [commented: dup with boot-min]      ((lambda (var ...) body1 body2 ...) val ...))
+;; [commented: dup with boot-min]     ((let name ((var val) ...) body1 body2 ...)
+;; [commented: dup with boot-min]      ((letrec ((name (lambda (var ...) body1 body2 ...))) name) val ...))))
 
 ;; ── let* ──
 ;; 顺序局部绑定：每个变量可引用前面已绑定的变量。
@@ -70,13 +70,13 @@
 ;;   展开: (let* ((x 3) (y (* x 2))) y)
 ;;      => (let ((x 3)) (let ((y (* x 2))) y))
 ;;   注意: 等价于嵌套 let，不支持命名形式
-(define-syntax let*
-  (syntax-rules ()
-    ((let* () body1 body2 ...)
-     (let () body1 body2 ...))
-    ((let* ((var val) rest ...) body1 body2 ...)
-     (let ((var val))
-       (let* (rest ...) body1 body2 ...)))))
+;; [commented: dup with boot-min] (define-syntax let*
+;; [commented: dup with boot-min]   (syntax-rules ()
+;; [commented: dup with boot-min]     ((let* () body1 body2 ...)
+;; [commented: dup with boot-min]      (let () body1 body2 ...))
+;; [commented: dup with boot-min]     ((let* ((var val) rest ...) body1 body2 ...)
+;; [commented: dup with boot-min]      (let ((var val))
+;; [commented: dup with boot-min]        (let* (rest ...) body1 body2 ...)))))
 
 ;; ── letrec ──
 ;; 递归局部绑定：变量可相互引用（用于定义互递归函数）。
@@ -88,12 +88,12 @@
 ;;           (f 5))
 ;;      => (let ((f #f)) (set! f (lambda (n) ...)) (let () (f 5)))
 ;;   注意: 内部实现为先赋 #f，再 set! 为实际值
-(define-syntax letrec
-  (syntax-rules ()
-    ((letrec ((var val) ...) body1 body2 ...)
-     (let ((var #f) ...)
-       (set! var val) ...
-       (let () body1 body2 ...)))))
+;; [commented: dup with boot-min] (define-syntax letrec
+;; [commented: dup with boot-min]   (syntax-rules ()
+;; [commented: dup with boot-min]     ((letrec ((var val) ...) body1 body2 ...)
+;; [commented: dup with boot-min]      (let ((var #f) ...)
+;; [commented: dup with boot-min]        (set! var val) ...
+;; [commented: dup with boot-min]        (let () body1 body2 ...)))))
 
 ;; ── and ──
 ;; 逻辑与：从左到右求值，遇到假值立即短路返回 #f。
@@ -107,12 +107,12 @@
 ;;      => (if 1 (and #f 3) #f)
 ;;      => (if 1 (if #f (and 3) #f) #f)
 ;;   注意: 最后一个表达式的值即为 and 返回值（不仅仅是 #t/#f）
-(define-syntax and
-  (syntax-rules ()
-    ((and) #t)
-    ((and test) test)
-    ((and test1 test2 ...)
-     (if test1 (and test2 ...) #f))))
+;; [commented: dup with boot-min] (define-syntax and
+;; [commented: dup with boot-min]   (syntax-rules ()
+;; [commented: dup with boot-min]     ((and) #t)
+;; [commented: dup with boot-min]     ((and test) test)
+;; [commented: dup with boot-min]     ((and test1 test2 ...)
+;; [commented: dup with boot-min]      (if test1 (and test2 ...) #f))))
 
 ;; ── or ──
 ;; 逻辑或：从左到右求值，遇到真值立即返回该值。
@@ -129,14 +129,14 @@
 ;;   注意:
 ;;     - 使用 lambda 确保 test1 仅求值一次（存取 temp 而非重复求值）
 ;;     - 不依赖外部 let，纯 lambda 实现
-(define-syntax or
-  (syntax-rules ()
-    ((or) #f)
-    ((or test) test)
-    ((or test1 test2 ...)
-     ((lambda (temp)
-        (if temp temp (or test2 ...)))
-      test1))))
+;; [commented: dup with boot-min] (define-syntax or
+;; [commented: dup with boot-min]   (syntax-rules ()
+;; [commented: dup with boot-min]     ((or) #f)
+;; [commented: dup with boot-min]     ((or test) test)
+;; [commented: dup with boot-min]     ((or test1 test2 ...)
+;; [commented: dup with boot-min]      ((lambda (temp)
+;; [commented: dup with boot-min]         (if temp temp (or test2 ...)))
+;; [commented: dup with boot-min]       test1))))
 
 ;; ── when ──
 ;; 条件执行：条件为真时执行表达式序列（无 else 分支）。
@@ -146,10 +146,10 @@
 ;;   展开: (when (positive? -5) (display "pos"))
 ;;      => (if (positive? -5) (begin (display "pos")) #f)
 ;;   注意: 无 else 分支，条件假时返回 #f
-(define-syntax when
-  (syntax-rules ()
-    ((when test expr1 expr2 ...)
-     (if test (begin expr1 expr2 ...) #f))))
+;; [commented: dup with boot-min] (define-syntax when
+;; [commented: dup with boot-min]   (syntax-rules ()
+;; [commented: dup with boot-min]     ((when test expr1 expr2 ...)
+;; [commented: dup with boot-min]      (if test (begin expr1 expr2 ...) #f))))
 
 ;; ── unless ──
 ;; 条件执行取反：条件为假时执行表达式序列。
@@ -159,10 +159,10 @@
 ;;   展开: (unless (negative? -5) (display "not neg"))
 ;;      => (if (not (negative? -5)) (begin (display "not neg")) #f)
 ;;   注意: when 的对偶形式
-(define-syntax unless
-  (syntax-rules ()
-    ((unless test expr1 expr2 ...)
-     (if (not test) (begin expr1 expr2 ...) #f))))
+;; [commented: dup with boot-min] (define-syntax unless
+;; [commented: dup with boot-min]   (syntax-rules ()
+;; [commented: dup with boot-min]     ((unless test expr1 expr2 ...)
+;; [commented: dup with boot-min]      (if (not test) (begin expr1 expr2 ...) #f))))
 
 ;; ── cond ──
 ;; 多路条件分支（R7RS 标准，支持所有分支模式）。
@@ -193,31 +193,31 @@
 ;;   注意:
 ;;     - (=> expression) 箭头中 expression 必须为单参数过程
 ;;     - (else) 子句必须放在最后，识别为关键字（syntax-rules else）
-(define-syntax cond
-  (syntax-rules (else =>)
-    ((cond (else result1 result2 ...))
-     (begin result1 result2 ...))
-    ((cond (test => expression))
-     ((lambda (temp)
-        (if temp (expression temp)))
-      test))
-    ((cond (test => expression) clause1 clause2 ...)
-     ((lambda (temp)
-        (if temp
-            (expression temp)
-            (cond clause1 clause2 ...)))
-      test))
-    ((cond (test)) test)
-    ((cond (test) clause1 clause2 ...)
-     ((lambda (temp)
-        (if temp temp (cond clause1 clause2 ...)))
-      test))
-    ((cond (test result1 result2 ...))
-     (if test (begin result1 result2 ...)))
-    ((cond (test result1 result2 ...) clause1 clause2 ...)
-     (if test
-         (begin result1 result2 ...)
-         (cond clause1 clause2 ...)))))
+;; [commented: dup with boot-min] (define-syntax cond
+;; [commented: dup with boot-min]   (syntax-rules (else =>)
+;; [commented: dup with boot-min]     ((cond (else result1 result2 ...))
+;; [commented: dup with boot-min]      (begin result1 result2 ...))
+;; [commented: dup with boot-min]     ((cond (test => expression))
+;; [commented: dup with boot-min]      ((lambda (temp)
+;; [commented: dup with boot-min]         (if temp (expression temp)))
+;; [commented: dup with boot-min]       test))
+;; [commented: dup with boot-min]     ((cond (test => expression) clause1 clause2 ...)
+;; [commented: dup with boot-min]      ((lambda (temp)
+;; [commented: dup with boot-min]         (if temp
+;; [commented: dup with boot-min]             (expression temp)
+;; [commented: dup with boot-min]             (cond clause1 clause2 ...)))
+;; [commented: dup with boot-min]       test))
+;; [commented: dup with boot-min]     ((cond (test)) test)
+;; [commented: dup with boot-min]     ((cond (test) clause1 clause2 ...)
+;; [commented: dup with boot-min]      ((lambda (temp)
+;; [commented: dup with boot-min]         (if temp temp (cond clause1 clause2 ...)))
+;; [commented: dup with boot-min]       test))
+;; [commented: dup with boot-min]     ((cond (test result1 result2 ...))
+;; [commented: dup with boot-min]      (if test (begin result1 result2 ...)))
+;; [commented: dup with boot-min]     ((cond (test result1 result2 ...) clause1 clause2 ...)
+;; [commented: dup with boot-min]      (if test
+;; [commented: dup with boot-min]          (begin result1 result2 ...)
+;; [commented: dup with boot-min]          (cond clause1 clause2 ...)))))
 
 ;; ── case ──
 ;; 键值分派：根据 key 的值选择匹配分支（R7RS 标准）。
