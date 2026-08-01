@@ -7,6 +7,7 @@ using Miniscm.Reader;
 using Miniscm.Types;
 using Void = Miniscm.Types.Void;
 namespace Miniscm.Compiler;
+
 class CacheEntry
 {
     public string? Hash { get; set; }
