@@ -1120,6 +1120,13 @@ public static class PrimitiveRegistry
         });
         _b("eval", args => Evaluator.Eval(args[0],
             args.Length > 1 && args[1] is Env e ? e : Evaluator.GlobalEnv));
+        _b("sx-def-env", args => Evaluator.CurrentMacroDefEnv ?? Evaluator.GlobalEnv);
+        _b("sx-defined?", args =>
+        {
+            var name = (args[0] as Sym)?.Name ?? args[0]?.ToString() ?? "";
+            var env = args.Length > 1 && args[1] is Env e2 ? e2 : Evaluator.GlobalEnv;
+            return env.LookupSilent(name, null) is not null ? Const.TRUE : Const.FALSE;
+        });
         _b("interaction-environment", args => Evaluator.GlobalEnv);
         _b("scheme-report-environment", args => Evaluator.GlobalEnv);
         _b("null-environment", args => Evaluator.GlobalEnv);

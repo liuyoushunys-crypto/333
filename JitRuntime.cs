@@ -24,16 +24,24 @@ public static class JitRuntime
         if (procVal is Func<object?[], object?> fn)
             return fn(argsVal);
         if (procVal is CompiledLambda cv)
-            return cv.Invoke(cv.Env, argsVal);
+        {
+            var r = cv.Invoke(cv.Env, argsVal);
+            while (r is TailCall tcr) r = EvalTailCall(tcr);
+            return r;
+        }
         if (procVal is LambdaProc lp)
         {
             if (lp.CompiledVersion is CompiledLambda cl)
-                return cl.Invoke(lp.ClosureEnv, argsVal);
+            {
+                var r = cl.Invoke(lp.ClosureEnv, argsVal);
+                while (r is TailCall tcr) r = EvalTailCall(tcr);
+                return r;
+            }
             var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
             Evaluator.BindParams(lp.Params, argsVal, nenv);
-            var r = Evaluator.SeqTailCall(lp.Body, nenv);
-            while (r is TailCall tcr) r = Evaluator.EvalCore(tcr.Expr, tcr.Env);
-            return r;
+            var r2 = Evaluator.SeqTailCall(lp.Body, nenv);
+            while (r2 is TailCall tcr2) r2 = Evaluator.EvalCore(tcr2.Expr, tcr2.Env);
+            return r2;
         }
         if (procVal is Delegate d)
             return d.DynamicInvoke(argsVal);
@@ -61,6 +69,30 @@ public static class JitRuntime
         }
         env.Data[name] = val;
         return Const.VOID;
+    }
+
+    // Unwrap a TailCall produced by JIT MakeTailCall: (proc 'v1 'v2 ...).
+    // Applies proc to the (already-evaluated, quoted) args directly, avoiding
+    // re-entry into the full interpreter.
+    internal static object? EvalTailCall(TailCall tc)
+    {
+        var expr = tc.Expr;
+        if (expr is not Cell ec) return Evaluator.EvalCore(expr, tc.Env);
+        var proc = ec.Car;
+        var args = new List<object?>();
+        var cur = ec.Cdr;
+        while (cur is Cell ac)
+        {
+            var arg = ac.Car;
+            // MakeTailCall wraps each arg in (quote v)
+            if (arg is Cell qc && qc.Car is Sym qs && qs.Name == "quote")
+                arg = qc.Cdr is Cell qarg ? qarg.Car : arg;
+            args.Add(arg);
+            cur = ac.Cdr;
+        }
+        var r = Invoke(proc, args.ToArray(), tc.Env);
+        while (r is TailCall tcr) r = EvalTailCall(tcr);
+        return r;
     }
 
     public static TailCall MakeTailCall(object? proc, object?[] argsList, Env env)

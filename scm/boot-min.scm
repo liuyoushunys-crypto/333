@@ -216,13 +216,46 @@
 
 (define (sx-expand tmpl bindings)
   (cond
-    ((symbol? tmpl) (let ((p (assq tmpl bindings))) (if p (cdr p) tmpl)))
+    ((symbol? tmpl) (sx-expand-sym tmpl bindings))
     ((not (pair? tmpl)) tmpl)
     ((pair? (cdr tmpl))
      (if (eq? (cadr tmpl) '...)
          (sx-expand-ellipsis (car tmpl) (cddr tmpl) bindings)
          (sx-expand-pair tmpl bindings)))
     (else (sx-expand-pair tmpl bindings))))
+
+(define *sx-mutated-vars* '())
+
+;; Collect symbols that appear as set! targets in a template. These are
+;; excluded from hygiene resolution so their mutation reaches the real binding.
+(define (sx-collect-set-targets tmpl acc)
+  (cond
+    ((not (pair? tmpl)) acc)
+    ((eq? (car tmpl) 'set!)
+     (if (and (pair? (cdr tmpl)) (symbol? (cadr tmpl)))
+         (sx-collect-set-targets (cdr tmpl) (cons (cadr tmpl) acc))
+         (sx-collect-set-targets (cdr tmpl) acc)))
+    (else
+     (sx-collect-set-targets (car tmpl)
+       (sx-collect-set-targets (cdr tmpl) acc)))))
+
+;; Hygiene: a free identifier in the template (not a pattern var) is marked
+;; with (sx-hygiene name); the C# expander resolves it against the macro's
+;; definition environment. Pattern-substituted values are returned untouched
+;; (they are spliced in and must keep the caller's meaning, e.g. the loop
+;; variable in (do-step i (+ i 1))). Data values are inlined as quoted
+;; literals; special forms and procedures/macros are left as callable names.
+;; set! targets are excluded so mutation still reaches the real binding.
+(define (sx-expand-sym tmpl bindings)
+  (let ((p (assq tmpl bindings)))
+    (if p
+        (cdr p)
+        (if (and (not (eq? tmpl '_)) (not (eq? tmpl '...))
+                 (not (memq tmpl *sx-mutated-vars*))
+                 (sx-defined? tmpl (sx-def-env))
+                 (not (procedure? (eval tmpl (sx-def-env)))))
+            (list 'sx-hygiene tmpl)
+            tmpl))))
 
 (define (sx-expand-pair tmpl bindings)
   (cons (sx-expand (car tmpl) bindings)
@@ -291,7 +324,13 @@
         (tmpl (if (pair? rule) (sx-rule-tmpl rule) '()))
         (pat-args (if (pair? pat) (cdr pat) '()))
         (b (sx-match pat-args args lits)))
-    (if b (sx-expand tmpl b) (sx-dispatch args lits (cdr rules))))))
+    (if b
+        (let ((old-mut *sx-mutated-vars*))
+          (set! *sx-mutated-vars* (sx-collect-set-targets tmpl '()))
+          (let ((r (sx-expand tmpl b)))
+            (set! *sx-mutated-vars* old-mut)
+            r))
+        (sx-dispatch args lits (cdr rules))))))
 
 (define (sx-rule-tmpl rule)
   (if (pair? (cdr rule)) (cadr rule) '()))

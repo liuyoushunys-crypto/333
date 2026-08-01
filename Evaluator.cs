@@ -14,6 +14,10 @@ public static class Evaluator
     // JIT compilation guard (prevents reentrant compilation)
     internal static bool IsCompiling = false;
 
+    // Current macro's definition environment, used by the Scheme sx-expand
+    // hygiene resolution (free template identifiers resolve at definition time).
+    internal static Env? CurrentMacroDefEnv;
+
     // Macro expansion helper used by the JIT compiler
     internal static object? MacroExpand(object? expr, Env env, HashSet<object?>? seen = null)
     {
@@ -572,12 +576,20 @@ public static class Evaluator
                 BindParams(mparams, al, nenv);
                 var savedDepth = _expandDepth;
                 _expandDepth = 0;
+                var savedDefEnv = CurrentMacroDefEnv;
+                CurrentMacroDefEnv = it[3] as Env;
                 var r = EvalSeq(mbody, nenv);
                 while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
+                CurrentMacroDefEnv = savedDefEnv;
                 _expandDepth = savedDepth;
-                // if (_expandDepth <= 3)
-                //     Console.Error.WriteLine($"[ExpandMacro] result={Printer.Format(r)}");
-                return (r as SyntaxObject)?.Expr ?? r;
+                var result = (r as SyntaxObject)?.Expr ?? r;
+                // Hygiene: resolve (sx-hygiene name) markers emitted by sx-expand
+                // for free template identifiers. Only these marked identifiers are
+                // resolved in the macro's definition env; pattern-substituted
+                // values are left untouched.
+                if (it[3] is Env defEnv && defEnv is not null)
+                    result = ResolveHygieneMarkers(result, defEnv);
+                return result;
             }
         }
         return null;
@@ -589,6 +601,40 @@ public static class Evaluator
         var cur = seq;
         while (cur is Cell c) { r = EvalCore(c.Car, env); cur = c.Cdr; }
         return r;
+    }
+
+    // Resolve (sx-hygiene name) markers in a macro expansion. The marker names a
+    // free template identifier that must resolve in the macro's definition env.
+    // Data values are inlined as quoted literals; procedures/macros are left as
+    // callable names. Non-marked sub-expressions are returned unchanged.
+    internal static object? ResolveHygieneMarkers(object? expr, Env defEnv)
+    {
+        while (expr is SyntaxObject so) expr = so.Expr;
+        if (expr is Cell c)
+        {
+            if (c.Car is Sym s && s.Name == "sx-hygiene")
+            {
+                var name = c.Cdr is Cell arg && arg.Cdr is Nil && arg.Car is Sym nameSym
+                    ? nameSym.Name
+                    : null;
+                if (name is not null && defEnv.Data.TryGetValue(name, out var v))
+                {
+                    // Inline data values; leave procedures/macros as names.
+                    if (v is System.Runtime.CompilerServices.ITuple it && it.Length >= 2 && it[0] is string t0 && t0 == "macro")
+                        return c.Cdr is Cell cc ? cc.Car : c;
+                    if (v is Delegate or LambdaProc or CompiledLambda or Func<object?[], object?>)
+                        return c.Cdr is Cell cc2 ? cc2.Car : c;
+                    return new Cell(Sym.QUOTE, new Cell(v, Const.NIL));
+                }
+                return c.Cdr is Cell ccc ? ccc.Car : c;
+            }
+            var newCar = ResolveHygieneMarkers(c.Car, defEnv);
+            var newCdr = ResolveHygieneMarkers(c.Cdr, defEnv);
+            if (ReferenceEquals(newCar, c.Car) && ReferenceEquals(newCdr, c.Cdr))
+                return c;
+            return new Cell(newCar, newCdr);
+        }
+        return expr;
     }
 
     public static object?[] EvalArgsToArray(object? args, Env env)
