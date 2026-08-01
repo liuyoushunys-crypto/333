@@ -114,9 +114,14 @@ public static class PrimitiveRegistry
             var x = args[0];
             if (x is Nil) return Const.TRUE;
             if (x is not Cell) return Const.FALSE;
-            object? cur = x;
-            while (cur is Cell c) cur = c.Cdr;
-            return cur is Nil ? Const.TRUE : Const.FALSE;
+            object? slow = x, fast = x;
+            while (fast is Cell fc && fc.Cdr is Cell fcc)
+            {
+                slow = ((Cell)slow!).Cdr;
+                fast = fcc.Cdr;
+                if (ReferenceEquals(slow, fast)) return Const.FALSE;
+            }
+            return fast is Nil ? Const.TRUE : Const.FALSE;
         });
         _b("make-list", args =>
         {

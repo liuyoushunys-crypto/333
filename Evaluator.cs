@@ -19,24 +19,43 @@ public static class Evaluator
     {
         seen ??= [];
         var levelSeen = new HashSet<object?>();
+        // Strip top-level SyntaxObject
+        while (expr is SyntaxObject so)
+            expr = so.Expr;
         while (expr is Cell cell && cell.Car is Sym opSym)
         {
+            // Strip syntax from car for operator lookup
+            var lookupSym = cell.Car;
+            if (lookupSym is SyntaxObject so2)
+                lookupSym = so2.Expr;
             if (levelSeen.Contains(expr) || seen.Contains(expr))
                 break;
             levelSeen.Add(expr);
             seen.Add(expr);
-            var proc = env.LookupSilent(opSym.Name, UnboundSentinel);
+            if (lookupSym is not Sym opSym2)
+                break;
+            var proc = env.LookupSilent(opSym2.Name, UnboundSentinel);
             if (ReferenceEquals(proc, UnboundSentinel))
                 break;
             var expanded = ExpandMacro(proc, cell, cell.Cdr, env);
             if (expanded is null)
                 break;
             expr = expanded;
+            // Strip syntax from expanded form
+            while (expr is SyntaxObject sox)
+                expr = sox.Expr;
         }
         if (expr is Cell c)
         {
             if (c.Car is Sym s && s.Name == "quote")
                 return expr;
+            // Strip syntax from car if needed
+            var carExpr = c.Car;
+            while (carExpr is SyntaxObject so3)
+                carExpr = so3.Expr;
+            // If car was a SyntaxObject wrapping a non-Sym, keep original
+            if (carExpr is not Sym)
+                carExpr = c.Car;
             var childSeen = new HashSet<object?>(seen);
             var newCar = MacroExpand(c.Car, env, childSeen);
             var newCdr = MacroExpand(c.Cdr, env, childSeen);
@@ -68,6 +87,10 @@ public static class Evaluator
         Put(Sym.DM, HDefineMacro);
         Put(Sym.AND, HAnd);
         Put(Sym.OR, HOr);
+        Put(Sym.COND, HCond);
+        Put(Sym.LET, HLet);
+        Put(Sym.LET_STAR, HLetStar);
+        Put(Sym.LETREC, HLetrec);
     }
 
     // ── Special Forms ──
@@ -198,6 +221,147 @@ public static class Evaluator
             return r;
         }
         return Const.FALSE;
+    }
+
+    private static object? HCond(object? args, Env env)
+    {
+        if (args is not Cell a) return Const.VOID;
+        var cur = a;
+        while (cur is Cell c)
+        {
+            if (c.Car is not Cell clause) return Const.VOID;
+            var test = clause.Car;
+            if (test is Sym s && s.Name == "else")
+            {
+                return SeqTailCall(clause.Cdr, env);
+            }
+            // Check for => form: (test => expression)
+            if (clause.Cdr is Cell afterTest && afterTest.Car is Sym arrow && arrow.Name == "=>")
+            {
+                var expr = afterTest.Cdr is Cell e ? e.Car : Const.VOID;
+                var arrowTestVal = Eval(test, env);
+                if (arrowTestVal is Sym t2 && t2 == Const.FALSE)
+                {
+                    cur = (Cell)c.Cdr;
+                    continue;
+                }
+                // Call the procedure with testVal as argument
+                return new TailCall(new Cell(expr, new Cell(arrowTestVal, Const.NIL)), env);
+            }
+            var testVal = Eval(test, env);
+            if (testVal is Sym t && t == Const.FALSE)
+            {
+                cur = (Cell)c.Cdr;
+                continue;
+            }
+            if (clause.Cdr is Nil)
+                return testVal;
+            return SeqTailCall(clause.Cdr, env);
+        }
+        return Const.VOID;
+    }
+
+    private static object? HLet(object? args, Env env)
+    {
+        if (args is not Cell a) throw new Exception("bad let form");
+        var bindings = a.Car;
+        var body = a.Cdr;
+        if (bindings is Sym name && body is Cell)
+        {
+            // Named let: (let name ((var val) ...) body ...)
+            return HLetrec(args, env);
+        }
+        if (bindings is not Cell) throw new Exception("bad let bindings");
+        var vars = new List<string>();
+        var vals = new List<object?>();
+        var cur = bindings;
+        while (cur is Cell bc)
+        {
+            if (bc.Car is not Cell bind || bind.Cdr is Nil)
+                throw new Exception("bad let binding");
+            vars.Add(bind.Car.AsString());
+            vals.Add(Eval(((Cell)bind.Cdr).Car, env));
+            cur = bc.Cdr;
+        }
+        var nenv = new Env(env, vars.Count);
+        for (int i = 0; i < vars.Count; i++)
+            nenv.Data[vars[i]] = vals[i];
+        return SeqTailCall(body, nenv);
+    }
+
+    private static object? HLetStar(object? args, Env env)
+    {
+        if (args is not Cell a) throw new Exception("bad let* form");
+        var bindings = a.Car;
+        var body = a.Cdr;
+        if (bindings is not Cell) throw new Exception("bad let* bindings");
+        var curEnv = env;
+        var cur = bindings;
+        while (cur is Cell bc)
+        {
+            if (bc.Car is not Cell bind || bind.Cdr is Nil)
+                throw new Exception("bad let* binding");
+            var var = bind.Car.AsString();
+            var val = Eval(((Cell)bind.Cdr).Car, curEnv);
+            curEnv = new Env(curEnv) { Data = { [var] = val } };
+            cur = bc.Cdr;
+        }
+        return SeqTailCall(body, curEnv);
+    }
+
+    private static object? HLetrec(object? args, Env env)
+    {
+        if (args is not Cell a) throw new Exception("bad letrec form");
+        var first = a.Car;
+        string? loopName = null;
+        Cell? bindings = null;
+        Cell? body = null;
+        if (first is Sym name)
+        {
+            // Named letrec/let
+            loopName = name.Name;
+            var cdrCell = a.Cdr as Cell;
+            bindings = cdrCell?.Car as Cell;
+            body = cdrCell?.Cdr as Cell;
+        }
+        else
+        {
+            bindings = first as Cell;
+            body = a.Cdr as Cell;
+        }
+        if (bindings is not Cell) throw new Exception("bad letrec bindings");
+        var nenv = new Env(env, 0);
+        // First pass: bind all vars to #f
+        var vars = new List<string>();
+        var cur = bindings;
+        while (cur is Cell bc)
+        {
+            if (bc.Car is not Cell bind || bind.Cdr is Nil)
+                throw new Exception("bad letrec binding");
+            vars.Add(bind.Car.AsString());
+            nenv.Data[bind.Car.AsString()] = Const.FALSE;
+            cur = bc.Cdr as Cell;
+        }
+        // Second pass: evaluate init expressions and update bindings
+        cur = bindings;
+        while (cur is Cell bc)
+        {
+            if (bc.Car is not Cell bind || bind.Cdr is Nil)
+                throw new Exception("bad letrec binding");
+            var var = bind.Car.AsString();
+            var val = Eval(((Cell)bind.Cdr).Car, nenv);
+            nenv.Data[var] = val;
+            cur = bc.Cdr as Cell;
+        }
+        if (loopName is not null)
+        {
+            // Named let: create lambda and bind loopName to it
+            var lambdaBody = new Cell(Sym.BEGIN, body);
+            var lambda = new LambdaProc(vars, lambdaBody, nenv, true, loopName);
+            nenv.Data[loopName] = lambda;
+            return SeqTailCall(body, nenv);
+        }
+        return SeqTailCall(body, nenv);
     }
 
     private static object? HDefineMacro(object? args, Env env)
@@ -393,14 +557,14 @@ public static class Evaluator
             {
                 _expandDepth++;
                 var macroName = (expr.Car as Sym)?.Name ?? "?";
-                if (_expandDepth <= 5)
-                    Console.Error.WriteLine($"[ExpandMacro] depth={_expandDepth} name={macroName} args={Printer.Format(args)}");
-                if (_expandDepth > 200)
-                {
-                    Console.Error.WriteLine($"[ExpandMacro] STACK OVERFLOW GUARD depth={_expandDepth} name={macroName}");
-                    _expandDepth--;
-                    throw new Exception($"syntax-rules: infinite expansion of '{macroName}'");
-                }
+                // if (_expandDepth <= 5)
+                //     Console.Error.WriteLine($"[ExpandMacro] depth={_expandDepth} name={macroName} args={Printer.Format(args)}");
+                // if (_expandDepth > 200)
+                // {
+                //     Console.Error.WriteLine($"[ExpandMacro] STACK OVERFLOW GUARD depth={_expandDepth} name={macroName}");
+                //     _expandDepth--;
+                //     throw new Exception($"syntax-rules: infinite expansion of '{macroName}'");
+                // }
                 var mbody = it[2];
                 var nenv = new Env(env);
                 var al = new List<object?>();
@@ -412,8 +576,8 @@ public static class Evaluator
                 var r = EvalSeq(mbody, nenv);
                 while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
                 _expandDepth = savedDepth;
-                if (_expandDepth <= 3)
-                    Console.Error.WriteLine($"[ExpandMacro] result={Printer.Format(r)}");
+                // if (_expandDepth <= 3)
+                //     Console.Error.WriteLine($"[ExpandMacro] result={Printer.Format(r)}");
                 return (r as SyntaxObject)?.Expr ?? r;
             }
         }

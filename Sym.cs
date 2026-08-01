@@ -43,6 +43,10 @@ public sealed class Sym : IEquatable<Sym>
     public static readonly Sym THE_ENVIRONMENT = Intern("the-environment");
     public static readonly Sym AND = Intern("and");
     public static readonly Sym OR = Intern("or");
+    public static readonly Sym COND = Intern("cond");
+    public static readonly Sym LET = Intern("let");
+    public static readonly Sym LET_STAR = Intern("let*");
+    public static readonly Sym LETREC = Intern("letrec");
     public static readonly Sym USCORE = Intern("_");
     public static readonly Sym VOID_SYM = Intern("if #f #f");
     public static readonly Sym LT = Intern("<>");
