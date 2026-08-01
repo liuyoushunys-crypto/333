@@ -271,7 +271,7 @@ public static class Evaluator
             // Named let: (let name ((var val) ...) body ...)
             return HLetrec(args, env);
         }
-        if (bindings is not Cell) throw new Exception("bad let bindings");
+        if (bindings is not Cell && bindings is not Nil) throw new Exception("bad let bindings");
         var vars = new List<string>();
         var vals = new List<object?>();
         var cur = bindings;
@@ -314,22 +314,23 @@ public static class Evaluator
         if (args is not Cell a) throw new Exception("bad letrec form");
         var first = a.Car;
         string? loopName = null;
-        Cell? bindings = null;
-        Cell? body = null;
+        object? bindings = null;
+        object? body = null;
         if (first is Sym name)
         {
             // Named letrec/let
             loopName = name.Name;
             var cdrCell = a.Cdr as Cell;
-            bindings = cdrCell?.Car as Cell;
-            body = cdrCell?.Cdr as Cell;
+            bindings = cdrCell?.Car;
+            body = cdrCell?.Cdr;
         }
         else
         {
-            bindings = first as Cell;
-            body = a.Cdr as Cell;
+            bindings = first;
+            body = a.Cdr;
         }
-        if (bindings is not Cell) throw new Exception("bad letrec bindings");
+        // bindings may be the empty list — legal (letrec () body...)
+        if (bindings is not Cell && bindings is not Nil) throw new Exception("bad letrec bindings");
         var nenv = new Env(env, 0);
         // First pass: bind all vars to #f
         var vars = new List<string>();
@@ -356,12 +357,10 @@ public static class Evaluator
         if (loopName is not null)
         {
             // Named let: create lambda and bind loopName to it
-            var lambdaBody = new Cell(Sym.BEGIN, body);
-            var lambda = new LambdaProc(vars, lambdaBody, nenv, true, loopName);
+            var lambda = new LambdaProc(vars, body ?? Const.NIL, nenv, true, loopName);
             nenv.Data[loopName] = lambda;
-            return SeqTailCall(body, nenv);
         }
-        return SeqTailCall(body, nenv);
+        return SeqTailCall(body ?? Const.NIL, nenv);
     }
 
     private static object? HDefineMacro(object? args, Env env)
