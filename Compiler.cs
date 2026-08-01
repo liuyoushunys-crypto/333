@@ -10,12 +10,16 @@ namespace Miniscm.Compiler;
 
 class CacheEntry
 {
+    public int Version { get; set; }
     public string? Hash { get; set; }
     public string? Name { get; set; }
     public List<string>? Body { get; set; }
 }
 public static class Compiler
 {
+    // Bump to invalidate stale .mscm_cache entries (e.g. bodies written by
+    // earlier buggy MacroExpand that were not fully expanded).
+    const int CacheVersion = 2;
     static readonly HashSet<string> SkipJitNames =
     [
         "flip",
@@ -25,7 +29,52 @@ public static class Compiler
         "check",
         "test",
         "t-eq",
-        "sx-ellipsis-vars"
+        "qq-append-lists",
+        "qq-build-list",
+        "qq-process-el",
+        "qq-reverse",
+        "qq-reverse-helper",
+        "qq-tail-unquote?",
+        "qq-tail-unsplice?",
+        "qq-unquote?",
+        "qq-unsplice?",
+        "qq-walk",
+        "qq-walk-list",
+        "qq-walk-list-helper",
+        "qq-walk-vector",
+        "qq-walk-vector-helper",
+        "sx-ellipsis-vars",
+        "sx-match",
+        "sx-expand",
+        "sx-pattern-vars",
+        "sx-pattern-vars-loop",
+        "sx-dispatch",
+        "sx-match-pair",
+        "sx-match-sym",
+        "sx-match-ellipsis",
+        "sx-match-ellipsis-finish",
+        "sx-match-ellipsis-loop",
+        "sx-expand-pair",
+        "sx-expand-ellipsis",
+        "sx-expand-ellipsis-novar",
+        "sx-expand-ellipsis-var",
+        "sx-sub-bindings",
+        "sx-sub-bindings-cons",
+        "sx-accum-ellipsis",
+        "sx-ellipsis-vars-helper",
+        "sx-find-list-count",
+        "sx-repeat",
+        "sx-repeat-helper",
+        "sx-lookup",
+        "sx-merge-bindings",
+        "sx-rule-tmpl",
+        "sx-rev-append",
+        "sx-reverse",
+        "sx-set-bindings!",
+        "sx-get-bindings",
+        "sx-with-bindings",
+        "sx-with-syntax",
+        "sx-make-macro-binding",
     ];
     static bool ShouldJit(LambdaProc lp)
     {
@@ -74,7 +123,7 @@ public static class Compiler
                     {
                         var json = File.ReadAllText(cacheFile);
                         var entry = JsonSerializer.Deserialize<CacheEntry>(json);
-                        if (entry?.Hash == bodySrc && entry.Body is not null)
+                        if (entry?.Version == CacheVersion && entry?.Hash == bodySrc && entry.Body is not null)
                         {
                             foreach (var s in entry.Body)
                                 bodyForms.Add(Parser.Read(s));
@@ -96,6 +145,7 @@ public static class Compiler
                     Directory.CreateDirectory(cacheDir);
                     var entry = new CacheEntry
                     {
+                        Version = CacheVersion,
                         Hash = bodySrc,
                         Name = lp.Name,
                         Body = bodyForms.Select(f => Printer.Format(f)).ToList()
@@ -347,11 +397,17 @@ public static class Compiler
             // => ((lambda (param...) body...) val...)
             // which is a normal let with the lambda calling itself
             // Use fixpoint: ((letrec ((name (lambda (params) body...))) name) val...)
-            var lambdaParams = new Cell(paramNames, Const.NIL);
+            object? lambdaParams = Const.NIL;
+            for (int i = paramNames.Count - 1; i >= 0; i--)
+                lambdaParams = new Cell(paramNames[i], lambdaParams);
             var lambda = new Cell(Sym.LAMBDA, new Cell(lambdaParams, bodyExprs));
             var letRecBind = new Cell(new Cell(name, new Cell(lambda, Const.NIL)), Const.NIL);
             var letRecForm = new Cell(Sym.LETREC, new Cell(letRecBind, new Cell(name, Const.NIL)));
-            var app = new Cell(letRecForm, valExprs);
+            // Build arg list as a Cell chain
+            object? valList = Const.NIL;
+            for (int i = valExprs.Count - 1; i >= 0; i--)
+                valList = new Cell(valExprs[i], valList);
+            var app = new Cell(letRecForm, valList);
             return app;
         }
 
@@ -371,9 +427,15 @@ public static class Compiler
             }
             cur2 = bc.Cdr;
         }
-        var paramsCell = new Cell(vars, Const.NIL);
+        // Build params list and arg list as Cell chains
+        object? paramsCell = Const.NIL;
+        for (int i = vars.Count - 1; i >= 0; i--)
+            paramsCell = new Cell(vars[i], paramsCell);
         var lambda2 = new Cell(Sym.LAMBDA, new Cell(paramsCell, body));
-        return new Cell(lambda2, vals);
+        object? argList = Const.NIL;
+        for (int i = vals.Count - 1; i >= 0; i--)
+            argList = new Cell(vals[i], argList);
+        return new Cell(lambda2, argList);
     }
 
     internal static object? ExpandLetStar(Cell? args)
@@ -423,8 +485,14 @@ public static class Compiler
             }
             cur = bc.Cdr;
         }
-        var letBindingsCell = new Cell(letBindings, Const.NIL);
-        var setBody = new Cell(setForms, new Cell(Sym.BEGIN, body));
+        // Build binding list and set! sequence as Cell chains
+        object? letBindingsCell = Const.NIL;
+        for (int i = letBindings.Count - 1; i >= 0; i--)
+            letBindingsCell = new Cell(letBindings[i], letBindingsCell);
+        object? setBodyList = Const.NIL;
+        for (int i = setForms.Count - 1; i >= 0; i--)
+            setBodyList = new Cell(setForms[i], setBodyList);
+        var setBody = new Cell(setBodyList, new Cell(Sym.BEGIN, body));
         return new Cell(Sym.LET, new Cell(letBindingsCell, setBody));
     }
 
