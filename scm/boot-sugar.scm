@@ -226,7 +226,7 @@
 ;;   用法: (check expr expected)
 ;;   示例: (check (+ 1 2) 3)
 ;;   输出: [CHECK PASS] 或 [CHECK FAIL] + 期望/实际值
-(define-syntax check
+(define-syntax check1
   (syntax-rules ()
     ((_ expr expected)
      (let ((actual expr) (exp expected))

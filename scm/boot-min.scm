@@ -74,21 +74,19 @@
 (define (qq-walk-list e env) (qq-walk-list-helper e '() env))
 
 (define (qq-walk-vector-helper cur items env)
-  (cond
-    ((null? cur) (list->vector (qq-reverse items)))
-    (else
-     (let ((el (car cur)))
-       (cond
-         ((qq-unquote? el)
-          (qq-walk-vector-helper (cdr cur) (cons (eval (cadr el) env) items) env))
-         ((qq-unsplice? el)
-          (let ((v (eval (cadr el) env)))
-            (cond
-              ((pair? v)
-               (qq-walk-vector-helper (cdr cur) (qq-append-lists (qq-reverse v) items) env))
-              ((null? v) (qq-walk-vector-helper (cdr cur) items env))
-              (else (qq-walk-vector-helper (cdr cur) (cons v items) env)))))
-         (else (qq-walk-vector-helper (cdr cur) (cons (qq-walk el env) items) env)))))))
+  (if (null? cur) (list->vector (qq-reverse items))
+  (let ((el (car cur)))
+    (cond
+      ((qq-unquote? el)
+      (qq-walk-vector-helper (cdr cur) (cons (eval (cadr el) env) items) env))
+      ((qq-unsplice? el)
+      (let ((v (eval (cadr el) env)))
+        (cond
+          ((pair? v)
+            (qq-walk-vector-helper (cdr cur) (qq-append-lists (qq-reverse v) items) env))
+          ((null? v) (qq-walk-vector-helper (cdr cur) items env))
+          (else (qq-walk-vector-helper (cdr cur) (cons v items) env)))))
+      (else (qq-walk-vector-helper (cdr cur) (cons (qq-walk el env) items) env))))))
 
 (define (qq-walk-vector v env)
   (qq-walk-vector-helper (vector->list v) '() env))
@@ -126,18 +124,18 @@
   (sx-reverse (sx-pattern-vars-loop (list pat) '())))
 
 (define (sx-pattern-vars-loop stack acc)
-  (cond
-    ((null? stack) acc)
-    (else
-     (let ((curr (car stack)))
-       (cond
-         ((symbol? curr)
-          (cond
-            ((eqv? curr '_)   (sx-pattern-vars-loop (cdr stack) acc))
-            ((eqv? curr '...) (sx-pattern-vars-loop (cdr stack) acc))
-            (else             (sx-pattern-vars-loop (cdr stack) (cons curr acc)))))
-         ((pair? curr)        (sx-pattern-vars-loop (cons (car curr) (cons (cdr curr) (cdr stack))) acc))
-         (else                (sx-pattern-vars-loop (cdr stack) acc)))))))
+  (if (null? stack)
+      acc
+      (let ((curr (car stack)))
+        (cond
+          ((symbol? curr)
+           (cond
+             ((eqv? curr '_)   (sx-pattern-vars-loop (cdr stack) acc))
+             ((eqv? curr '...) (sx-pattern-vars-loop (cdr stack) acc))
+             (else             (sx-pattern-vars-loop (cdr stack) (cons curr acc)))))
+          ((pair? curr)
+           (sx-pattern-vars-loop (cons (car curr) (cons (cdr curr) (cdr stack))) acc))
+          (else (sx-pattern-vars-loop (cdr stack) acc))))))
 
 (define (sx-merge-vars a b)
   (cond
@@ -147,14 +145,11 @@
 
 ;; 将 ellipsis 变量累积为列表, 合并进 base 绑定
 (define (sx-accum-ellipsis vars groups base)
-  (cond
-    ((null? vars) base)
-    (else
-     (let ((v (car vars))
-           (vals (map (lambda (g) (sx-lookup (car vars) g)) groups)))
-       (sx-merge-bindings
-         (cons (cons v (sx-rev-append vals '())) '())
-         (sx-accum-ellipsis (cdr vars) groups base))))))
+  (if (null? vars) base
+  (let ((v (car vars)) (vals (map (lambda (g) (sx-lookup (car vars) g)) groups)))
+    (sx-merge-bindings
+      (cons (cons v (sx-rev-append vals '())) '())
+      (sx-accum-ellipsis (cdr vars) groups base)))))
 
 ;; ── 模式匹配: 镜像 C# PatternMatcher.Match ──
 
@@ -196,29 +191,24 @@
   (let ((in (car res))
         (groups (cdr res))
         (evars (sx-pattern-vars prefix)))
-    (cond
-      ((null? rest-pat)
-       (if (null? in) (sx-accum-ellipsis evars groups '()) #f))
-      (else
-       (let ((rb (sx-match rest-pat in lits)))
-         (if rb (sx-accum-ellipsis evars groups rb) #f))))))
+  (if (null? rest-pat) (if (null? in) (sx-accum-ellipsis evars groups '()) #f)
+  (let ((rb (sx-match rest-pat in lits)))
+  (if rb (sx-accum-ellipsis evars groups rb) #f)))))
 
 ;; while 循环
 (define (sx-match-ellipsis-loop prefix rest-pat in lits groups)
-  (cond
-    ((not (pair? in)) (cons in groups))
-    (else
-     (let ((b (sx-match prefix (car in) lits)))
-       (if b
-           (cond
-             ((null? rest-pat)
-              (sx-match-ellipsis-loop prefix rest-pat (cdr in) lits (cons b groups)))
-             ((sx-match rest-pat in lits)
-              (cons in groups))
-             (else
-              (sx-match-ellipsis-loop prefix rest-pat (cdr in) lits
-                (cons b groups))))
-           (cons in groups))))))
+  (if (not (pair? in)) (cons in groups)
+  (let ((b (sx-match prefix (car in) lits)))
+    (if b
+        (cond
+          ((null? rest-pat)
+          (sx-match-ellipsis-loop prefix rest-pat (cdr in) lits (cons b groups)))
+          ((sx-match rest-pat in lits)
+          (cons in groups))
+          (else
+          (sx-match-ellipsis-loop prefix rest-pat (cdr in) lits
+            (cons b groups))))
+        (cons in groups)))))
 
 ;; ── 模板展开: 镜像 C# TemplateExpander.ExpandTmpl ──
 
@@ -258,48 +248,40 @@
                     (sx-expand rest bindings)))
 
 (define (sx-repeat-helper sub rest bindings evars i res)
-  (cond
-    ((< i 0) res)
-    (else
-     (sx-repeat-helper sub rest bindings evars (- i 1)
-                       (cons (if evars
-                                 (sx-expand sub (sx-sub-bindings evars bindings i))
-                                 (sx-expand sub bindings))
-                             res)))))
+  (if (< i 0) res
+  (sx-repeat-helper sub rest bindings evars (- i 1)
+                    (cons (if evars
+                              (sx-expand sub (sx-sub-bindings evars bindings i))
+                              (sx-expand sub bindings))
+                          res))))
 
 ;; 找到子模板中绑定为列表的变量
 (define (sx-ellipsis-vars sub bindings)
   (sx-reverse (sx-ellipsis-vars-helper (sx-pattern-vars sub) bindings '())))
 
 (define (sx-ellipsis-vars-helper vs bindings acc)
-  (cond
-    ((null? vs) acc)
-    (else
-     (let ((p (assq (car vs) bindings)))
-       (if p
-           (cond
-             ((pair? (cdr p))
-              (sx-ellipsis-vars-helper (cdr vs) bindings (cons (car vs) acc)))
-             ((null? (cdr p))
-              (sx-ellipsis-vars-helper (cdr vs) bindings (cons (car vs) acc)))
-             (else (sx-ellipsis-vars-helper (cdr vs) bindings acc)))
-           (sx-ellipsis-vars-helper (cdr vs) bindings acc))))))
+  (if (null? vs) acc
+  (let ((p (assq (car vs) bindings)))
+    (if p
+        (cond
+          ((pair? (cdr p))
+          (sx-ellipsis-vars-helper (cdr vs) bindings (cons (car vs) acc)))
+          ((null? (cdr p))
+          (sx-ellipsis-vars-helper (cdr vs) bindings (cons (car vs) acc)))
+          (else (sx-ellipsis-vars-helper (cdr vs) bindings acc)))
+        (sx-ellipsis-vars-helper (cdr vs) bindings acc)))))
 
 ;; 找到任一列表绑定的长度
 (define (sx-find-list-count bindings)
-  (cond
-    ((null? bindings) 0)
-    (else
+  (if (null? bindings) 0
      (let ((v (cdar bindings)))
-       (if (pair? v) (length v) (sx-find-list-count (cdr bindings)))))))
+       (if (pair? v) (length v) (sx-find-list-count (cdr bindings))))))
 
 ;; 构造第 i 个子绑定
 (define (sx-sub-bindings evars bindings i)
-  (cond
-    ((null? evars) '())
-    (else
+  (if (null? evars) '()
      (cons (sx-sub-bindings-cons (car evars) bindings i)
-           (sx-sub-bindings (cdr evars) bindings i)))))
+           (sx-sub-bindings (cdr evars) bindings i))))
 
 (define (sx-sub-bindings-cons v bindings i)
   (let ((lst (cdr (assq v bindings))))
@@ -308,17 +290,13 @@
 ;; ── 顶层展开: 逐规则匹配, 成功则展开模板 ──
 
 (define (sx-dispatch args lits rules)
-  (cond
-    ((null? rules) (error "syntax-rules: no match"))
-    (else
-     (let* ((rule (car rules))
-            (pat (if (pair? rule) (car rule) '()))
-            (tmpl (if (pair? rule) (sx-rule-tmpl rule) '()))
-            (pat-args (if (pair? pat) (cdr pat) '()))
-            (b (sx-match pat-args args lits)))
-       (if b
-           (sx-expand tmpl b)
-           (sx-dispatch args lits (cdr rules)))))))
+  (if (null? rules) (error "syntax-rules: no match")
+  (let* ((rule (car rules))
+        (pat (if (pair? rule) (car rule) '()))
+        (tmpl (if (pair? rule) (sx-rule-tmpl rule) '()))
+        (pat-args (if (pair? pat) (cdr pat) '()))
+        (b (sx-match pat-args args lits)))
+    (if b (sx-expand tmpl b) (sx-dispatch args lits (cdr rules))))))
 
 (define (sx-rule-tmpl rule)
   (if (pair? (cdr rule)) (cadr rule) '()))
@@ -334,6 +312,7 @@
 
 ;; 在 b 下求值 thunk, 结束后恢复原绑定
 (define (sx-with-bindings b thunk)
+  (display "sx-with-bindings")
   (let ((old *sx-bindings*))
     (sx-set-bindings! b)
     (let ((r (thunk)))
@@ -355,6 +334,7 @@
   (list 'sx-gen-temps lst))
 
 (define (sx-gen-temps lst)
+  (display "sx-gen-temps")
   (letrec ((loop (lambda (n acc) (if (= n 0) acc (loop (- n 1) (cons (sx-gensym) acc)))))
     (loop (length lst) '()))))
 
@@ -368,6 +348,7 @@
           (list 'quote clauses))))
 
 (define (sx-syntax-case expr lits clauses)
+  (display "sx-syntax-case")
   (let* ((datum expr)
          (cl (car clauses))
          (rest-cl (cdr cl))
@@ -416,14 +397,12 @@
     (loop pairs '())))
 
 (define (sx-eval-body body)
-  (cond
-    ((null? body) (void))
-    (else
+  (if (null? body) (void)
      (letrec ((loop (lambda (bs last)
                        (cond
                          ((null? bs) last)
                          (else (loop (cdr bs) (eval (car bs)))))))
-       (loop body #f))))))
+       (loop body #f)))))
 
 
 ;; ── let-syntax / letrec-syntax ──
@@ -442,18 +421,16 @@
 (define (sx-make-macro-binding binding)
   (let ((name (car binding))
         (trans (cadr binding)))
-    (cond
-      ((and (pair? trans) (eq? (car trans) 'syntax-rules))
+    (if (and (pair? trans) (eq? (car trans) 'syntax-rules))
        (let ((lits (if (pair? (cdr trans)) (cadr trans) '()))
              (rules (cddr trans)))
          (list 'define-macro
                (cons name 'args)
-               (list 'sx-dispatch 'args (list 'quote lits) (list 'quote rules)))))
-      (else
+               (list 'sx-dispatch 'args (list 'quote lits) (list 'quote rules))))
        (list 'define-macro
              (cons name 'args)
              (list (cons 'lambda (cdr trans))
-                   (list 'cons (list 'quote name) 'args)))))))
+                   (list 'cons (list 'quote name) 'args))))))
 
 ;; ════════════════════════════════════════════════════════════════
 ;; Phase 4: define-syntax (define-macro)

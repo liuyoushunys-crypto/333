@@ -24,7 +24,49 @@ public static class Compiler
         "identity",
         "check",
         "test",
-        "t-eq"
+        "t-eq",
+        "sx-dispatch",
+        "sx-match",
+        "sx-match-pair",
+        "sx-match-ellipsis",
+        "sx-match-ellipsis-loop",
+        "sx-match-ellipsis-finish",
+        "sx-match-sym",
+        "sx-pattern-vars",
+        "sx-pattern-vars-loop",
+        "sx-expand",
+        "sx-expand-pair",
+        "sx-expand-ellipsis",
+        "sx-expand-ellipsis-novar",
+        "sx-expand-ellipsis-var",
+        "sx-accum-ellipsis",
+        "sx-lookup",
+        "sx-merge-bindings",
+        "sx-ellipsis-vars",
+        "sx-ellipsis-vars-helper",
+        "sx-find-list-count",
+        "sx-sub-bindings",
+        "sx-sub-bindings-cons",
+        "sx-rule-tmpl",
+        "sx-repeat",
+        "sx-repeat-helper",
+        "sx-rev-append",
+        "sx-reverse",
+        "sx-make-macro-binding",
+        "qq-walk",
+        "qq-walk-list",
+        "qq-walk-list-helper",
+        "qq-walk-vector",
+        "qq-walk-vector-helper",
+        "qq-process-el",
+        "qq-build-list",
+        "qq-reverse",
+        "qq-reverse-helper",
+        "qq-append-lists",
+        "qq-unquote?",
+        "qq-unsplice?",
+        "qq-tail-unquote?",
+        "qq-tail-unsplice?"
     ];
     static bool ShouldJit(LambdaProc lp)
     {
@@ -424,7 +466,7 @@ public static class Compiler
         }
         var letBindingsCell = new Cell(letBindings, Const.NIL);
         var setBody = new Cell(setForms, new Cell(Sym.BEGIN, body));
-        return new Cell(Sym.LET, new Cell(letBindingsCell, Const.NIL));
+        return new Cell(Sym.LET, new Cell(letBindingsCell, setBody));
     }
 
     internal static (List<string> Params, bool HasRest) ParseParamList(object? cell)
