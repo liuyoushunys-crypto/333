@@ -35,6 +35,8 @@ public static class Evaluator
         }
         if (expr is Cell c)
         {
+            if (c.Car is Sym s && s.Name == "quote")
+                return expr;
             var childSeen = new HashSet<object?>(seen);
             var newCar = MacroExpand(c.Car, env, childSeen);
             var newCdr = MacroExpand(c.Cdr, env, childSeen);
@@ -64,6 +66,8 @@ public static class Evaluator
         Put(Sym.UNSPLICE, HUnquote);
         Put(Sym.USYNTAX, HUnquote);
         Put(Sym.DM, HDefineMacro);
+        Put(Sym.AND, HAnd);
+        Put(Sym.OR, HOr);
     }
 
     // ── Special Forms ──
@@ -158,6 +162,42 @@ public static class Evaluator
             }
         }
         throw new Exception($"set!: invalid place: {place}");
+    }
+
+    private static object? HAnd(object? args, Env env)
+    {
+        if (args is not Cell a) return Const.TRUE;
+        var last = a;
+        while (last is Cell cc)
+        {
+            if (cc.Cdr is Nil)
+            {
+                var result = Eval(cc.Car, env);
+                if (result is Sym s && s == Const.FALSE) return Const.FALSE;
+                return result;
+            }
+            var r = Eval(cc.Car, env);
+            if (r is Sym s2 && s2 == Const.FALSE) return Const.FALSE;
+            last = cc.Cdr as Cell ?? a;
+        }
+        return Const.TRUE;
+    }
+
+    private static object? HOr(object? args, Env env)
+    {
+        if (args is not Cell a) return Const.FALSE;
+        var last = a;
+        while (last is Cell cc)
+        {
+            if (cc.Cdr is Nil)
+            {
+                return new TailCall(cc.Car, env);
+            }
+            var r = Eval(cc.Car, env);
+            if (r is Sym s && s == Const.FALSE) { last = cc.Cdr as Cell ?? a; continue; }
+            return r;
+        }
+        return Const.FALSE;
     }
 
     private static object? HDefineMacro(object? args, Env env)
@@ -343,6 +383,7 @@ public static class Evaluator
         }
     }
 
+    private static int _expandDepth = 0;
     private static object? ExpandMacro(object? proc, Cell expr, object? args, Env env)
     {
         if (proc is System.Runtime.CompilerServices.ITuple it && it.Length >= 2 && it[0] is string p0)
@@ -350,16 +391,29 @@ public static class Evaluator
             if (p0 == "macro" && it.Length >= 5 && it[1] is List<string> mparams
                 && it[3] is Env)
             {
+                _expandDepth++;
+                var macroName = (expr.Car as Sym)?.Name ?? "?";
+                if (_expandDepth <= 5)
+                    Console.Error.WriteLine($"[ExpandMacro] depth={_expandDepth} name={macroName} args={Printer.Format(args)}");
+                if (_expandDepth > 200)
+                {
+                    Console.Error.WriteLine($"[ExpandMacro] STACK OVERFLOW GUARD depth={_expandDepth} name={macroName}");
+                    _expandDepth--;
+                    throw new Exception($"syntax-rules: infinite expansion of '{macroName}'");
+                }
                 var mbody = it[2];
-                // 以调用点 env 为父环境, 使宏体内的 the-environment 能访问
-                // 调用方词法环境 (如 lambda 局部变量), 供 quasiquote 的 unquote 求值。
                 var nenv = new Env(env);
                 var al = new List<object?>();
                 var cur = args;
                 while (cur is Cell c) { al.Add(c.Car); cur = c.Cdr; }
                 BindParams(mparams, al, nenv);
+                var savedDepth = _expandDepth;
+                _expandDepth = 0;
                 var r = EvalSeq(mbody, nenv);
                 while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
+                _expandDepth = savedDepth;
+                if (_expandDepth <= 3)
+                    Console.Error.WriteLine($"[ExpandMacro] result={Printer.Format(r)}");
                 return (r as SyntaxObject)?.Expr ?? r;
             }
         }

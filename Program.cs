@@ -16,7 +16,6 @@ public class Program
         var baseDir = AppDomain.CurrentDomain.BaseDirectory;
         var projectDir = Path.GetFullPath(Path.Combine(baseDir, "..", "..", ".."));
         var scmDir = Path.Combine(projectDir, "scm");
-        var scmRoot = Path.Combine(projectDir, "..", "miniscm", "scm");
 
         var _libs = new[] {
             "boot-min.scm", "boot-core.scm", "boot-sugar.scm",
@@ -26,13 +25,11 @@ public class Program
             "data-structures-ext.scm", "srfi-14-char-set.scm",
             "generators.scm", "misc.scm", "fill-gaps.scm"
         };
-        var scmPaths = new[] { scmRoot, scmDir };
-        var scmDir2 = scmPaths.FirstOrDefault(Directory.Exists);
-        if (scmDir2 is not null)
+        if (Directory.Exists(scmDir))
         {
             foreach (var lib in _libs)
             {
-                var path = Path.Combine(scmDir2, lib);
+                var path = Path.Combine(scmDir, lib);
                 if (!File.Exists(path)) continue;
                 try
                 {

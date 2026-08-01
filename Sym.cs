@@ -41,6 +41,8 @@ public sealed class Sym : IEquatable<Sym>
     public static readonly Sym ARGS = Intern("args");
     public static readonly Sym SETF = Intern("set!-form");
     public static readonly Sym THE_ENVIRONMENT = Intern("the-environment");
+    public static readonly Sym AND = Intern("and");
+    public static readonly Sym OR = Intern("or");
     public static readonly Sym USCORE = Intern("_");
     public static readonly Sym VOID_SYM = Intern("if #f #f");
     public static readonly Sym LT = Intern("<>");

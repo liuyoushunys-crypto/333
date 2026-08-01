@@ -4,7 +4,7 @@
 ;; 目标: 仅提供实现 define-syntax 所需的最小基础设施。
 ;;   Phase 0 — 基础工具 (quasiquote 需要)
 ;;   Phase 1 — quasiquote (define-macro)
-;;   Phase 2 — 基础宏 (define-macro): and/or/cond/let/let*/letrec/when/unless
+;;   Phase 2 — (removed: 基础宏全部用 if/lambda 替换)
 ;;   Phase 3 — define-syntax 基础设施 (syntax-rules 模式匹配 + 模板展开)
 ;;   Phase 4 — define-syntax (define-macro, 生成 define-macro)
 ;; 依赖: 仅使用 C# 特殊形式 (quote/if/lambda/begin/define/set!/define-macro)
@@ -32,16 +32,16 @@
   (if (null? items) tail (qq-build-list (cdr items) (cons (car items) tail))))
 
 (define (qq-unquote? x)
-  (sx-and2 (pair? x) (eq? (car x) 'unquote)))
+  (if (pair? x) (eq? (car x) 'unquote) #f))
 
 (define (qq-unsplice? x)
-  (sx-and2 (pair? x) (eq? (car x) 'unquote-splicing)))
+  (if (pair? x) (eq? (car x) 'unquote-splicing) #f))
 
 (define (qq-tail-unquote? tail)
-  (sx-and2 (pair? tail) (eq? (car tail) 'unquote)))
+  (if (pair? tail) (eq? (car tail) 'unquote) #f))
 
 (define (qq-tail-unsplice? tail)
-  (sx-and2 (pair? tail) (eq? (car tail) 'unquote-splicing)))
+  (if (pair? tail) (eq? (car tail) 'unquote-splicing) #f))
 
 ;; ── quasiquote 展开器 (镜像 C# Evaluator.QQ, 接受调用方词法环境 env) ──
 
@@ -64,28 +64,29 @@
               (cons (qq-walk el env) items)))))
 
 (define (qq-walk-list-helper cur items env)
-  (sx-cond
-    ((null? cur)
-     (qq-reverse items))
-    ((pair? cur)
-     (sx-let ((new-items (qq-process-el (car cur) items env)))
-       (sx-let ((tail (cdr cur)))
-         (sx-cond
-           ((qq-tail-unquote? tail)
-            (sx-let ((v (eval (cadr tail) env)))
-              (qq-build-list (qq-reverse new-items) v)))
-           ((qq-tail-unsplice? tail)
-            (sx-let ((v (eval (cadr tail) env)))
-              (qq-walk-list-helper tail
-                (sx-cond
-                  ((pair? v) (qq-append-lists (qq-reverse v) new-items))
-                  ((null? v) new-items)
-                  (else (cons v new-items)))
-                env)))
-           (else
-            (qq-walk-list-helper tail new-items env))))))
-    (else
-     (qq-build-list (qq-reverse items) cur))))
+  (if (null? cur)
+      (qq-reverse items)
+      (if (pair? cur)
+          ((lambda (new-items)
+             ((lambda (tail)
+                (if (qq-tail-unquote? tail)
+                    ((lambda (v)
+                       (qq-build-list (qq-reverse new-items) v))
+                     (eval (cadr tail) env))
+                    (if (qq-tail-unsplice? tail)
+                        ((lambda (v)
+                           (qq-walk-list-helper tail
+                             (if (pair? v)
+                                 (qq-append-lists (qq-reverse v) new-items)
+                                 (if (null? v)
+                                     new-items
+                                     (cons v new-items)))
+                             env))
+                         (eval (cadr tail) env))
+                        (qq-walk-list-helper tail new-items env))))
+              (cdr cur)))
+           (qq-process-el (car cur) items env)))
+          (qq-build-list (qq-reverse items) cur)))
 
 (define (qq-walk-list e env)
   (qq-walk-list-helper e '() env))
@@ -93,118 +94,37 @@
 (define (qq-walk-vector-helper cur items env)
   (if (null? cur)
       (list->vector (qq-reverse items))
-      (sx-let ((el (car cur)))
-        (sx-cond
-          ((qq-unquote? el)
-           (qq-walk-vector-helper (cdr cur) (cons (eval (cadr el) env) items) env))
-          ((qq-unsplice? el)
-           (sx-let ((v (eval (cadr el) env)))
-             (sx-cond
-               ((pair? v)
-                (qq-walk-vector-helper (cdr cur)
-                  (qq-append-lists (qq-reverse v) items) env))
-               ((null? v)
-                (qq-walk-vector-helper (cdr cur) items env))
-               (else
-                (qq-walk-vector-helper (cdr cur) (cons v items) env)))))
-          (else
-           (qq-walk-vector-helper (cdr cur) (cons (qq-walk el env) items) env))))))
+      ((lambda (el)
+         (if (qq-unquote? el)
+             (qq-walk-vector-helper (cdr cur) (cons (eval (cadr el) env) items) env)
+             (if (qq-unsplice? el)
+                 ((lambda (v)
+                    (if (pair? v)
+                        (qq-walk-vector-helper (cdr cur)
+                          (qq-append-lists (qq-reverse v) items) env)
+                        (if (null? v)
+                            (qq-walk-vector-helper (cdr cur) items env)
+                            (qq-walk-vector-helper (cdr cur) (cons v items) env))))
+                  (eval (cadr el) env))
+                 (qq-walk-vector-helper (cdr cur) (cons (qq-walk el env) items) env))))
+       (car cur))))
 
 (define (qq-walk-vector v env)
   (qq-walk-vector-helper (vector->list v) '() env))
 
 (define (qq-walk e env)
-  (sx-cond
-    ((pair? e) (qq-walk-list e env))
-    ((vector? e) (qq-walk-vector e env))
-    (else e)))
+  (if (pair? e) (qq-walk-list e env)
+      (if (vector? e) (qq-walk-vector e env)
+          e)))
 
 ;; quasiquote 宏: 用 the-environment 在调用方词法环境求值 unquote,
 ;; 展开结果用 quote 包装防止再次求值。
 (define-macro (quasiquote e)
   (list 'quote (qq-walk e (the-environment))))
 
-;; ── Phase 2: 基础宏 (define-macro) ──
-
-;; 固定二元惰性布尔宏: sx-* 函数体用, 避免可变参数宏递归展开干扰 JIT,
-;; 同时保持短路求值 (与标准 and/or 一致)。
-(define-macro (sx-and2 a b)
-  (list 'if a b '#f))
-
-(define-macro (sx-or2 a b)
-  (list 'if a a b))
-
-(define-macro (sx-when test . body)
-  (list 'if test (cons 'begin body) '#f))
-
-(define-macro (sx-unless test . body)
-  (list 'if (list 'not test) (cons 'begin body) '#f))
-
-(define-macro (sx-let . args)
-  (if (sx-and2 (pair? args) (symbol? (car args)))
-      ((lambda (name rest)
-         ((lambda (bindings body)
-            (cons (list 'sx-letrec
-                        (list (list name (cons 'lambda (cons (map car bindings) body))))
-                        name)
-                  (map cadr bindings)))
-          (car rest) (cdr rest)))
-       (car args) (cdr args))
-      ((lambda (bindings body)
-         (cons (cons 'lambda (cons (map car bindings) body))
-               (map cadr bindings)))
-       (car args) (cdr args))))
-
-(define-macro (sx-let* . args)
-  ((lambda (bindings body)
-     ((lambda (loop)
-        (loop loop bindings body))
-      (lambda (loop bs bd)
-        (if (null? bs)
-            (cons 'begin bd)
-            ((lambda (b)
-               (list 'sx-let (list b) (loop loop (cdr bs) bd)))
-             (car bs))))))
-   (car args) (cdr args)))
-
-(define-macro (sx-letrec . args)
-  ((lambda (bindings body)
-     ((lambda (vars vals)
-        (cons 'begin
-              (append
-                (list (list 'sx-let (map (lambda (v) (list v '#f)) vars) '()))
-                (map (lambda (v val) (list 'set! v val)) vars vals)
-                (list (cons 'sx-let (cons '() body))))))
-      (map car bindings) (map cadr bindings)))
-   (car args) (cdr args)))
-
-(define-macro (sx-cond . clauses)
-  ((lambda (loop)
-     (loop loop clauses))
-   (lambda (loop cls)
-     (if (null? cls)
-         '#f
-         ((lambda (cl)
-            (if (eqv? (car cl) 'else)
-                (cons 'begin (cdr cl))
-                (if (sx-and2 (sx-and2 (pair? cl) (pair? (cdr cl))) (eqv? (cadr cl) '=>))
-                    ((lambda (test expr rest)
-                       (list 'sx-let (list (list 'temp test))
-                             (list 'if 'temp
-                                   (list expr 'temp)
-                                   (loop loop rest))))
-                     (car cl) (caddr cl) (cdr cls))
-                    (if (null? (cdr cl))
-                        ((lambda (test rest)
-                           (list 'sx-let (list (list 'temp test))
-                                 (list 'if 'temp 'temp (loop loop rest))))
-                         (car cl) (cdr cls))
-                        ((lambda (test results rest)
-                           (list 'if test
-                                 (cons 'begin results)
-                                 (loop loop rest)))
-                         (car cl) (cdr cl) (cdr cls))))))
-          (car cls))))))
+;; ── Phase 2: (removed — all macros replaced by if/lambda inline) ──
+;; sx-and2, sx-or2, sx-when, sx-unless, sx-let, sx-let*, sx-letrec, sx-cond
+;; 全部用 plain if/lambda/begin 替换, 避免 define-macro 互相递归展开。
 
 ;; ════════════════════════════════════════════════════════════════
 ;; Phase 3: define-syntax 基础设施
@@ -226,8 +146,6 @@
   (sx-rev-append l '()))
 
 ;; 收集模式中的变量 (排除 _ 和 ...), 镜像 C# GetPatternVars
-;; 收集模式中的变量 (排除 _ 和 ...), 镜像 C# GetPatternVars。
-;; C# 用显式栈迭代遍历, 这里用辅助函数模拟栈 (纯 if, 无宏, JIT 友好)。
 (define (sx-pattern-vars pat)
   (sx-reverse (sx-pattern-vars-loop (list pat) '())))
 
@@ -242,7 +160,6 @@
                      (sx-pattern-vars-loop (cdr stack) acc)
                      (sx-pattern-vars-loop (cdr stack) (cons curr acc))))
              (if (pair? curr)
-                 ;; C#: stack.Add(c.Cdr); stack.Add(c.Car);  (LIFO, car 先处理)
                  (sx-pattern-vars-loop (cons (car curr) (cons (cdr curr) (cdr stack))) acc)
                  (sx-pattern-vars-loop (cdr stack) acc))))
        (car stack))))
@@ -467,11 +384,13 @@
 
 ;; 在 b 下求值 thunk, 结束后恢复原绑定
 (define (sx-with-bindings b thunk)
-  (sx-let ((old *sx-bindings*))
-    (sx-set-bindings! b)
-    (sx-let ((r (thunk)))
-      (sx-set-bindings! old)
-      r)))
+  ((lambda (old)
+     (sx-set-bindings! b)
+     ((lambda (r)
+        (sx-set-bindings! old)
+        r)
+      (thunk)))
+   *sx-bindings*))
 
 ;; gensym: 用计数器 + string->symbol 生成唯一符号 (对应 C# GensymCounter)
 (define *sx-gensym-counter* 0)
@@ -490,39 +409,45 @@
   (list 'sx-gen-temps lst))
 
 (define (sx-gen-temps lst)
-  (sx-let loop ((n (length lst)) (acc '()))
-    (if (= n 0)
-        acc
-        (loop (- n 1) (cons (sx-gensym) acc)))))
+  ((lambda (loop) (loop loop (length lst) '()))
+   (lambda (loop n acc)
+     (if (= n 0)
+         acc
+         (loop loop (- n 1) (cons (sx-gensym) acc))))))
 
 ;; ── syntax-case: (syntax-case expr (lits...) clause ...) ──
 ;; clause: (pat tmpl) 或 (pat fender tmpl)
 ;; 镜像 C# HSyntaxCase: 求值 expr, 逐子句匹配, fender 过滤, 展开模板。
 
 (define-macro (syntax-case . args)
-  (sx-let ((expr (car args))
-        (lits (cadr args))
-        (clauses (cddr args)))
-    (list 'sx-syntax-case expr
-          (list 'quote lits)
-          (list 'quote clauses))))
+  ((lambda (expr lits clauses)
+     (list 'sx-syntax-case expr
+           (list 'quote lits)
+           (list 'quote clauses)))
+   (car args) (cadr args) (cddr args)))
 
 (define (sx-syntax-case expr lits clauses)
-  (sx-let ((datum expr))
-    (if (null? clauses)
-        (error "syntax-case: no match")
-        (sx-let* ((cl (car clauses))
-               (pat (car cl))
-               (rest-cl (cdr cl))
-               (has-fender (sx-and2 (pair? rest-cl) (pair? (cdr rest-cl))))
-               (fender (if has-fender (car rest-cl) #f))
-               (tmpl (if has-fender (cadr rest-cl) (car rest-cl)))
-               (b (sx-match pat datum lits)))
-          (if b
-              (if (sx-or2 (not has-fender) (sx-check-fender fender b))
-                  (sx-eval-tmpl tmpl b)
-                  (sx-syntax-case datum lits (cdr clauses)))
-              (sx-syntax-case datum lits (cdr clauses)))))))
+  ((lambda (datum)
+     (if (null? clauses)
+         (error "syntax-case: no match")
+         ((lambda (cl)
+            ((lambda (pat rest-cl)
+               ((lambda (has-fender)
+                  ((lambda (fender tmpl)
+                     ((lambda (b)
+                        (if b
+                            (if (or (not has-fender) (sx-check-fender fender b))
+                                (sx-eval-tmpl tmpl b)
+                                (sx-syntax-case datum lits (cdr clauses)))
+                            (sx-syntax-case datum lits (cdr clauses))))
+                      (sx-match pat datum lits)))
+                   (if has-fender (car rest-cl) #f)
+                   (if has-fender (cadr rest-cl) (car rest-cl))))
+                (if (pair? rest-cl) (pair? (cdr rest-cl)) #f)))
+             (car cl)
+             (cdr cl)))
+          (car clauses)))))
+   expr)
 
 ;; 求值 fender, 为假则换下一子句
 (define (sx-check-fender fender b)
@@ -536,34 +461,39 @@
 ;; 镜像 C# HWithSyntax: 求值 expr, 匹配 pat, 绑定模式变量, 求值 body。
 
 (define-macro (with-syntax . args)
-  (sx-let ((bindings (car args))
-        (body (cdr args)))
-    (list 'sx-with-syntax
-          (cons 'list
-                (map (lambda (b) (list 'list (list 'quote (car b)) (cadr b)))
-                     bindings))
-          (list 'quote body))))
+  ((lambda (bindings body)
+     (list 'sx-with-syntax
+           (cons 'list
+                 (map (lambda (b) (list 'list (list 'quote (car b)) (cadr b)))
+                      bindings))
+           (list 'quote body)))
+   (car args) (cdr args)))
 
 (define (sx-with-syntax pairs body)
-  (sx-let loop ((ps pairs) (acc '()))
-    (if (null? ps)
-        (sx-with-bindings acc (lambda () (sx-eval-body body)))
-        (sx-let* ((p (car ps))
-               (pat (car p))
-               (val (cadr p))
-               (b (sx-match pat val '())))
-          (if b
-              (loop (cdr ps) (sx-merge-bindings acc b))
-              (error "with-syntax: no match"))))))
+  ((lambda (loop) (loop loop pairs '()))
+   (lambda (loop ps acc)
+     (if (null? ps)
+         (sx-with-bindings acc (lambda () (sx-eval-body body)))
+         ((lambda (p)
+            ((lambda (pat val)
+               ((lambda (b)
+                  (if b
+                      (loop loop (cdr ps) (sx-merge-bindings acc b))
+                      (error "with-syntax: no match")))
+                (sx-match pat val '())))
+             (car p)
+             (cadr p)))
+          (car ps))))))
 
 ;; 顺序求值 body 各形式, 返回最后一个 (对应 C# SeqTailCall)
 (define (sx-eval-body body)
   (if (null? body)
       (void)
-      (sx-let loop ((bs body) (last #f))
-        (if (null? bs)
-            last
-            (loop (cdr bs) (eval (car bs)))))))
+      ((lambda (loop) (loop loop body #f))
+       (lambda (loop bs last)
+         (if (null? bs)
+             last
+             (loop loop (cdr bs) (eval (car bs))))))))
 
 ;; ── let-syntax / letrec-syntax: 局部 transformer 绑定 ──
 ;; 生成一个 lambda, 内部用 define-macro 定义局部宏, 再求值 body。
@@ -583,18 +513,20 @@
 ;; 将 (name transformer) 转为局部 define-macro
 ;; transformer: (syntax-rules lits rules...) 或 (lambda (stx) body...)
 (define (sx-make-macro-binding binding)
-  (sx-let ((name (car binding))
-        (trans (cadr binding)))
-    (if (sx-and2 (pair? trans) (eq? (car trans) 'syntax-rules))
-        (sx-let ((lits (if (pair? (cdr trans)) (cadr trans) '()))
-              (rules (cddr trans)))
-          (list 'define-macro
-                (cons name 'args)
-                (list 'sx-dispatch 'args (list 'quote lits) (list 'quote rules))))
-        (list 'define-macro
-              (cons name 'args)
-              (list (cons 'lambda (cdr trans))
-                    (list 'cons (list 'quote name) 'args))))))
+  ((lambda (name trans)
+     (if (and (pair? trans) (eq? (car trans) 'syntax-rules))
+         ((lambda (lits rules)
+            (list 'define-macro
+                  (cons name 'args)
+                  (list 'sx-dispatch 'args (list 'quote lits) (list 'quote rules))))
+          (if (pair? (cdr trans)) (cadr trans) '())
+          (cddr trans))
+         (list 'define-macro
+               (cons name 'args)
+               (list (cons 'lambda (cdr trans))
+                     (list 'cons (list 'quote name) 'args)))))
+   (car binding)
+   (cadr binding)))
 
 ;; ════════════════════════════════════════════════════════════════
 ;; Phase 4: define-syntax (define-macro)

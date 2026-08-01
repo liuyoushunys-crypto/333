@@ -588,6 +588,8 @@ public static class Compiler
                 return null;
             var op = vn.Name;
             var nArgs = node.Args.Count;
+            if (nArgs == 0 && op == "the-environment")
+                return EnvParam;
             if (nArgs == 1)
             {
                 var arg = CompileExpr(node.Args[0]);
