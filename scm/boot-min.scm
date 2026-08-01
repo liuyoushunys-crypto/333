@@ -314,7 +314,6 @@
 
 ;; 在 b 下求值 thunk, 结束后恢复原绑定
 (define (sx-with-bindings b thunk)
-  (display "sx-with-bindings")
   (let ((old *sx-bindings*))
     (sx-set-bindings! b)
     (let ((r (thunk)))
@@ -336,9 +335,9 @@
   (list 'sx-gen-temps lst))
 
 (define (sx-gen-temps lst)
-  (display "sx-gen-temps")
-  (letrec ((loop (lambda (n acc) (if (= n 0) acc (loop (- n 1) (cons (sx-gensym) acc)))))
-    (loop (length lst) '()))))
+  (letrec ((loop (lambda (n acc)
+                   (if (= n 0) acc (loop (- n 1) (cons (sx-gensym) acc))))))
+    (loop (length lst) '())))
 
 ;; ── syntax-case ──
 (define-macro (syntax-case . args)
@@ -350,7 +349,6 @@
           (list 'quote clauses))))
 
 (define (sx-syntax-case expr lits clauses)
-  (display "sx-syntax-case")
   (let* ((datum expr)
          (cl (car clauses))
          (rest-cl (cdr cl))

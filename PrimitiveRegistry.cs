@@ -18,6 +18,12 @@ public static class PrimitiveRegistry
         _b("null?", args => args[0] is Nil ? Const.TRUE : Const.FALSE);
         _b("pair?", args => args[0] is Cell ? Const.TRUE : Const.FALSE);
         _b("symbol?", args => args[0] is Sym ? Const.TRUE : Const.FALSE);
+        // In this implementation, syntax objects are represented as plain
+        // gensym symbols (see boot-min.scm sx-gensym). syntax? accepts any
+        // symbol.
+        _b("syntax?", args => args[0] is Sym ? Const.TRUE : Const.FALSE);
+        _b("syntax->datum", args => args[0]);
+        _b("datum->syntax", args => args.Length > 1 ? args[1] : args[0]);
         _b("string?", args => args[0] is string or SchemeString ? Const.TRUE : Const.FALSE);
         _b("char?", args => args[0] is SchemeChar ? Const.TRUE : Const.FALSE);
         _b("vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
@@ -121,7 +127,11 @@ public static class PrimitiveRegistry
                 fast = fcc.Cdr;
                 if (ReferenceEquals(slow, fast)) return Const.FALSE;
             }
-            return fast is Nil ? Const.TRUE : Const.FALSE;
+            // Loop exited because fast's cdr is not a Cell. A proper list ends
+            // with the empty list (fast may be Nil or a single Cell whose cdr
+            // is Nil); a dotted list ends with a non-Nil atom.
+            return (fast is Nil) || (fast is Cell last && last.Cdr is Nil)
+                ? Const.TRUE : Const.FALSE;
         });
         _b("make-list", args =>
         {
