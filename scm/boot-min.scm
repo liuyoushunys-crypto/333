@@ -259,19 +259,12 @@
 
 ;; 找到子模板中绑定为列表的变量
 (define (sx-ellipsis-vars sub bindings)
-  (sx-reverse (sx-ellipsis-vars-helper (sx-pattern-vars sub) bindings '())))
-
-(define (sx-ellipsis-vars-helper vs bindings acc)
-  (if (null? vs) acc
-  (let ((p (assq (car vs) bindings)))
-    (if p
-        (cond
-          ((pair? (cdr p))
-          (sx-ellipsis-vars-helper (cdr vs) bindings (cons (car vs) acc)))
-          ((null? (cdr p))
-          (sx-ellipsis-vars-helper (cdr vs) bindings (cons (car vs) acc)))
-          (else (sx-ellipsis-vars-helper (cdr vs) bindings acc)))
-        (sx-ellipsis-vars-helper (cdr vs) bindings acc)))))
+  (filter (lambda (v)
+            (let ((p (assq v bindings)))
+              (and p
+                   (or (pair? (cdr p))
+                       (null? (cdr p))))))
+          (sx-pattern-vars sub)))
 
 ;; 找到任一列表绑定的长度
 (define (sx-find-list-count bindings)
@@ -397,12 +390,11 @@
     (loop pairs '())))
 
 (define (sx-eval-body body)
-  (if (null? body) (void)
-     (letrec ((loop (lambda (bs last)
-                       (cond
-                         ((null? bs) last)
-                         (else (loop (cdr bs) (eval (car bs)))))))
-       (loop body #f)))))
+  (if (null? body)
+      (void)
+      (let ((last (void)))
+        (for-each (lambda (form) (set! last (eval form))) body)
+        last)))
 
 
 ;; ── let-syntax / letrec-syntax ──
