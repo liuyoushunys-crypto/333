@@ -18,6 +18,8 @@
 (define void-sentinel (void))
 (define (void? x) (eq? x void-sentinel))
 
+(define nil '())
+
 (define (qq-reverse-helper src dst)
   (if (null? src) dst (qq-reverse-helper (cdr src) (cons (car src) dst))))
 (define (qq-reverse l) (qq-reverse-helper l '()))
