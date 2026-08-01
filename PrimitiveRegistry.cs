@@ -1781,25 +1781,42 @@ public static class PrimitiveRegistry
     private static SchemeFraction FindSimplestInRange(SchemeFraction lo, SchemeFraction hi)
     {
         // Find the simplest fraction (smallest denominator) within [lo, hi]
-        // Uses the mediant property of Farey sequences / continued fractions
+        // Uses the Stern-Brocot / continued-fraction property (R7RS rationalize).
+        // Ensure lo <= hi
+        if (lo.Num * hi.Den > hi.Num * lo.Den)
+            return FindSimplestInRange(hi, lo);
+        return Simplest(lo, hi);
+    }
 
-        // If the interval contains an integer, return the simplest integer
-        var loInt = (lo.Num + lo.Den - 1) / lo.Den; // ceiling
-        var hiInt = hi.Num / hi.Den; // floor
-        if (loInt <= hiInt)
+    // Assumes x <= y. Returns the simplest rational in [x, y].
+    private static SchemeFraction Simplest(SchemeFraction x, SchemeFraction y)
+    {
+        if (y.Num < 0) // both negative
         {
-            var n = loInt <= 0 && hiInt >= 0 ? BigInteger.Zero :
-                    loInt > 0 ? loInt : hiInt;
-            return new SchemeFraction(n, 1);
+            var r = Simplest(new SchemeFraction(-y.Num, y.Den), new SchemeFraction(-x.Num, x.Den));
+            return new SchemeFraction(-r.Num, r.Den);
         }
+        if (x.Num <= 0) return new SchemeFraction(0, 1);
+        return SimplestAux(x, y);
+    }
 
-        // Use continued fractions to find the simplest fraction
-        // The simplest fraction in (lo, hi) is found by: 
-        // 1. Invert 2. Find simplest in (1/hi, 1/lo) 3. Invert result
-        var fib = FindSimplestInRange(
-            new SchemeFraction(hi.Den, hi.Num),
-            new SchemeFraction(lo.Den, lo.Num));
-        return new SchemeFraction(fib.Den, fib.Num);
+    // Assumes 0 <= x <= y.
+    private static SchemeFraction SimplestAux(SchemeFraction x, SchemeFraction y)
+    {
+        var fy = y.Num / y.Den; // floor(y)
+        if (x.Num * y.Den < fy * y.Den) // x < floor(y)
+            return new SchemeFraction(fy, 1);
+        var fxCeil = (x.Num + x.Den - 1) / x.Den; // ceiling(x)
+        if (fxCeil == fy)
+            return new SchemeFraction(fxCeil, 1);
+        // x and y share the same integer part n; strip it and invert.
+        var n = x.Num / x.Den; // floor(x)
+        var xn = new SchemeFraction(x.Num - n * x.Den, x.Den); // x - n
+        var yn = new SchemeFraction(y.Num - n * y.Den, y.Den); // y - n
+        // 1/y' <= 1/x' in (0, 1]-ish range; recurse on the inverted interval.
+        var r = SimplestAux(new SchemeFraction(yn.Den, yn.Num),
+                            new SchemeFraction(xn.Den, xn.Num));
+        return new SchemeFraction(n * r.Num + r.Den, r.Num); // n + 1/r
     }
 
     private static string ToRadixString(BigInteger n, int radix)
