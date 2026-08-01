@@ -10,16 +10,12 @@ namespace Miniscm.Compiler;
 
 class CacheEntry
 {
-    public int Version { get; set; }
     public string? Hash { get; set; }
     public string? Name { get; set; }
     public List<string>? Body { get; set; }
 }
 public static class Compiler
 {
-    // Bump to invalidate stale .mscm_cache entries (e.g. bodies written by
-    // earlier buggy MacroExpand that were not fully expanded).
-    const int CacheVersion = 2;
     static readonly HashSet<string> SkipJitNames =
     [
         "flip",
@@ -123,7 +119,7 @@ public static class Compiler
                     {
                         var json = File.ReadAllText(cacheFile);
                         var entry = JsonSerializer.Deserialize<CacheEntry>(json);
-                        if (entry?.Version == CacheVersion && entry?.Hash == bodySrc && entry.Body is not null)
+                        if (entry?.Hash == bodySrc && entry.Body is not null)
                         {
                             foreach (var s in entry.Body)
                                 bodyForms.Add(Parser.Read(s));
@@ -145,7 +141,6 @@ public static class Compiler
                     Directory.CreateDirectory(cacheDir);
                     var entry = new CacheEntry
                     {
-                        Version = CacheVersion,
                         Hash = bodySrc,
                         Name = lp.Name,
                         Body = bodyForms.Select(f => Printer.Format(f)).ToList()
