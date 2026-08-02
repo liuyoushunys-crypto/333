@@ -10,6 +10,8 @@ public static partial class Tokenizer
         ( ;[^\n]*                                
         | \#\|[\s\S]*?\|\#                       
         | \#;                                     
+        | """"""[\s\S]*?""""""                     
+        | '''[\s\S]*?'''                           
         | ""(?:[^""\\]|\\.)*""                    
         | \#\\(?:[a-zA-Z]+|[\uD800-\uDBFF][\uDC00-\uDFFF]|.)                     
         | \#\(                                    

@@ -277,6 +277,27 @@ public static partial class PrimitiveRegistry
         _b("sx-defined?", PSxDefinedQ);
         _b("sx-defmacro", PSxDefmacro);
         _b("sx-expand-env", args => Evaluator.CurrentExpandEnv ?? Evaluator.GlobalEnv);
+        _b("sx-expand-call", args =>
+        {
+            // (sx-expand-call expr env) — 单次宏展开桥接。
+            // 若 (car expr) 绑定为 "macro" 元组, 调用 C# ExpandMacro 返回展开结果;
+            // 否则返回 #f (未展开)。Scheme 端 my-macro-expand 递归调用直至稳定。
+            if (args.Length >= 1 && args[0] is Cell call)
+            {
+                var env = args.Length > 1 && args[1] is Env e2 ? e2 : Evaluator.GlobalEnv;
+                var op = call.Car;
+                if (op is Sym ops)
+                {
+                    var proc = env.LookupSilent(ops.Name, null);
+                    if (proc is not null)
+                    {
+                        var expanded = Evaluator.ExpandMacro(proc, call.Cdr, env);
+                        if (expanded is not null) return expanded;
+                    }
+                }
+            }
+            return Const.FALSE;
+        });
 
         // ── Hash tables ──
         _b("hash-table-clear!", PHashTableClearBang);

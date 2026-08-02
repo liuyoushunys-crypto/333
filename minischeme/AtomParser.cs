@@ -39,9 +39,12 @@ public static class AtomParser
             return new SchemeChar(ch.Length > 0 ? (int)ch[0] : (int)' ');
         }
 
-        if (tok.StartsWith("\""))
+        if (tok.StartsWith("\"") || tok.StartsWith("'"))
         {
-            var s = tok[1..^1];
+            // 三引号字符串 """...""" 或 '''...''': 去 3 个引号, 内容保留换行
+            bool triple = tok.StartsWith("\"\"\"") || tok.StartsWith("'''");
+            var inner = triple ? tok[3..^3] : tok[1..^1];
+            var s = inner;
             var r = new List<char>();
             for (int i = 0; i < s.Length; i++)
             {
@@ -71,7 +74,11 @@ public static class AtomParser
                 }
                 else r.Add(s[i]);
             }
-            return new string([.. r]);
+            var result = new string([.. r]);
+            // 三引号字符串: 源码行尾的 CRLF 归一化为 LF (Scheme 标准换行)
+            if (triple)
+                result = result.Replace("\r\n", "\n");
+            return result;
         }
 
         var pn = ParseNumber(tok);
