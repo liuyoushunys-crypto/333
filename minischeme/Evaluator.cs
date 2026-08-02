@@ -306,7 +306,6 @@ public static class Evaluator
 
         var savedDefEnv = CurrentMacroDefEnv;
         CurrentMacroDefEnv = defEnv;
-        var savedExpandEnv = CurrentExpandEnv;
         CurrentExpandEnv = env;
         object? r;
         try
@@ -316,7 +315,8 @@ public static class Evaluator
         }
         finally
         {
-            CurrentExpandEnv = savedExpandEnv;
+            // CurrentExpandEnv 不在此恢复: 宏展开结果 (如 my-definemacro 调用)
+            // 在展开后求值, 需通过 (sx-expand-env) 读到宏定义点词法环境。
             CurrentMacroDefEnv = savedDefEnv;
         }
 

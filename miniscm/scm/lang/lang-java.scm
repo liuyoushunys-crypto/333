@@ -1,0 +1,86 @@
+(display "=== lang-java loaded ===\n")
+(define-syntax public-static (syntax-rules () ((_ ret name (args ...) body ...) (define name (lambda (args ...) body ...)))))
+(define-macro (class name . body) `(begin (define ,name (list (quote ,@(map car (filter (lambda (x) (pair? x)) body))))),@body))
+(define-macro (new class . args) `(list (quote ,class) ,@args))
+(define-syntax void (syntax-rules () ((_) 'void)))
+(define-syntax int (syntax-rules () ((_) 'int)))
+(define-syntax String (syntax-rules () ((_) 'String)))
+(define-syntax System.out.println (syntax-rules () ((_ x) (begin (display x) (newline)))))
+(define-macro (for init ; cond ; inc . body) `(let ,(if (and (pair? init) (eq? (car init) '=)) (list (list (cadr init) (caddr init))) '()) (let loop () (if ,cond (begin ,@body ,inc (loop)) #f))))
+(define-syntax while (syntax-rules () ((_ cond body ...) (let loop () (if cond (begin body ... (loop)) #f)))))
+(define-syntax do-while (syntax-rules () ((_ body ... cond) (let loop () (begin body ... (if cond (loop) #f))))))
+(define-macro (switch val . cases) `(cond ,@(map (lambda (c) (if (eq? (car c) 'default) `(else ,@(cdr c)) `((equal? ,val ,(car c)) ,@(cdr c))))) (else (error "switch: no match"))))
+(define-macro (try body . clauses) (let ((handler (car (filter (lambda (c) (eq? (car c) 'catch) (cdr c)) clauses))) (finally (car (filter (lambda (c) (eq? (car c) 'finally)) clauses)))) (if finally `(dynamic-wind (lambda () #f) (lambda () (begin ,@body)) (lambda () ,@(cdr finally))) `(guard (e (else ,@(cddr handler))) ,@body))))
+(define-macro (instanceof obj class) `(and (pair? ,obj) (eq? (car ,obj) (quote ,class))))
+(define-syntax this (syntax-rules () ((_) 'this)))
+(define-syntax null (syntax-rules () ((_) #f)))
+;; (public-static int fact (int n) (if #{n <= 1} 1 (* n (fact #{n - 1}))))
+;; (System.out.println #{3 + 4})
+;; (switch #{2 + 2} (1 (println "one")) (2 (println "two")) (4 (println "four")))
+;; (println (instanceof (new Pair 1 2) Pair))
+;; (println #{10 * (10 + 1) / 2})
+
+(display "--- demos ---\n")
+(define (fib n)
+  (let ((a 0) (b 1))
+    (for i = 0 ; #{i < n} ; (set! i #{i + 1})
+      (let ((t #{a + b}))
+        (set! a b)
+        (set! b t)))
+    (System.out.println (string-append "fib(" (number->string n) ") = " (number->string a)))))
+(fib 10)
+
+(define (classify n)
+  (System.out.println
+    (switch #{n % 3}
+      (0 "fizz")
+      (1 (number->string n))
+      (2 (string-append (number->string n) "?")))))
+(classify 9)
+(classify 10)
+(classify 11)
+
+(define (sum-to n)
+  (let ((total 0))
+    (for i = 1 ; #{i <= n} ; (set! i #{i + 1})
+      (set! total #{total + i}))
+    (System.out.println (string-append "sum 1.." (number->string n) " = " (number->string total)))))
+(sum-to 10)
+
+(display "--- demos ---\n")
+
+;; --- 1. fizzbuzz ---
+;; (public-static void fizzbuzz (int n)
+;;   (for i = 1 ; #{i <= n} ; (set! i #{i + 1})
+;;     (System.out.println
+;;       (switch #{i % 15}
+;;         (0 "FizzBuzz")
+;;         (3) (6) (9) (12 "Fizz")
+;;         (5) (10 "Buzz")
+;;         (default i)))))
+;; (fizzbuzz 15)
+
+;; --- 2. factorial ---
+;; (public-static int fact (int n)
+;;   (let ((result 1))
+;;     (for i = 2 ; #{i <= n} ; (set! i #{i + 1})
+;;       (set! result #{result * i}))
+;;     (System.out.println (string-append (number->string n) "! = " (number->string result)))))
+;; (fact 6)
+
+;; --- 3. while sum ---
+;; (public-static void sum-to (int n)
+;;   (let ((total 0) (i 1))
+;;     (while #{i <= n}
+;;       (set! total #{total + i})
+;;       (set! i #{i + 1}))
+;;     (System.out.println (string-append "sum = " (number->string total)))))
+;; (sum-to 10)
+
+;; --- 4. instanceof demo ---
+;; (public-static void check (Object obj)
+;;   (if (instanceof obj Pair)
+;;     (System.out.println "is a Pair")
+;;     (System.out.println "unknown")))
+;; (check (new Pair 1 2))
+;; (check 42)

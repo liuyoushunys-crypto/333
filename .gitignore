@@ -3,3 +3,5 @@ obj/
 *.user
 .vs/
 .mscm_cache/
+__pycache__/
+*.pyc

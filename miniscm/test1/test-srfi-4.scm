@@ -1,0 +1,15 @@
+;;; Test file for SRFI-4
+(import (srfi 4))
+
+(define (%test-equal name expected actual)
+  (if (equal? actual expected)
+      (begin (display "[PASS] ") (display name) (newline))
+      (begin (display "[FAIL] ") (display name)
+             (display "  expected: ") (write expected)
+             (display "  actual: ") (write actual) (newline))))
+(%test-equal "u8vector" #(1 2 3) (u8vector 1 2 3))
+(%test-equal "u8vector?" #t (u8vector? (u8vector 1 2)))
+(%test-equal "u8vector-length" 3 (u8vector-length (u8vector 1 2 3)))
+(%test-equal "u8vector-ref" 2 (u8vector-ref (u8vector 1 2 3) 1))
+(%test-equal "make-u8vector" #(0 0 0) (make-u8vector 3 0))
+(%test-equal "f64vector" #(1.5 2.5) (f64vector 1.5 2.5))
