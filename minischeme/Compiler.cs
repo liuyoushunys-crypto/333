@@ -15,6 +15,7 @@ class CacheEntry
     public string? Name { get; set; }
     public List<string>? Params { get; set; }
     public List<string>? Body { get; set; }
+    public List<string>? Ast { get; set; }
 }
 public static class Compiler
 {
@@ -147,12 +148,13 @@ public static class Compiler
             // Step 1: Macro-expand body (with cache)
             var bodyForms = new List<object?>();
             var cur = lp.Body;
+            var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
+            var bodySrc = Printer.Format(lp.Body);
+            var cacheFile = lp.Name is not null
+                ? Path.Combine(cacheDir, SafeFileName(lp.Name) + "_" + BodyHash(bodySrc) + ".json")
+                : null;
             if (lp.Name is not null)
             {
-                var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
-                var bodySrc = Printer.Format(lp.Body);
-                // 用内容 hash 命名缓存文件, 避免同名函数(不同内容)互相覆盖
-                var cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + "_" + BodyHash(bodySrc) + ".json");
                 if (File.Exists(cacheFile))
                 {
                     try
@@ -160,13 +162,33 @@ public static class Compiler
                         var json = File.ReadAllText(cacheFile);
                         var entry = JsonSerializer.Deserialize<CacheEntry>(json);
                         if (entry?.Version == CacheVersion && entry.Hash == bodySrc
-                            && entry.Params is not null && entry.Params.SequenceEqual(lp.Params)
-                            && entry.Body is not null)
+                            && entry.Params is not null && entry.Params.SequenceEqual(lp.Params))
                         {
-                            foreach (var s in entry.Body)
-                                bodyForms.Add(Parser.Read(s));
-                            if (bodyForms.Count > 0)
-                                goto afterExpand;
+                            // 优先复用缓存的 AST (跳过 MacroExpand/ToAst/FoldConstants)
+                            if (entry.Ast is not null && entry.Ast.Count > 0)
+                            {
+                                try
+                                {
+                                    var cachedAst = entry.Ast.Select(AstFromJson).ToList();
+                                    var cleanedParams0 = lp.Params.Select(CleanParamName).ToList();
+                                    var lexicalVars0 = new HashSet<string>(cleanedParams0);
+                                    // Step 3: Closure check (AST 相同则结果确定)
+                                    foreach (var astNode in cachedAst)
+                                        if (HasNestedClosure(astNode, lexicalVars0))
+                                            return null;
+                                    if (lp.Name is not null && HasSelfRecursionInNestedLambda(cachedAst, lp.Name))
+                                        return null;
+                                    return CompileFromFolded(cachedAst, lp, cleanedParams0, lexicalVars0);
+                                }
+                                catch { /* AST 缓存损坏则回退 */ }
+                            }
+                            if (entry.Body is not null)
+                            {
+                                foreach (var s in entry.Body)
+                                    bodyForms.Add(Parser.Read(s));
+                                if (bodyForms.Count > 0)
+                                    goto afterExpand;
+                            }
                         }
                     }
                     catch { }
@@ -180,21 +202,7 @@ public static class Compiler
                     bodyForms.Add(FullyExpand(expanded));
                     cur = c.Cdr;
                 }
-                try
-                {
-                    Directory.CreateDirectory(cacheDir);
-                    var entry = new CacheEntry
-                    {
-                        Version = CacheVersion,
-                        Hash = bodySrc,
-                        Name = lp.Name,
-                        Params = lp.Params,
-                        Body = bodyForms.Select(f => Printer.Format(f)).ToList()
-                    };
-                    var json = JsonSerializer.Serialize(entry, new JsonSerializerOptions { WriteIndented = true });
-                    File.WriteAllText(cacheFile, json);
-                }
-                catch { }
+                // 缓存由编译成功后统一写入 (含 foldedBody AST), 见 CompileLambdaProc 末尾。
             }
             else
             {
@@ -223,26 +231,28 @@ public static class Compiler
             // Step 4: Constant folding
             var foldedBody = bodyAsts.Select(FoldConstants).ToList();
             // Step 5: Compile to expression tree
-            var compiler = new AstExprCompiler(lp.Name, cleanedParams, lp.IsSimple, lexicalVars);
-            var bodyExprs = compiler.CompileStmtSeq(foldedBody, true);
-            if (bodyExprs.Count == 0)
-                bodyExprs = [Expression.Goto(compiler.BreakLabel, ObjConst(Const.VOID))];
-            var loop = Expression.Loop(
-                Expression.Block(bodyExprs),
-                compiler.BreakLabel,
-                compiler.ContinueLabel
-            );
-            // Build final lambda: (env, args) => { params...; loop; }
-            var allVars = new List<ParameterExpression>(compiler.ParamVars);
-            allVars.AddRange(compiler.AdditionalVars);
-            var lambdaBody = Expression.Block(
-                allVars,
-                compiler.AssignStmts.Concat([loop])
-            );
-            var lambda = Expression.Lambda<Func<Env, object?[], object?>>(
-                lambdaBody, compiler.EnvParam, compiler.ArgsParam);
-            var func = lambda.Compile();
-            return new CompiledLambda(func, lp.Params, lp.ClosureEnv, lp.IsSimple);
+            var compiled = CompileFromFolded(foldedBody, lp, cleanedParams, lexicalVars);
+            // 编译成功: 缓存 foldedBody AST (后续命中跳过 ToAst/FoldConstants/闭包检查)
+            if (compiled is not null && lp.Name is not null)
+            {
+                try
+                {
+                    Directory.CreateDirectory(cacheDir);
+                    var entry = new CacheEntry
+                    {
+                        Version = CacheVersion,
+                        Hash = bodySrc,
+                        Name = lp.Name,
+                        Params = lp.Params,
+                        Body = bodyForms.Select(f => Printer.Format(f)).ToList(),
+                        Ast = foldedBody.Select(AstToJson).ToList()
+                    };
+                    var json = JsonSerializer.Serialize(entry, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(cacheFile!, json);
+                }
+                catch { }
+            }
+            return compiled;
         }
         catch (Exception ex)
         {
@@ -251,6 +261,31 @@ public static class Compiler
                 Console.Error.WriteLine($"JIT compile error for {lp.Name}: {ex}");
             return null;
         }
+    }
+
+    // 从折叠后的 AST 编译为 CompiledLambda (命中有 AST 的缓存时复用)
+    internal static CompiledLambda? CompileFromFolded(
+        List<AstNode> foldedBody, LambdaProc lp, List<string> cleanedParams, HashSet<string> lexicalVars)
+    {
+        var compiler = new AstExprCompiler(lp.Name, cleanedParams, lp.IsSimple, lexicalVars);
+        var bodyExprs = compiler.CompileStmtSeq(foldedBody, true);
+        if (bodyExprs.Count == 0)
+            bodyExprs = [Expression.Goto(compiler.BreakLabel, ObjConst(Const.VOID))];
+        var loop = Expression.Loop(
+            Expression.Block(bodyExprs),
+            compiler.BreakLabel,
+            compiler.ContinueLabel
+        );
+        var allVars = new List<ParameterExpression>(compiler.ParamVars);
+        allVars.AddRange(compiler.AdditionalVars);
+        var lambdaBody = Expression.Block(
+            allVars,
+            compiler.AssignStmts.Concat([loop])
+        );
+        var lambda = Expression.Lambda<Func<Env, object?[], object?>>(
+            lambdaBody, compiler.EnvParam, compiler.ArgsParam);
+        var func = lambda.Compile();
+        return new CompiledLambda(func, lp.Params, lp.ClosureEnv, lp.IsSimple);
     }
     internal static string CleanParamName(string p) =>
         p.StartsWith("rest:") ? p[5..] : p;
@@ -366,6 +401,157 @@ public static class Compiler
         var cur = body;
         while (cur is Cell c) { result.Add(ToAst(c.Car)); cur = c.Cdr; }
         return result;
+    }
+
+    // ── AST 序列化 (缓存编译前的中间产物 foldedBody) ──
+    // 每个 AstNode 编码为 JSON 字符串; 命中缓存后跳过 ToAst/FoldConstants,
+    // 直接 CompileStmtSeq 编译。委托无法序列化, 因此缓存 AST 而非编译结果。
+    internal static string AstToJson(AstNode node) => JsonSerializer.Serialize(AstToDto(node));
+    internal static AstNode AstFromJson(string s) => DtoToAst(JsonSerializer.Deserialize<JsonElement>(s));
+
+    private static object? AstToDto(AstNode node)
+    {
+        switch (node)
+        {
+            case LiteralAst lit:
+                return new { t = "lit", v = ValToDto(lit.Val) };
+            case VarAst v:
+                return new { t = "var", n = v.Name };
+            case IfAst ifn:
+                return new { t = "if", a = AstToDto(ifn.Test), b = AstToDto(ifn.Then), c = AstToDto(ifn.Else) };
+            case DefineAst def:
+                return new { t = "define", n = def.Name, v = AstToDto(def.Val) };
+            case SetBangAst set:
+                return new { t = "set", n = set.Name, v = AstToDto(set.Val) };
+            case LambdaAst lam:
+                return new { t = "lambda", p = lam.Params, b = lam.Body.Select(AstToDto).ToList(), s = lam.IsSimple, r = ValToDto(lam.RawBody) };
+            case BeginAst begin:
+                return new { t = "begin", b = begin.Exprs.Select(AstToDto).ToList() };
+            case AppAst app:
+                return new { t = "app", p = AstToDto(app.Proc), a = app.Args.Select(AstToDto).ToList() };
+            default:
+                throw new Exception($"AstToDto: unknown node {node.GetType().Name}");
+        }
+    }
+
+    private static object? ValToDto(object? v)
+    {
+        switch (v)
+        {
+            case Sym s:
+                if (s == Const.TRUE) return new { k = "sym", n = "#t" };
+                if (s == Const.FALSE) return new { k = "sym", n = "#f" };
+                return new { k = "sym", n = s.Name };
+            case Cell c:
+            {
+                var items = new List<object?>();
+                var cur = (object?)c;
+                while (cur is Cell cc) { items.Add(ValToDto(cc.Car)); cur = cc.Cdr; }
+                if (cur is Nil)
+                    return new { k = "list", items };
+                // dotted tail
+                return new { k = "dlist", items, tail = ValToDto(cur) };
+            }
+            case Nil:
+                return new { k = "nil" };
+            case Void:
+                return new { k = "void" };
+            case Eof:
+                return new { k = "eof" };
+            case int i:
+                return new { k = "int", v = i };
+            case long l:
+                return new { k = "long", v = l };
+            case BigInteger bi:
+                return new { k = "bigint", v = bi.ToString() };
+            case double d:
+                return new { k = "double", v = d };
+            case string str:
+                return new { k = "str", v = str };
+            case SchemeString ss:
+                return new { k = "sstr", v = ss.ToString() };
+            case SchemeChar ch:
+                return new { k = "char", v = ch.Codepoint };
+            case SchemeVector vec:
+                return new { k = "vector", v = vec.Data.Select(ValToDto).ToList() };
+            case SchemeBytevector bv:
+                return new { k = "bytevector", v = bv.Data };
+            case bool b:
+                return new { k = "bool", v = b };
+            case null:
+                return new { k = "null" };
+            default:
+                return new { k = "raw", v = Printer.Format(v) };
+        }
+    }
+
+    private static AstNode DtoToAst(JsonElement e)
+    {
+        var t = e.GetProperty("t").GetString();
+        return t switch
+        {
+            "lit" => new LiteralAst(DtoToVal(e.GetProperty("v"))),
+            "var" => new VarAst(e.GetProperty("n").GetString()!),
+            "if" => new IfAst(DtoToAst(e.GetProperty("a")), DtoToAst(e.GetProperty("b")), DtoToAst(e.GetProperty("c"))),
+            "define" => new DefineAst(e.GetProperty("n").GetString()!, DtoToAst(e.GetProperty("v"))),
+            "set" => new SetBangAst(e.GetProperty("n").GetString()!, DtoToAst(e.GetProperty("v"))),
+            "lambda" => new LambdaAst(
+                e.GetProperty("p").EnumerateArray().Select(x => x.GetString()!).ToList(),
+                e.GetProperty("b").EnumerateArray().Select(DtoToAst).ToList(),
+                e.GetProperty("s").GetBoolean(),
+                e.TryGetProperty("r", out var rawEl) ? DtoToVal(rawEl) : Const.NIL),
+            "begin" => new BeginAst(e.GetProperty("b").EnumerateArray().Select(DtoToAst).ToList()),
+            "app" => new AppAst(DtoToAst(e.GetProperty("p")),
+                e.GetProperty("a").EnumerateArray().Select(DtoToAst).ToList()),
+            _ => throw new Exception($"DtoToAst: unknown type {t}")
+        };
+    }
+
+    private static object? DtoToVal(JsonElement e)
+    {
+        var k = e.GetProperty("k").GetString();
+        return k switch
+        {
+            "sym" => Sym.Intern(e.GetProperty("n").GetString()!),
+            "list" => DtoToList(e.GetProperty("items"), e, hasTail: false),
+            "dlist" => DtoToList(e.GetProperty("items"), e, hasTail: true),
+            "nil" => Const.NIL,
+            "void" => Const.VOID,
+            "eof" => Const.EOF,
+            "int" => e.GetProperty("v").GetInt32(),
+            "long" => e.GetProperty("v").GetInt64(),
+            "bigint" => System.Numerics.BigInteger.Parse(e.GetProperty("v").GetString()!),
+            "double" => e.GetProperty("v").GetDouble(),
+            "str" => e.GetProperty("v").GetString(),
+            "sstr" => new SchemeString(e.GetProperty("v").GetString()!),
+            "char" => new SchemeChar(e.GetProperty("v").GetInt32()),
+            "vector" => new SchemeVector(e.GetProperty("v").EnumerateArray().Select(DtoToVal).ToList()),
+            "bytevector" => new SchemeBytevector(e.GetProperty("v").EnumerateArray().Select(x => x.GetInt32())),
+            "bool" => e.GetProperty("v").GetBoolean(),
+            "null" => null,
+            "raw" => Parser.Read(e.GetProperty("v").GetString()!),
+            _ => throw new Exception($"DtoToVal: unknown kind {k}")
+        };
+    }
+
+    private static object? DtoToList(JsonElement items, JsonElement root, bool hasTail)
+    {
+        object? list = Const.NIL;
+        var arr = items.EnumerateArray().ToList();
+        for (int i = arr.Count - 1; i >= 0; i--)
+            list = new Cell(DtoToVal(arr[i]), list);
+        if (hasTail)
+        {
+            var tail = DtoToVal(root.GetProperty("tail"));
+            if (list is Cell last)
+            {
+                var cur = last;
+                while (cur.Cdr is Cell nxt) cur = nxt;
+                cur.Cdr = tail;
+            }
+            else list = tail;
+        }
+        return list;
     }
     // ── Constant Folding ──
     internal static AstNode FoldConstants(AstNode node)
