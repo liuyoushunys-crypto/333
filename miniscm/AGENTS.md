@@ -38,6 +38,23 @@ python3 miniscm.py test/test2.scm          # single file
 python3 miniscm.py test/test-install-core.scm
 ```
 
+回归测试 (pyb=True 模式, 覆盖核心功能并汇总 PASS/FAIL):
+
+```sh
+python3 tools/regression.py              # 默认核心测试集 (11 个文件)
+python3 tools/regression.py --all        # 全部 test/ 文件
+python3 tools/regression.py test/test-strings.scm ...   # 指定文件
+```
+
+脚本统计 `[PASS]`/`[CHECK PASS]` 与 `[FAIL]`/`[CHECK FAIL]`, 退出码 0=通过,
+非 0=有超出已知失败数的回归。已知失败 (`tools/regression.py` 中 `KNOWN_FAILS`):
+test-arithmetic 3 个 (fixnum 宽度), test-strings 1 个 (digit-value), test-language 16 个 (DSL typeof 差异)。
+
+```sh
+python3 miniscm.py test/test2.scm          # single file
+python3 miniscm.py test/test-install-core.scm
+```
+
 Tests print `[PASS]`/`[FAIL]` lines. There are **222 test files** in `test/`. All pass with **0 FAIL** in both `pyb=True` and `pyb=False` modes.
 
 Key test files:
