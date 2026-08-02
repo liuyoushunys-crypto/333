@@ -374,21 +374,6 @@ public static class Evaluator
         return SeqTailCall(body ?? Const.NIL, nenv);
     }
 
-    private static object? HDefineMacro(object? args, Env env)
-    {
-        if (args is not Cell a) throw new Exception("bad define-macro form");
-        if (a.Car is Cell pat)
-        {
-            var name = pat.Car.AsString();
-            // 存储原始模式 pat.Cdr (含嵌套列表模式, 如 (with-gensyms (syms) ...)),
-            // 展开时由 BindPattern 递归解构绑定。
-            env.Data[name] = ("macro", pat.Cdr, a.Cdr, env, true);
-        }
-        else
-            env.Data[a.Car.AsString()] = ("macro", Const.NIL, a.Cdr, env, true);
-        return Sym.Intern(a.Car.AsString());
-    }
-
     // ── Helpers ──
 
     private static object? StripSyntax(object? v)
@@ -573,7 +558,11 @@ public static class Evaluator
                 // }
                 var mbody = it[2];
                 var nenv = new Env(env);
-                BindPattern(it[1], args, nenv);
+                // 微解释器所有宏元组模式均为 rest 符号 (my-definemacro 注册的 'args),
+                // 仅需绑定 args = 全部实参。真正的模式解构在 Scheme 端
+                // sx-macro-expand / my-bind-pattern 完成。
+                if (it[1] is Sym patSym)
+                    nenv.Data[patSym.Name] = args ?? Const.NIL;
                 var savedDepth = _expandDepth;
                 _expandDepth = 0;
                 var savedDefEnv = CurrentMacroDefEnv;
@@ -697,60 +686,5 @@ public static class Evaluator
             if (pi < evaledArgs.Count) nenv.Data[p] = evaledArgs[pi];
             pi++;
         }
-    }
-
-    // 绑定 define-macro 的模式参数 (支持嵌套列表模式)。
-    // pattern 是宏名之后的模式列表:
-    //   (twice expr)          → 平坦参数
-    //   (with-gensyms (syms)) → 单符号列表模式, syms 绑定整个实参列表
-    //   (my-dotimes (v n))    → 解构列表实参, v=car, n=cadr
-    //   (defun* name (a . r)) → (a . r) 解构, a=car, r=cdr
-    //   (. body) / body       → body 绑定所有剩余实参
-    private static void BindPattern(object? pattern, object? args, Env nenv)
-    {
-        if (pattern is Sym restSym)
-        {
-            nenv.Data[restSym.Name] = args ?? Const.NIL;
-            return;
-        }
-        var pat = pattern;
-        var arg = args;
-        while (pat is Cell pc)
-        {
-            var elem = pc.Car;
-            if (elem is Sym s && s.Name == "_")
-            {
-                if (arg is Cell _ac) arg = _ac.Cdr;
-                else if (arg is Nil) { }
-            }
-            else if (elem is Sym s2)
-            {
-                if (arg is Cell ac) { nenv.Data[s2.Name] = ac.Car; arg = ac.Cdr; }
-                else if (arg is Nil) { }
-            }
-            else if (elem is Cell nested)
-            {
-                if (arg is Cell ac2)
-                {
-                    BindListPattern(nested, ac2.Car, nenv);
-                    arg = ac2.Cdr;
-                }
-                else if (arg is Nil) { }
-            }
-            pat = pc.Cdr;
-        }
-        if (pat is Sym restSym2 && restSym2.Name != "_")
-            nenv.Data[restSym2.Name] = arg is Cell or Nil ? arg : Const.NIL;
-    }
-
-    // 匹配单个列表模式元素: (syms) 单符号 → 绑定整个实参; 否则按位解构。
-    private static void BindListPattern(object? pattern, object? args, Env nenv)
-    {
-        if (pattern is Cell pc0 && pc0.Cdr is Nil && pc0.Car is Sym single)
-        {
-            nenv.Data[single.Name] = args ?? Const.NIL;
-            return;
-        }
-        BindPattern(pattern, args, nenv);
     }
 }

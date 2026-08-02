@@ -1129,10 +1129,10 @@ public static class PrimitiveRegistry
         {
             if (args.Length >= 3 && args[0] is Sym nameSym && args[1] is not null && args[2] is not null)
             {
-                // (sx-defmacro name pattern body) — 注册 C# "macro" 元组到全局环境。
-                // pattern: (pat...) 列表或 rest 符号 (同 define-macro 的 pat.Cdr 格式)
-                // body:    宏体表达式列表 (展开时绑定模式变量后逐条求值)
-                // 由 C# ExpandMacro 识别并展开 (与 define-macro 完全一致的行为)。
+                // (sx-defmacro name pattern body) — Scheme 端宏注册桥接原语。
+                // 微解释器无 C# define-macro 特殊形式, my-definemacro 经此注册
+                // "macro" 元组到全局环境。pattern 固定为 rest 符号 args,
+                // 真正的模式解构与宏体求值在 Scheme (sx-macro-expand)。
                 var defEnv = args.Length > 3 && args[3] is Env de ? de : Evaluator.GlobalEnv;
                 Evaluator.GlobalEnv.Data[nameSym.Name] = ("macro", args[1], args[2], defEnv, true);
                 return nameSym;

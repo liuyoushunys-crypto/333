@@ -36,7 +36,6 @@ public sealed class Sym : IEquatable<Sym>
     public static readonly Sym SETBANG = Intern("set!");
     public static readonly Sym IF = Intern("if");
     public static readonly Sym BEGIN = Intern("begin");
-    public static readonly Sym DM = Intern("define-macro");
     public static readonly Sym APPLY = Intern("apply");
     public static readonly Sym ARGS = Intern("args");
     public static readonly Sym SETF = Intern("set!-form");
