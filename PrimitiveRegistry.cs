@@ -24,6 +24,10 @@ public static class PrimitiveRegistry
         _b("syntax?", args => args[0] is Sym ? Const.TRUE : Const.FALSE);
         _b("syntax->datum", args => args[0]);
         _b("datum->syntax", args => args.Length > 1 ? args[1] : args[0]);
+        // Identifiers are plain symbols here; two identifiers are bound/free
+        // equal when they denote the same symbol.
+        _b("bound-identifier=?", args => EqSymbols(args[0], args[1]) ? Const.TRUE : Const.FALSE);
+        _b("free-identifier=?", args => EqSymbols(args[0], args[1]) ? Const.TRUE : Const.FALSE);
         _b("string?", args => args[0] is string or SchemeString ? Const.TRUE : Const.FALSE);
         _b("char?", args => args[0] is SchemeChar ? Const.TRUE : Const.FALSE);
         _b("vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
@@ -1121,6 +1125,7 @@ public static class PrimitiveRegistry
         _b("eval", args => Evaluator.Eval(args[0],
             args.Length > 1 && args[1] is Env e ? e : Evaluator.GlobalEnv));
         _b("sx-def-env", args => Evaluator.CurrentMacroDefEnv ?? Evaluator.GlobalEnv);
+        _b("sx-expand-env", args => Evaluator.CurrentExpandEnv ?? Evaluator.GlobalEnv);
         _b("sx-defined?", args =>
         {
             var name = (args[0] as Sym)?.Name ?? args[0]?.ToString() ?? "";
@@ -1697,11 +1702,19 @@ public static class PrimitiveRegistry
         throw new Exception($"cannot call: {Printer.Format(proc)}");
     }
 
+    // Identifier equality: syntax objects are plain symbols here.
+    private static bool EqSymbols(object? a, object? b)
+    {
+        if (a is Sym sa && b is Sym sb) return sa.Name == sb.Name;
+        if (a is SyntaxObject oa) return EqSymbols(oa.Expr, b);
+        if (b is SyntaxObject ob) return EqSymbols(a, ob.Expr);
+        return ReferenceEquals(a, b);
+    }
+
     private static object? Eql(object? a, object? b)
     {
         if (ReferenceEquals(a, b)) return Const.TRUE;
-        if (a is null || b is null) return Const.FALSE;
-        if (a is Cell ca && b is Cell cb)
+        if (a is null || b is null) return Const.FALSE;        if (a is Cell ca && b is Cell cb)
         {
             if (Eql(ca.Car, cb.Car) != Const.TRUE) return Const.FALSE;
             if (Eql(ca.Cdr, cb.Cdr) != Const.TRUE) return Const.FALSE;

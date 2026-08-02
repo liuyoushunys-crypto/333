@@ -18,6 +18,10 @@ public static class Evaluator
     // hygiene resolution (free template identifiers resolve at definition time).
     internal static Env? CurrentMacroDefEnv;
 
+    // Env at the macro call site, used by boot-min.scm sx-eval-tmpl to eval
+    // templates so pattern-substituted local symbols resolve correctly.
+    internal static Env? CurrentExpandEnv;
+
     // Macro expansion helper used by the JIT compiler
     internal static object? MacroExpand(object? expr, Env env, HashSet<object?>? seen = null)
     {
@@ -578,8 +582,11 @@ public static class Evaluator
                 _expandDepth = 0;
                 var savedDefEnv = CurrentMacroDefEnv;
                 CurrentMacroDefEnv = it[3] as Env;
+                var savedExpandEnv = CurrentExpandEnv;
+                CurrentExpandEnv = env;
                 var r = EvalSeq(mbody, nenv);
                 while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
+                CurrentExpandEnv = savedExpandEnv;
                 CurrentMacroDefEnv = savedDefEnv;
                 _expandDepth = savedDepth;
                 var result = (r as SyntaxObject)?.Expr ?? r;

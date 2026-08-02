@@ -359,8 +359,42 @@
   (string->symbol (string-append "__t" (number->string *sx-gensym-counter*))))
 
 ;; ── syntax ──
+;; (syntax tmpl) produces the expanded template as data (self-quoted), not as
+;; executable code: a syntax object is first-class data in Scheme, so e.g.
+;; (generate-temporaries #'(id)) must receive the list (id), not evaluate it.
+;; The outer eval of the macro expansion then runs the returned code.
 (define-macro (syntax tmpl)
-  (sx-expand tmpl (sx-get-bindings)))
+  (list 'quote (sx-expand tmpl (sx-get-bindings))))
+
+;; ── quasisyntax / unsyntax ──
+(define (qs-unquote? x) (and (pair? x) (eq? (car x) 'unsyntax)))
+(define (qs-unsplice? x) (and (pair? x) (eq? (car x) 'unsyntax-splicing)))
+
+;; 展开 quasisyntax 模板: unsyntax 位置在 *sx-bindings* 下求值,
+;; 其余部分按模板语义展开 (pattern 变量替换, 自由标识符 hygiene 标记).
+(define (qs-walk-list cur)
+  (cond
+    ((null? cur) '())
+    ((not (pair? cur)) (qs-expand cur))
+    ((qs-unsplice? (car cur))
+     (let ((v (eval (cadr (car cur)) (sx-expand-env))))
+       (qq-append-lists (qq-reverse v) (qs-walk-list (cdr cur)))))
+    ((qs-unquote? (car cur))
+     (cons (eval (cadr (car cur)) (sx-expand-env)) (qs-walk-list (cdr cur))))
+    (else
+     (cons (qs-expand (car cur)) (qs-walk-list (cdr cur))))))
+
+(define (qs-expand x)
+  (cond
+    ((symbol? x) (sx-expand-sym x (sx-get-bindings)))
+    ((not (pair? x)) x)
+    ((qs-unquote? x) (eval (cadr x) (sx-expand-env)))
+    ((qs-unsplice? x) (eval (cadr x) (sx-expand-env)))
+    ((eq? (car x) 'quasisyntax) x)
+    (else (qs-walk-list x))))
+
+(define-macro (quasisyntax tmpl)
+  (list 'quote (qs-expand tmpl)))
 
 ;; ── generate-temporaries ──
 (define-macro (generate-temporaries lst)
@@ -399,11 +433,17 @@
 
 ;; 求值 fender, 为假则换下一子句
 (define (sx-check-fender fender b)
-  (sx-with-bindings b (lambda () (not (eq? (eval fender) #f)))))
+  (sx-with-bindings b
+    (lambda () (not (eq? (eval fender (sx-expand-env)) #f)))))
 
-;; 在绑定 b 下求值模板
+;; 在绑定 b 下求值模板. 在宏调用点环境求值, 使替换后的局部符号可解析.
+;; 求值结果若是符号则自求值化 (quote ...): 展开结果会被外层再 eval,
+;; 裸符号会被当作全局变量查找.
 (define (sx-eval-tmpl tmpl b)
-  (sx-with-bindings b (lambda () (eval tmpl))))
+  (sx-with-bindings b
+    (lambda ()
+      (let ((r (eval tmpl (sx-expand-env))))
+        (if (symbol? r) (list 'quote r) r)))))
 
 ;; ── with-syntax ──
 (define-macro (with-syntax . args)
@@ -418,7 +458,11 @@
 (define (sx-with-syntax pairs body)
   (letrec ((loop (lambda (ps acc)
                    (if (null? ps)
-                       (sx-with-bindings acc (lambda () (sx-eval-body body)))
+                       ;; Merge with the outer pattern bindings (set by
+                       ;; sx-eval-tmpl) so template pattern variables remain
+                       ;; visible inside the with-syntax body.
+                       (sx-with-bindings (sx-merge-bindings acc (sx-get-bindings))
+                         (lambda () (sx-eval-body body (sx-expand-env))))
                        (let* ((p (car ps))
                               (pat (caar ps))
                               (val (cadar ps))
@@ -428,11 +472,11 @@
                              (error "with-syntax: no match")))))))
     (loop pairs '())))
 
-(define (sx-eval-body body)
+(define (sx-eval-body body env)
   (if (null? body)
       (void)
       (let ((last (void)))
-        (for-each (lambda (form) (set! last (eval form))) body)
+        (for-each (lambda (form) (set! last (eval form env))) body)
         last)))
 
 
