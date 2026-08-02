@@ -7,7 +7,4 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <RootNamespace>Miniscm</RootNamespace>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="minischeme/**/*.cs" />
-  </ItemGroup>
 </Project>

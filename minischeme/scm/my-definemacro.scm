@@ -1,5 +1,5 @@
 ;; ════════════════════════════════════════════════════════════════
-;; my-definemacro — Scheme 端等价于 C# define-macro 的实现
+;; define-macro — Scheme 端等价于 C# define-macro 的实现
 ;; 对应 C# Evaluator.HDefineMacro / ExpandMacro / BindPattern
 ;;
 ;; 用 define (普通函数) 实现, 不套壳 eval/define-macro:
@@ -62,10 +62,13 @@
                           body))))
     (eval let-form callenv)))
 
-;; ── my-definemacro ──
+;; ── my-definemacro (函数, 函数式语法) ──
 (define (my-definemacro name-pat . body)
   (let ((name (car name-pat))
         (pat (cdr name-pat)))
+    ;; 元组模式 = args (rest), body = ((sx-macro-expand ...)) 单元素列表,
+    ;; C# EvalSeq 对宏体逐元素求值, 因此包一层使 (sx-macro-expand ...)
+    ;; 作为整体调用求值。模式解构 + 宏体求值全在 Scheme (sx-macro-expand)。
     ;; 元组模式 = args (rest), body = ((sx-macro-expand ...)) 单元素列表,
     ;; C# EvalSeq 对宏体逐元素求值, 因此包一层使 (sx-macro-expand ...)
     ;; 作为整体调用求值。模式解构 + 宏体求值全在 Scheme (sx-macro-expand)。
@@ -76,6 +79,16 @@
                   'args
                   '(sx-expand-env))))
     name))
+
+;; ── define-macro (宏, 兼容原版语法) ──
+;; (define-macro (name pat...) body...) => (my-definemacro '(name . pat) 'body1 'body2 ...)
+;; 用 my-definemacro 函数自举定义 (微解释器无 C# define-macro)。
+;; 模式: (name-pat . body), name-pat = (name pat...), body = 宏体列表。
+;; 宏体构造 (my-definemacro 'name-pat 'body...) 代码, 由外层 eval 执行注册。
+(my-definemacro '(define-macro name-pat . dm-body)
+  '(cons 'my-definemacro
+         (cons (list 'quote name-pat)
+               (map (lambda (b) (list 'quote b)) dm-body))))
 
 ;; ════════════════════════════════════════════════════════════════
 ;; 自检: 用 my-definemacro 定义各模式形态的宏并验证
