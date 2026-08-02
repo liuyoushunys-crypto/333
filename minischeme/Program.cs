@@ -18,12 +18,7 @@ public class Program
         var scmDir = Path.Combine(projectDir, "scm");
 
         var _libs = new[] {
-            "my-definemacro.scm", "boot-min2.scm", "boot-core.scm", "boot-sugar.scm",
-            "char-boolean.scm", "numeric.scm",
-            "srfi-1-list.scm", "srfi-13-string.scm", "hof-vector.scm",
-            "number-theory.scm", "gensym-stream.scm",
-            "data-structures-ext.scm", "srfi-14-char-set.scm",
-            "generators.scm", "misc.scm", "fill-gaps.scm"
+            "my-definemacro2.scm", "boot-min2.scm", "boot-core.scm", "boot-sugar.scm",
         };
         if (Directory.Exists(scmDir))
         {

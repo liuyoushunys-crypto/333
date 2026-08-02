@@ -54,7 +54,7 @@
 ;;   注意:
 ;;     - 变量并行绑定，不可相互引用
 ;;     - 命名 let 是 named-let / 内循环的惯用写法
-(define-syntax let1
+(define-syntax let
   (syntax-rules ()
     ((let ((var val) ...) body1 body2 ...)
      ((lambda (var ...) body1 body2 ...) val ...))
@@ -69,7 +69,7 @@
 ;;   展开: (let* ((x 3) (y (* x 2))) y)
 ;;      => (let ((x 3)) (let ((y (* x 2))) y))
 ;;   注意: 等价于嵌套 let，不支持命名形式
-(define-syntax let1*
+(define-syntax let*
   (syntax-rules ()
     ((let* () body1 body2 ...)
      (let () body1 body2 ...))
@@ -87,7 +87,7 @@
 ;;           (f 5))
 ;;      => (let ((f #f)) (set! f (lambda (n) ...)) (let () (f 5)))
 ;;   注意: 内部实现为先赋 #f，再 set! 为实际值
-(define-syntax letrec1
+(define-syntax letrec
   (syntax-rules ()
     ((letrec ((var val) ...) body1 body2 ...)
      (let ((var #f) ...)
@@ -106,12 +106,12 @@
 ;;      => (if 1 (and #f 3) #f)
 ;;      => (if 1 (if #f (and 3) #f) #f)
 ;;   注意: 最后一个表达式的值即为 and 返回值（不仅仅是 #t/#f）
-;(define-syntax and1
-;  (syntax-rules ()
-;    ((and) #t)
-;    ((and test) test)
-;    ((and test1 test2 ...)
-;     (if test1 (and test2 ...) #f))))
+(define-syntax and
+  (syntax-rules ()
+    ((and) #t)
+    ((and test) test)
+    ((and test1 test2 ...)
+     (if test1 (and test2 ...) #f))))
 
 ;; ── or ──
 ;; 逻辑或：从左到右求值，遇到真值立即返回该值。
@@ -128,14 +128,14 @@
 ;;   注意:
 ;;     - 使用 lambda 确保 test1 仅求值一次（存取 temp 而非重复求值）
 ;;     - 不依赖外部 let，纯 lambda 实现
-;(define-syntax or1
-;  (syntax-rules ()
-;    ((or) #f)
-;    ((or test) test)
-;    ((or test1 test2 ...)
-;     ((lambda (temp)
-;        (if temp temp (or test2 ...)))
-;     test1))))
+(define-syntax or
+  (syntax-rules ()
+    ((or) #f)
+    ((or test) test)
+    ((or test1 test2 ...)
+     ((lambda (temp)
+        (if temp temp (or test2 ...)))
+     test1))))
 
 ;; ── when ──
 ;; 条件执行：条件为真时执行表达式序列（无 else 分支）。
@@ -192,7 +192,7 @@
 ;;   注意:
 ;;     - (=> expression) 箭头中 expression 必须为单参数过程
 ;;     - (else) 子句必须放在最后，识别为关键字（syntax-rules else）
-(define-syntax cond1
+(define-syntax cond
   (syntax-rules (else =>)
     ((cond (else result1 result2 ...))
      (begin result1 result2 ...))

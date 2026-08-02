@@ -96,12 +96,8 @@ public static class Evaluator
         Put(Sym.UNQUOTE, HUnquote);
         Put(Sym.UNSPLICE, HUnquote);
         Put(Sym.USYNTAX, HUnquote);
-        Put(Sym.AND, HAnd);
-        Put(Sym.OR, HOr);
-        Put(Sym.COND, HCond);
-        Put(Sym.LET, HLet);
-        Put(Sym.LET_STAR, HLetStar);
-        Put(Sym.LETREC, HLetrec);
+        // 微解释器: and/or/cond/let/let*/letrec 特殊形式已移除,
+        // 由 boot-core.scm 的 Scheme 宏 (define-syntax) 接管。
     }
 
     // ── Special Forms ──
@@ -196,182 +192,6 @@ public static class Evaluator
             }
         }
         throw new Exception($"set!: invalid place: {place}");
-    }
-
-    private static object? HAnd(object? args, Env env)
-    {
-        if (args is not Cell a) return Const.TRUE;
-        var last = a;
-        while (last is Cell cc)
-        {
-            if (cc.Cdr is Nil)
-            {
-                var result = Eval(cc.Car, env);
-                if (result is Sym s && s == Const.FALSE) return Const.FALSE;
-                return result;
-            }
-            var r = Eval(cc.Car, env);
-            if (r is Sym s2 && s2 == Const.FALSE) return Const.FALSE;
-            last = cc.Cdr as Cell ?? a;
-        }
-        return Const.TRUE;
-    }
-
-    private static object? HOr(object? args, Env env)
-    {
-        if (args is not Cell a) return Const.FALSE;
-        var last = a;
-        while (last is Cell cc)
-        {
-            if (cc.Cdr is Nil)
-            {
-                return new TailCall(cc.Car, env);
-            }
-            var r = Eval(cc.Car, env);
-            if (r is Sym s && s == Const.FALSE) { last = cc.Cdr as Cell ?? a; continue; }
-            return r;
-        }
-        return Const.FALSE;
-    }
-
-    private static object? HCond(object? args, Env env)
-    {
-        if (args is not Cell a) return Const.VOID;
-        var cur = a;
-        while (cur is Cell c)
-        {
-            if (c.Car is not Cell clause) return Const.VOID;
-            var test = clause.Car;
-            if (test is Sym s && s.Name == "else")
-            {
-                return SeqTailCall(clause.Cdr, env);
-            }
-            // Check for => form: (test => expression)
-            if (clause.Cdr is Cell afterTest && afterTest.Car is Sym arrow && arrow.Name == "=>")
-            {
-                var expr = afterTest.Cdr is Cell e ? e.Car : Const.VOID;
-                var arrowTestVal = Eval(test, env);
-                if (arrowTestVal is Sym t2 && t2 == Const.FALSE)
-                {
-                    cur = (Cell)c.Cdr;
-                    continue;
-                }
-                // Call the procedure with testVal as argument
-                return new TailCall(new Cell(expr, new Cell(arrowTestVal, Const.NIL)), env);
-            }
-            var testVal = Eval(test, env);
-            if (testVal is Sym t && t == Const.FALSE)
-            {
-                cur = (Cell)c.Cdr;
-                continue;
-            }
-            if (clause.Cdr is Nil)
-                return testVal;
-            return SeqTailCall(clause.Cdr, env);
-        }
-        return Const.VOID;
-    }
-
-    private static object? HLet(object? args, Env env)
-    {
-        if (args is not Cell a) throw new Exception("bad let form");
-        var bindings = a.Car;
-        var body = a.Cdr;
-        if (bindings is Sym name && body is Cell)
-        {
-            // Named let: (let name ((var val) ...) body ...)
-            return HLetrec(args, env);
-        }
-        if (bindings is not Cell && bindings is not Nil) throw new Exception("bad let bindings");
-        var vars = new List<string>();
-        var vals = new List<object?>();
-        var cur = bindings;
-        while (cur is Cell bc)
-        {
-            if (bc.Car is not Cell bind || bind.Cdr is Nil)
-                throw new Exception("bad let binding");
-            vars.Add(bind.Car.AsString());
-            vals.Add(Eval(((Cell)bind.Cdr).Car, env));
-            cur = bc.Cdr;
-        }
-        var nenv = new Env(env, vars.Count);
-        for (int i = 0; i < vars.Count; i++)
-            nenv.Data[vars[i]] = vals[i];
-        return SeqTailCall(body, nenv);
-    }
-
-    private static object? HLetStar(object? args, Env env)
-    {
-        if (args is not Cell a) throw new Exception("bad let* form");
-        var bindings = a.Car;
-        var body = a.Cdr;
-        if (bindings is not Cell) throw new Exception("bad let* bindings");
-        var curEnv = env;
-        var cur = bindings;
-        while (cur is Cell bc)
-        {
-            if (bc.Car is not Cell bind || bind.Cdr is Nil)
-                throw new Exception("bad let* binding");
-            var var = bind.Car.AsString();
-            var val = Eval(((Cell)bind.Cdr).Car, curEnv);
-            curEnv = new Env(curEnv) { Data = { [var] = val } };
-            cur = bc.Cdr;
-        }
-        return SeqTailCall(body, curEnv);
-    }
-
-    private static object? HLetrec(object? args, Env env)
-    {
-        if (args is not Cell a) throw new Exception("bad letrec form");
-        var first = a.Car;
-        string? loopName = null;
-        object? bindings = null;
-        object? body = null;
-        if (first is Sym name)
-        {
-            // Named letrec/let
-            loopName = name.Name;
-            var cdrCell = a.Cdr as Cell;
-            bindings = cdrCell?.Car;
-            body = cdrCell?.Cdr;
-        }
-        else
-        {
-            bindings = first;
-            body = a.Cdr;
-        }
-        // bindings may be the empty list — legal (letrec () body...)
-        if (bindings is not Cell && bindings is not Nil) throw new Exception("bad letrec bindings");
-        var nenv = new Env(env, 0);
-        // First pass: bind all vars to #f
-        var vars = new List<string>();
-        var cur = bindings;
-        while (cur is Cell bc)
-        {
-            if (bc.Car is not Cell bind || bind.Cdr is Nil)
-                throw new Exception("bad letrec binding");
-            vars.Add(bind.Car.AsString());
-            nenv.Data[bind.Car.AsString()] = Const.FALSE;
-            cur = bc.Cdr as Cell;
-        }
-        // Second pass: evaluate init expressions and update bindings
-        cur = bindings;
-        while (cur is Cell bc)
-        {
-            if (bc.Car is not Cell bind || bind.Cdr is Nil)
-                throw new Exception("bad letrec binding");
-            var var = bind.Car.AsString();
-            var val = Eval(((Cell)bind.Cdr).Car, nenv);
-            nenv.Data[var] = val;
-            cur = bc.Cdr as Cell;
-        }
-        if (loopName is not null)
-        {
-            // Named let: create lambda and bind loopName to it
-            var lambda = new LambdaProc(vars, body ?? Const.NIL, nenv, true, loopName);
-            nenv.Data[loopName] = lambda;
-        }
-        return SeqTailCall(body ?? Const.NIL, nenv);
     }
 
     // ── Helpers ──
@@ -638,7 +458,7 @@ public static class Evaluator
         cur = args;
         for (int i = 0; i < cnt; i++)
         {
-            var c = (Cell)cur;
+            if (cur is not Cell c) break;
             arr[i] = EvalCore(c.Car, env);
             cur = c.Cdr;
         }

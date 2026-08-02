@@ -296,18 +296,8 @@ public static class Compiler
             // ── C# built-in special forms for JIT compilation ──
             // These are C# special forms (not macros), but ToAst needs to
             // translate them to if/lambda forms that the JIT compiler understands.
-            if (op == Sym.AND)
-                return ToAst(ExpandAnd(args as Cell));
-            if (op == Sym.OR)
-                return ToAst(ExpandOr(args as Cell));
-            if (op == Sym.COND)
-                return ToAst(ExpandCond(args as Cell));
-            if (op == Sym.LET)
-                return ToAst(ExpandLet(args as Cell, false));
-            if (op == Sym.LET_STAR)
-                return ToAst(ExpandLetStar(args as Cell));
-            if (op == Sym.LETREC)
-                return ToAst(ExpandLetRec(args as Cell));
+            // 微解释器: and/or/cond/let/let*/letrec 由 boot-core 的 Scheme 宏在
+            // MacroExpand 阶段展开为 if/lambda, 此处不再需要 (保留直接调用路径)。
             var procAst = ToAst(op);
             var argAsts = new List<AstNode>();
             var cur = args;
@@ -327,225 +317,15 @@ public static class Compiler
         if (c.Car is Sym s)
         {
             if (s.Name == "quote" || s.Name == "quasiquote") return expr;
-            var args = c.Cdr as Cell;
-            switch (s.Name)
-            {
-                case "and": return FullyExpand(ExpandAnd(args));
-                case "or": return FullyExpand(ExpandOr(args));
-                case "cond": return FullyExpand(ExpandCond(args));
-                case "let": return FullyExpand(ExpandLet(args, false));
-                case "let*": return FullyExpand(ExpandLetStar(args));
-                case "letrec": return FullyExpand(ExpandLetRec(args));
-            }
+            // 微解释器: and/or/cond/let/let*/letrec 由 boot-core 的 Scheme 宏
+            // 在 MacroExpand 阶段已展开为 if/lambda, 此处无需再展开。
+            // 但仍需递归展开其余子形式 (如嵌套的应用/引用)。
         }
         var newCar = FullyExpand(c.Car);
         var newCdr = FullyExpand(c.Cdr);
         if (ReferenceEquals(newCar, c.Car) && ReferenceEquals(newCdr, c.Cdr))
             return c;
         return new Cell(newCar, newCdr);
-    }
-
-    // ── Expand C# built-in special forms to if/lambda ──
-    // These produce Scheme forms that ToAst can handle directly.
-
-    internal static object? ExpandAnd(Cell? args)
-    {
-        if (args is null || args is Nil) return Const.TRUE;
-        if (args.Cdr is Nil) return args.Car;
-        // (and test1 rest ...) => (if test1 (and rest ...) #f)
-        var restAnd = ExpandAnd(args.Cdr as Cell);
-        return new Cell(Sym.IF, new Cell(args.Car, new Cell(restAnd, new Cell(Const.FALSE, Const.NIL))));
-    }
-
-    internal static object? ExpandOr(Cell? args)
-    {
-        if (args is null || args is Nil) return Const.FALSE;
-        if (args.Cdr is Nil) return args.Car;
-        // (or test1 rest ...) => (let ((temp test1)) (if temp temp (or rest ...)))
-        // Use temp variable to avoid double evaluation
-        var temp = Sym.Intern("__or_temp");
-        var restOr = ExpandOr(args.Cdr as Cell);
-        var ifForm = new Cell(Sym.IF, new Cell(temp, new Cell(temp, new Cell(restOr, Const.NIL))));
-        return new Cell(Sym.LET, new Cell(
-            new Cell(new Cell(temp, new Cell(args.Car, Const.NIL)), Const.NIL),
-            new Cell(ifForm, Const.NIL)));
-    }
-
-    internal static object? ExpandCond(Cell? args)
-    {
-        if (args is null || args is Nil) return Const.VOID;
-        var clause = args.Car as Cell;
-        if (clause is null) return Const.VOID;
-        var test = clause.Car;
-        var rest = clause.Cdr as Cell;
-
-        // (else result ...)
-        if (test is Sym elseSym && elseSym.Name == "else")
-            return new Cell(Sym.BEGIN, rest ?? (object?)Const.NIL);
-
-        // (test => expr) — arrow form
-        if (rest is Cell afterTest && afterTest.Car is Sym arrow && arrow.Name == "=>")
-        {
-            var expr = afterTest.Cdr is Cell e ? e.Car : Const.VOID;
-            var temp = Sym.Intern("__cond_arrow_temp");
-            var elseCond = ExpandCond(args.Cdr as Cell);
-            var ifForm = new Cell(Sym.IF, new Cell(temp,
-                new Cell(new Cell(expr, new Cell(temp, Const.NIL)),
-                new Cell(elseCond, Const.NIL))));
-            return new Cell(Sym.LET, new Cell(
-                new Cell(new Cell(temp, new Cell(test, Const.NIL)), Const.NIL),
-                new Cell(ifForm, Const.NIL)));
-        }
-
-        // (test) — implicit test
-        if (rest is null || rest is Nil)
-        {
-            var elseCond = ExpandCond(args.Cdr as Cell);
-            return new Cell(Sym.IF, new Cell(test, new Cell(test, new Cell(elseCond, Const.NIL))));
-        }
-
-        // (test result1 result2 ...)
-        var elseCond2 = ExpandCond(args.Cdr as Cell);
-        return new Cell(Sym.IF, new Cell(test,
-            new Cell(new Cell(Sym.BEGIN, rest),
-            new Cell(elseCond2, Const.NIL))));
-    }
-
-    internal static object? ExpandLet(Cell? args, bool isLetStarRecurse = false)
-    {
-        if (args is null) return Const.VOID;
-        var bindings = args.Car;
-        var body = args.Cdr;
-
-        // Named let: (let name ((var val) ...) body ...)
-        // => ((letrec ((name (lambda (var...) body...))) name) val...)
-        if (bindings is Sym name && body is Cell bodyCell)
-        {
-            // bindings here is the name; the actual var/val pairs are in the first body element
-            // Actually, (let name ((var val) ...) body...) => bindings is name (Sym)
-            // body = (((var val) ...) body...)
-            // So the var/val pairs are bodyCell.Car, and the body expressions are bodyCell.Cdr
-            var varValPairs = bodyCell.Car;  // ((var val) ...)
-            var bodyExprs = bodyCell.Cdr;    // body...
-
-            var paramNames = new List<string>();
-            var valExprs = new List<object?>();
-            if (varValPairs is Cell vc)
-            {
-                var cur = vc;
-                while (cur is Cell bc)
-                {
-                    if (bc.Car is Cell bind && bind.Cdr is Cell bindVal)
-                    {
-                        paramNames.Add(bind.Car.AsString());
-                        valExprs.Add(bindVal.Car);
-                    }
-                    cur = bc.Cdr as Cell;
-                }
-            }
-
-            // (letrec ((name (lambda (params) body...)))
-            //   ((name) val...))
-            // => ((lambda (param...) body...) val...)
-            // which is a normal let with the lambda calling itself
-            // Use fixpoint: ((letrec ((name (lambda (params) body...))) name) val...)
-            object? lambdaParams = Const.NIL;
-            for (int i = paramNames.Count - 1; i >= 0; i--)
-                lambdaParams = new Cell(paramNames[i], lambdaParams);
-            var lambda = new Cell(Sym.LAMBDA, new Cell(lambdaParams, bodyExprs));
-            var letRecBind = new Cell(new Cell(name, new Cell(lambda, Const.NIL)), Const.NIL);
-            var letRecForm = new Cell(Sym.LETREC, new Cell(letRecBind, new Cell(name, Const.NIL)));
-            // Build arg list as a Cell chain
-            object? valList = Const.NIL;
-            for (int i = valExprs.Count - 1; i >= 0; i--)
-                valList = new Cell(valExprs[i], valList);
-            var app = new Cell(letRecForm, valList);
-            return app;
-        }
-
-        if (bindings is not Cell) return new Cell(Sym.BEGIN, body);
-
-        // Regular let: (let ((var val) ...) body ...)
-        // => ((lambda (var ...) body ...) val ...)
-        var vars = new List<object?>();
-        var vals = new List<object?>();
-        var cur2 = bindings;
-        while (cur2 is Cell bc)
-        {
-            if (bc.Car is Cell bind && bind.Cdr is Cell bindVal)
-            {
-                vars.Add(bind.Car);
-                vals.Add(bindVal.Car);
-            }
-            cur2 = bc.Cdr;
-        }
-        // Build params list and arg list as Cell chains
-        object? paramsCell = Const.NIL;
-        for (int i = vars.Count - 1; i >= 0; i--)
-            paramsCell = new Cell(vars[i], paramsCell);
-        var lambda2 = new Cell(Sym.LAMBDA, new Cell(paramsCell, body));
-        object? argList = Const.NIL;
-        for (int i = vals.Count - 1; i >= 0; i--)
-            argList = new Cell(vals[i], argList);
-        return new Cell(lambda2, argList);
-    }
-
-    internal static object? ExpandLetStar(Cell? args)
-    {
-        if (args is null) return Const.VOID;
-        var bindings = args.Car;
-        var body = args.Cdr;
-
-        if (bindings is not Cell)
-            return new Cell(Sym.BEGIN, body);
-
-        // let* with one binding: (let ((var val)) body...) => (let ((var val)) body...)
-        // Actually: (let* ((var val) rest...) body...) => (let ((var val)) (let* (rest...) body...))
-        if (bindings is Cell bc)
-        {
-            var firstBinding = bc.Car as Cell;
-            var restBindings = bc.Cdr;
-            var singleBinding = new Cell(firstBinding, Const.NIL);
-            var restLetStar = ExpandLetStar(new Cell(restBindings, body));
-            return new Cell(Sym.LET, new Cell(singleBinding, new Cell(restLetStar, Const.NIL)));
-        }
-        return new Cell(Sym.BEGIN, body);
-    }
-
-    internal static object? ExpandLetRec(Cell? args)
-    {
-        if (args is null) return Const.VOID;
-        var bindings = args.Car;
-        var body = args.Cdr;
-
-        if (bindings is not Cell)
-            return new Cell(Sym.BEGIN, body);
-
-        // letrec: (letrec ((var val) ...) body...)
-        // => (let ((var #f) ...) (set! var val) ... (let () body...))
-        // Actually simpler: use let + set!
-        var letBindings = new List<object?>();
-        var setForms = new List<object?>();
-        var cur = bindings;
-        while (cur is Cell bc)
-        {
-            if (bc.Car is Cell bind && bind.Cdr is Cell bindVal)
-            {
-                var varName = bind.Car;
-                letBindings.Add(new Cell(varName, new Cell(Const.FALSE, Const.NIL)));
-                setForms.Add(new Cell(Sym.SETBANG, new Cell(varName, new Cell(bindVal.Car, Const.NIL))));
-            }
-            cur = bc.Cdr;
-        }
-        // Build binding list and set! sequence as Cell chains
-        object? letBindingsCell = Const.NIL;
-        for (int i = letBindings.Count - 1; i >= 0; i--)
-            letBindingsCell = new Cell(letBindings[i], letBindingsCell);
-        // body = set! forms ... then (begin original-body...) as one element
-        object? setBody = new Cell(new Cell(Sym.BEGIN, body), Const.NIL);
-        for (int i = setForms.Count - 1; i >= 0; i--)
-            setBody = new Cell(setForms[i], setBody);
-        return new Cell(Sym.LET, new Cell(letBindingsCell, setBody));
     }
 
     internal static (List<string> Params, bool HasRest) ParseParamList(object? cell)
