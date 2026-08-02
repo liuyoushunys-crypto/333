@@ -539,10 +539,10 @@ public static class Compiler
         object? letBindingsCell = Const.NIL;
         for (int i = letBindings.Count - 1; i >= 0; i--)
             letBindingsCell = new Cell(letBindings[i], letBindingsCell);
-        object? setBodyList = Const.NIL;
+        // body = set! forms ... then (begin original-body...) as one element
+        object? setBody = new Cell(new Cell(Sym.BEGIN, body), Const.NIL);
         for (int i = setForms.Count - 1; i >= 0; i--)
-            setBodyList = new Cell(setForms[i], setBodyList);
-        var setBody = new Cell(setBodyList, new Cell(Sym.BEGIN, body));
+            setBody = new Cell(setForms[i], setBody);
         return new Cell(Sym.LET, new Cell(letBindingsCell, setBody));
     }
 
