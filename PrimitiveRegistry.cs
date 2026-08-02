@@ -33,7 +33,7 @@ public static class PrimitiveRegistry
         _b("vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
         _b("bytevector?", args => args[0] is SchemeBytevector ? Const.TRUE : Const.FALSE);
         _b("number?", args => args[0] is int or long or BigInteger or double or float or decimal or Complex or SchemeFraction ? Const.TRUE : Const.FALSE);
-        _b("integer?", args => args[0] is int or long or BigInteger ? Const.TRUE : Const.FALSE);
+        _b("integer?", args => IsInteger(args[0]) ? Const.TRUE : Const.FALSE);
         _b("rational?", args => args[0] is SchemeFraction or int or long or BigInteger ? Const.TRUE : Const.FALSE);
         _b("real?", args => args[0] is int or long or BigInteger or SchemeFraction or double or float or decimal ? Const.TRUE : Const.FALSE);
         _b("complex?", args => args[0] is Complex or int or long or BigInteger or SchemeFraction or double or float ? Const.TRUE : Const.FALSE);
@@ -1710,6 +1710,18 @@ public static class PrimitiveRegistry
         if (b is SyntaxObject ob) return EqSymbols(a, ob.Expr);
         return ReferenceEquals(a, b);
     }
+
+    // R7RS integer?: exact integers, fractions with value 1, and inexact
+    // numbers with an integral value (e.g. 3.0) count.
+    private static bool IsInteger(object? v) => v switch
+    {
+        int or long or BigInteger => true,
+        double d => !double.IsNaN(d) && !double.IsInfinity(d) && d == Math.Floor(d),
+        float f => !float.IsNaN(f) && !float.IsInfinity(f) && f == MathF.Floor(f),
+        decimal m => m == decimal.Truncate(m),
+        SchemeFraction f => f.Den == 1,
+        _ => false,
+    };
 
     private static object? Eql(object? a, object? b)
     {

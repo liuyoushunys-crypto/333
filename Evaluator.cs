@@ -45,6 +45,8 @@ public static class Evaluator
             var proc = env.LookupSilent(opSym2.Name, UnboundSentinel);
             if (ReferenceEquals(proc, UnboundSentinel))
                 break;
+            if (opSym2.Name == "quasiquote")
+                break; // quasiquote depends on runtime env (unquote); leave for the interpreter
             var expanded = ExpandMacro(proc, cell, cell.Cdr, env);
             if (expanded is null)
                 break;
@@ -57,6 +59,8 @@ public static class Evaluator
         {
             if (c.Car is Sym s && s.Name == "quote")
                 return expr;
+            if (c.Car is Sym sq && sq.Name == "quasiquote")
+                return expr; // same: unquote must resolve at runtime
             // Strip syntax from car if needed
             var carExpr = c.Car;
             while (carExpr is SyntaxObject so3)

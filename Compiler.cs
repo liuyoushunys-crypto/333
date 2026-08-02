@@ -10,6 +10,7 @@ namespace Miniscm.Compiler;
 
 class CacheEntry
 {
+    public int Version { get; set; }
     public string? Hash { get; set; }
     public string? Name { get; set; }
     public List<string>? Body { get; set; }
@@ -99,6 +100,25 @@ public static class Compiler
         var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(bodySrc));
         return Convert.ToHexString(bytes)[..16];
     }
+
+    // Bump to invalidate cached expansions whose semantics changed
+    // (e.g. quasiquote was previously expanded at compile time with a
+    // wrong env, producing stale literals).
+    const int CacheVersion = 2;
+
+    // quasiquote depends on the runtime env (unquote), so it cannot be
+    // pre-expanded at JIT compile time. If a lambda body contains one,
+    // skip JIT compilation and let the interpreter expand it.
+    static bool HasQuasiquote(object? expr)
+    {
+        while (expr is SyntaxObject so) expr = so.Expr;
+        if (expr is Cell c)
+        {
+            if (c.Car is Sym s && s.Name == "quasiquote") return true;
+            return HasQuasiquote(c.Car) || HasQuasiquote(c.Cdr);
+        }
+        return false;
+    }
     public static CompiledLambda? CompileLambdaProc(LambdaProc lp)
     {
         if (!ShouldJit(lp)) return null;
@@ -119,7 +139,7 @@ public static class Compiler
                     {
                         var json = File.ReadAllText(cacheFile);
                         var entry = JsonSerializer.Deserialize<CacheEntry>(json);
-                        if (entry?.Hash == bodySrc && entry.Body is not null)
+                        if (entry?.Version == CacheVersion && entry.Hash == bodySrc && entry.Body is not null)
                         {
                             foreach (var s in entry.Body)
                                 bodyForms.Add(Parser.Read(s));
@@ -133,6 +153,8 @@ public static class Compiler
                 while (cur is Cell c)
                 {
                     var expanded = Evaluator.MacroExpand(c.Car, lp.ClosureEnv);
+                    if (HasQuasiquote(expanded))
+                        return null; // needs runtime expansion; skip JIT
                     bodyForms.Add(expanded);
                     cur = c.Cdr;
                 }
@@ -141,6 +163,7 @@ public static class Compiler
                     Directory.CreateDirectory(cacheDir);
                     var entry = new CacheEntry
                     {
+                        Version = CacheVersion,
                         Hash = bodySrc,
                         Name = lp.Name,
                         Body = bodyForms.Select(f => Printer.Format(f)).ToList()
