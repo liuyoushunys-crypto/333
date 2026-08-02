@@ -22,61 +22,6 @@ public static class Evaluator
     // templates so pattern-substituted local symbols resolve correctly.
     internal static Env? CurrentExpandEnv;
 
-    // Macro expansion helper used by the JIT compiler
-    internal static object? MacroExpand(object? expr, Env env, HashSet<object?>? seen = null)
-    {
-        seen ??= [];
-        var levelSeen = new HashSet<object?>();
-        // Strip top-level SyntaxObject
-        while (expr is SyntaxObject so)
-            expr = so.Expr;
-        while (expr is Cell cell && cell.Car is Sym opSym)
-        {
-            // Strip syntax from car for operator lookup
-            var lookupSym = cell.Car;
-            if (lookupSym is SyntaxObject so2)
-                lookupSym = so2.Expr;
-            if (levelSeen.Contains(expr) || seen.Contains(expr))
-                break;
-            levelSeen.Add(expr);
-            seen.Add(expr);
-            if (lookupSym is not Sym opSym2)
-                break;
-            var proc = env.LookupSilent(opSym2.Name, UnboundSentinel);
-            if (ReferenceEquals(proc, UnboundSentinel))
-                break;
-            if (opSym2.Name == "quasiquote")
-                break; // quasiquote depends on runtime env (unquote); leave for the interpreter
-            var expanded = ExpandMacro(proc, cell, cell.Cdr, env);
-            if (expanded is null)
-                break;
-            expr = expanded;
-            // Strip syntax from expanded form
-            while (expr is SyntaxObject sox)
-                expr = sox.Expr;
-        }
-        if (expr is Cell c)
-        {
-            if (c.Car is Sym s && s.Name == "quote")
-                return expr;
-            if (c.Car is Sym sq && sq.Name == "quasiquote")
-                return expr; // same: unquote must resolve at runtime
-            // Strip syntax from car if needed
-            var carExpr = c.Car;
-            while (carExpr is SyntaxObject so3)
-                carExpr = so3.Expr;
-            // If car was a SyntaxObject wrapping a non-Sym, keep original
-            if (carExpr is not Sym)
-                carExpr = c.Car;
-            var childSeen = new HashSet<object?>(seen);
-            var newCar = MacroExpand(c.Car, env, childSeen);
-            var newCdr = MacroExpand(c.Cdr, env, childSeen);
-            if (newCar is null && newCdr is null) return expr;
-            return new Cell(newCar ?? c.Car, newCdr ?? c.Cdr);
-        }
-        return expr;
-    }
-
     private static void Put(Sym s, Func<object?, Env, object?> f) => Specials[s] = f;
 
     public static void InitSpecials()
@@ -269,7 +214,7 @@ public static class Evaluator
                 proc = env.LookupSilent(ops.Name, UnboundSentinel);
                 if (!ReferenceEquals(proc, UnboundSentinel))
                 {
-                    var newExpr = ExpandMacro(proc, cell, args, env);
+                    var newExpr = ExpandMacro(proc, args, env);
                     if (newExpr is not null) { expr = newExpr; continue; }
                 }
                 else
@@ -359,52 +304,38 @@ public static class Evaluator
         }
     }
 
-    private static int _expandDepth = 0;
-    private static object? ExpandMacro(object? proc, Cell expr, object? args, Env env)
+    // 展开 "macro" 元组: 绑定模式变量 (rest 符号 args) 后求值宏体。
+    // 宏体为 (sx-macro-expand ...), 真正的模式解构与宏体求值在 Scheme 端完成。
+    internal static object? ExpandMacro(object? proc, object? args, Env env)
     {
-        if (proc is System.Runtime.CompilerServices.ITuple it && it.Length >= 2 && it[0] is string p0)
-        {
-            if (p0 == "macro" && it.Length >= 5 && it[3] is Env)
-            {
-                _expandDepth++;
-                var macroName = (expr.Car as Sym)?.Name ?? "?";
-                // if (_expandDepth <= 5)
-                //     Console.Error.WriteLine($"[ExpandMacro] depth={_expandDepth} name={macroName} args={Printer.Format(args)}");
-                // if (_expandDepth > 200)
-                // {
-                //     Console.Error.WriteLine($"[ExpandMacro] STACK OVERFLOW GUARD depth={_expandDepth} name={macroName}");
-                //     _expandDepth--;
-                //     throw new Exception($"syntax-rules: infinite expansion of '{macroName}'");
-                // }
-                var mbody = it[2];
-                var nenv = new Env(env);
-                // 微解释器所有宏元组模式均为 rest 符号 (my-definemacro 注册的 'args),
-                // 仅需绑定 args = 全部实参。真正的模式解构在 Scheme 端
-                // sx-macro-expand / my-bind-pattern 完成。
-                if (it[1] is Sym patSym)
-                    nenv.Data[patSym.Name] = args ?? Const.NIL;
-                var savedDepth = _expandDepth;
-                _expandDepth = 0;
-                var savedDefEnv = CurrentMacroDefEnv;
-                CurrentMacroDefEnv = it[3] as Env;
-                var savedExpandEnv = CurrentExpandEnv;
-                CurrentExpandEnv = env;
-                var r = EvalSeq(mbody, nenv);
-                while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
-                CurrentExpandEnv = savedExpandEnv;
-                CurrentMacroDefEnv = savedDefEnv;
-                _expandDepth = savedDepth;
-                var result = (r as SyntaxObject)?.Expr ?? r;
-                // Hygiene: resolve (sx-hygiene name) markers emitted by sx-expand
-                // for free template identifiers. Only these marked identifiers are
-                // resolved in the macro's definition env; pattern-substituted
-                // values are left untouched.
-                if (it[3] is Env defEnv && defEnv is not null)
-                    result = ResolveHygieneMarkers(result, defEnv);
-                return result;
-            }
-        }
-        return null;
+        if (proc is not System.Runtime.CompilerServices.ITuple it
+            || it.Length < 5 || it[0] is not string p0 || p0 != "macro")
+            return null;
+        if (it[3] is not Env defEnv)
+            return null;
+
+        var mbody = it[2];
+        var nenv = new Env(env);
+        // 微解释器所有宏元组模式均为 rest 符号 (my-definemacro 注册的 'args),
+        // 仅需绑定 args = 全部实参。真正的模式解构在 Scheme 端 sx-macro-expand。
+        if (it[1] is Sym patSym)
+            nenv.Data[patSym.Name] = args ?? Const.NIL;
+
+        var savedDefEnv = CurrentMacroDefEnv;
+        CurrentMacroDefEnv = defEnv;
+        var savedExpandEnv = CurrentExpandEnv;
+        CurrentExpandEnv = env;
+        var r = EvalSeq(mbody, nenv);
+        while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
+        CurrentExpandEnv = savedExpandEnv;
+        CurrentMacroDefEnv = savedDefEnv;
+
+        var result = (r as SyntaxObject)?.Expr ?? r;
+        // Hygiene: resolve (sx-hygiene name) markers emitted by sx-expand
+        // for free template identifiers. Only these marked identifiers are
+        // resolved in the macro's definition env.
+        result = ResolveHygieneMarkers(result, defEnv);
+        return result;
     }
 
     public static object? EvalSeq(object? seq, Env env)

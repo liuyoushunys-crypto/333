@@ -100,6 +100,15 @@ public static class Compiler
         if (SkipJitNames.Contains(name)) return false;
         return true;
     }
+    // 宏展开委托给 Scheme 端 my-macro-expand (对应 C# MacroExpand 的移植)
+    // expr 是代码, 需 quote 防止被 Eval 求值
+    static object? ExpandViaScheme(object? expr, Env env)
+    {
+        var quoted = new Cell(Sym.QUOTE, new Cell(expr, Const.NIL));
+        var call = new Cell(Sym.Intern("my-macro-expand"),
+            new Cell(quoted, new Cell(env, Const.NIL)));
+        return Evaluator.Eval(call, env);
+    }
     static string SafeFileName(string name)
     {
         var sb = new StringBuilder();
@@ -174,7 +183,7 @@ public static class Compiler
                 }
                 while (cur is Cell c)
                 {
-                    var expanded = Evaluator.MacroExpand(c.Car, lp.ClosureEnv);
+                    var expanded = ExpandViaScheme(c.Car, lp.ClosureEnv);
                     if (HasQuasiquote(expanded))
                         return null; // needs runtime expansion; skip JIT
                     bodyForms.Add(FullyExpand(expanded));
@@ -200,7 +209,7 @@ public static class Compiler
             {
                 while (cur is Cell c)
                 {
-                    var expanded = Evaluator.MacroExpand(c.Car, lp.ClosureEnv);
+                    var expanded = ExpandViaScheme(c.Car, lp.ClosureEnv);
                     bodyForms.Add(expanded);
                     cur = c.Cdr;
                 }

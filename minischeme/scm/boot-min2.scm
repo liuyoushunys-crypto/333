@@ -109,5 +109,24 @@
 (define (sx-make-macro-binding binding) ((lambda (name trans) (if (if (pair? trans) (eq? (car trans) (quote syntax-rules)) #f) ((lambda (lits rules) (list (quote define-macro) (cons name (quote args)) (list (quote sx-dispatch) (quote args) (list (quote quote) lits) (list (quote quote) rules)))) (if (pair? (cdr trans)) (cadr trans) (quote ())) (cddr trans)) (list (quote define-macro) (cons name (quote args)) (list (cons (quote lambda) (cdr trans)) (list (quote cons) (list (quote quote) name) (quote args)))))) (car binding) (cadr binding)))
 (define-macro (define-syntax name trans)
   (sx-make-macro-binding (list name trans)))
+
+;; ── my-macro-expand (C# MacroExpand 的 Scheme 移植) ──
+;; 递归宏展开: 顶层循环展开宏调用, 保留 quote/quasiquote, 递归 car/cdr。
+;; 单次展开经 C# 桥接原语 sx-expand-call。
+(define (my-macro-expand expr env)
+  (my-macro-expand-helper expr env))
+
+(define (my-macro-expand-helper expr env)
+  (if (pair? expr)
+      (if (eq? (car expr) 'quote)
+          expr
+          (if (eq? (car expr) 'quasiquote)
+              expr
+              (let ((expanded (sx-expand-call expr env)))
+                (if (eq? expanded #f)
+                    (cons (my-macro-expand (car expr) env)
+                          (my-macro-expand (cdr expr) env))
+                    (my-macro-expand-helper expanded env)))))
+      expr))
 (display "=== boot-min.scm 加载完成 ===\n")
 (newline)
