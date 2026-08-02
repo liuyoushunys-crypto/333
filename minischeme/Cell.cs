@@ -89,8 +89,6 @@ public sealed class Cell : IEnumerable<object?>
 public static class CellHelper
 {
     public static Cell? AsCell(this object? v) => v as Cell;
-    public static Cons AsCons(this object? v) => new Cons(v);
-    public static Sym AsSym(this object? v) => (v as Sym)!;
     public static string AsString(this object? v) => v is Sym s ? s.Name : (v as string) ?? "";
 
     public static int CellLength(this object? v)
@@ -109,15 +107,6 @@ public static class CellHelper
         return res;
     }
 
-    public static List<object?> PList(this object? v)
-    {
-        var res = new List<object?>();
-        var cur = v;
-        while (cur is Cell cell) { res.Add(cell.Car); cur = cell.Cdr; }
-        if (cur is not Nil) res.Add(cur);
-        return res;
-    }
-
     public static object? ToCell(this IEnumerable<object?> items)
     {
         object? head = Const.NIL;
@@ -130,40 +119,5 @@ public static class CellHelper
             tail = n;
         }
         return head;
-    }
-
-    public static object? Car(this object? v) => (v as Cell)?.Car;
-    public static object? Cdr(this object? v) => (v as Cell)?.Cdr;
-
-    public static int Len(this object? v) => v.CellLength();
-
-    public static IEnumerable<object?> Reverse(this Cell c)
-    {
-        var items = new List<object?>();
-        object? cur = c;
-        while (cur is Cell cc) { items.Add(cc.Car); cur = cc.Cdr; }
-        items.Reverse();
-        return items;
-    }
-}
-
-public struct Cons
-{
-    public object? Value { get; }
-    public Cons(object? v) => Value = v;
-    public object? Car => (Value as Cell)?.Car;
-    public object? Cdr => (Value as Cell)?.Cdr;
-    public bool IsPair => Value is Cell;
-    public bool IsNull => Value is Nil;
-    public bool IsList
-    {
-        get
-        {
-            if (Value is Nil) return true;
-            if (Value is not Cell) return false;
-            var cur = Value;
-            while (cur is Cell c) cur = c.Cdr;
-            return cur is Nil;
-        }
     }
 }

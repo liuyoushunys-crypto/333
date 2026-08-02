@@ -6,8 +6,6 @@ namespace Miniscm.Types;
 
 public static class Printer
 {
-    private static readonly Void _void = Const.VOID;
-
     public static string Format(object? x)
     {
         if (x is Nil) return "()";

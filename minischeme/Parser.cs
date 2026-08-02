@@ -172,15 +172,6 @@ public static class Parser
                 else
                     left = new Cell(Sym.Intern("="), new Cell(left, new Cell(rhs, Const.NIL)));
             }
-            else if (op == "+=" || op == "-=" || op == "*=" || op == "/=")
-            {
-                var sop = op[0] switch { '+' => "+", '-' => "-", '*' => "*", '/' => "/", _ => "+" };
-                var opSym = Sym.Intern(sop);
-                if (left is Sym lv)
-                    left = new Cell(Sym.SETBANG, new Cell(lv, new Cell(new Cell(opSym, new Cell(lv, new Cell(rhs, Const.NIL))), Const.NIL)));
-                else
-                    left = new Cell(Sym.Intern(op), new Cell(left, new Cell(rhs, Const.NIL)));
-            }
             else
             {
                 var opSym = op switch { "**" => Sym.Intern("expt"), "!=" => Sym.Intern("not="), _ => Sym.Intern(op) };

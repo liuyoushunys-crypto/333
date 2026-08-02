@@ -161,18 +161,6 @@ public static class Evaluator
         return Eval(cur, env);
     }
 
-    private static object? TailCallLoop(object? expr, Env env)
-    {
-        var e = expr;
-        var envPtr = env;
-        while (true)
-        {
-            var result = EvalCore(e, envPtr);
-            if (result is TailCall tc) { e = tc.Expr; envPtr = tc.Env; continue; }
-            return result;
-        }
-    }
-
     public static object? Eval(object? expr, Env env) => EvalCore(expr, env);
 
     internal static object? EvalCore(object? expr, Env env)
@@ -189,7 +177,6 @@ public static class Evaluator
             // Non-list
             if (expr is not Cell cell)
             {
-                if (expr == Const.TRUE || expr == Const.FALSE) return expr;
                 if (expr is Nil or Void or Eof) return expr;
                 if (expr is SyntaxObject so) return so.Expr;
                 return expr;
@@ -231,23 +218,19 @@ public static class Evaluator
                 // JIT compilation trigger
                 if (!IsCompiling && lp.CompiledVersion is null && lp.Name is not null)
                 {
-                    lp.CallCount++;
-                    if (lp.CallCount >= 1) // compile on first call
+                    IsCompiling = true;
+                    try
                     {
-                        IsCompiling = true;
-                        try
-                        {
-                            var compiled = Miniscm.Compiler.Compiler.CompileLambdaProc(lp);
-                            if (compiled is not null)
-                                lp.CompiledVersion = compiled;
-                        }
-                        catch
-                        {
-                        }
-                        finally
-                        {
-                            IsCompiling = false;
-                        }
+                        var compiled = Miniscm.Compiler.Compiler.CompileLambdaProc(lp);
+                        if (compiled is not null)
+                            lp.CompiledVersion = compiled;
+                    }
+                    catch
+                    {
+                    }
+                    finally
+                    {
+                        IsCompiling = false;
                     }
                 }
 
@@ -325,10 +308,17 @@ public static class Evaluator
         CurrentMacroDefEnv = defEnv;
         var savedExpandEnv = CurrentExpandEnv;
         CurrentExpandEnv = env;
-        var r = EvalSeq(mbody, nenv);
-        while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
-        CurrentExpandEnv = savedExpandEnv;
-        CurrentMacroDefEnv = savedDefEnv;
+        object? r;
+        try
+        {
+            r = EvalSeq(mbody, nenv);
+            while (r is TailCall tcr) r = EvalCore(tcr.Expr, tcr.Env);
+        }
+        finally
+        {
+            CurrentExpandEnv = savedExpandEnv;
+            CurrentMacroDefEnv = savedDefEnv;
+        }
 
         var result = (r as SyntaxObject)?.Expr ?? r;
         // Hygiene: resolve (sx-hygiene name) markers emitted by sx-expand
@@ -396,14 +386,6 @@ public static class Evaluator
         return arr;
     }
 
-    public static List<object?> EvalArgsToList(object? args, Env env)
-    {
-        var evaled = new List<object?>();
-        var cur = args;
-        while (cur is Cell c) { evaled.Add(EvalCore(c.Car, env)); cur = c.Cdr; }
-        return evaled;
-    }
-
     public static void BindParams(List<string> @params, object?[] evaledArgs, Env nenv)
     {
         int pi = 0;
@@ -420,21 +402,6 @@ public static class Evaluator
                 break;
             }
             if (pi < evaledArgs.Length) nenv.Data[p] = evaledArgs[pi];
-            pi++;
-        }
-    }
-
-    public static void BindParams(List<string> @params, List<object?> evaledArgs, Env nenv)
-    {
-        int pi = 0;
-        foreach (var p in @params)
-        {
-            if (p.StartsWith("rest:"))
-            {
-                nenv.Data[p[5..]] = evaledArgs.GetRange(pi, evaledArgs.Count - pi).ToCell();
-                break;
-            }
-            if (pi < evaledArgs.Count) nenv.Data[p] = evaledArgs[pi];
             pi++;
         }
     }

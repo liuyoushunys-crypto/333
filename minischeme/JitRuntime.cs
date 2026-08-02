@@ -104,21 +104,6 @@ public static class JitRuntime
         return new TailCall(expr, env);
     }
 
-    public static object? ResolveIC(object?[] cacheCell, Env env, string sym)
-    {
-        var val = cacheCell[0];
-        if (val is null)
-        {
-            val = env.Lookup(sym);
-            cacheCell[0] = val;
-        }
-        return val;
-    }
-
-    public static object? BoolToScheme(bool b) => b ? Const.TRUE : Const.FALSE;
-
-    public static bool IsFalsy(object? v) => v is Sym s && s == Const.FALSE;
-
     public static object? CarOf(object? x) => x is Cell c ? c.Car : throw new Exception("car: not a pair");
     public static object? CdrOf(object? x) => x is Cell c ? c.Cdr : throw new Exception("cdr: not a pair");
 
@@ -249,26 +234,33 @@ public static class JitRuntime
         return Const.FALSE;
     }
 
+    // 数值标量相等 (Eqv/Equal2 共享)
+    public static bool ScalarEquals(object? a, object? b)
+    {
+        if (a is long la && b is long lb) return la == lb;
+        if (a is long la2 && b is int ib2) return la2 == ib2;
+        if (a is int ia3 && b is long lb3) return ia3 == lb3;
+        if (a is int ia4 && b is int ib4) return ia4 == ib4;
+        if (a is BigInteger ba && b is BigInteger bb) return ba == bb;
+        if (a is BigInteger ba2 && b is long lb5) return ba2 == lb5;
+        if (a is long la6 && b is BigInteger bb6) return la6 == bb6;
+        if (a is BigInteger ba7 && b is int ib7) return ba7 == ib7;
+        if (a is int ia8 && b is BigInteger bb8) return ia8 == bb8;
+        if (a is SchemeFraction fa && b is SchemeFraction fb) return fa.Equals(fb);
+        if (a is SchemeFraction fa2 && b is long lf) return fa2.Equals(new SchemeFraction(lf, 1));
+        if (a is long lf2 && b is SchemeFraction fb2) return fb2.Equals(new SchemeFraction(lf2, 1));
+        if (a is double da && b is double db) return da == db;
+        if (a is double da2 && b is long dl) return da2 == dl;
+        if (a is long dl2 && b is double db2) return dl2 == db2;
+        if (a is Complex cxa && b is Complex cxb) return cxa == cxb;
+        return false;
+    }
+
     public static object? Eqv(object? a, object? b)
     {
         if (ReferenceEquals(a, b)) return Const.TRUE;
         if (a is null || b is null) return Const.FALSE;
-        if (a is long la && b is long lb) return la == lb ? Const.TRUE : Const.FALSE;
-        if (a is long la2 && b is int ib2) return la2 == ib2 ? Const.TRUE : Const.FALSE;
-        if (a is int ia3 && b is long lb3) return ia3 == lb3 ? Const.TRUE : Const.FALSE;
-        if (a is int ia4 && b is int ib4) return ia4 == ib4 ? Const.TRUE : Const.FALSE;
-        if (a is BigInteger ba && b is BigInteger bb) return ba == bb ? Const.TRUE : Const.FALSE;
-        if (a is BigInteger ba2 && b is long lb5) return ba2 == lb5 ? Const.TRUE : Const.FALSE;
-        if (a is long la6 && b is BigInteger bb6) return la6 == bb6 ? Const.TRUE : Const.FALSE;
-        if (a is BigInteger ba7 && b is int ib7) return ba7 == ib7 ? Const.TRUE : Const.FALSE;
-        if (a is int ia8 && b is BigInteger bb8) return ia8 == bb8 ? Const.TRUE : Const.FALSE;
-        if (a is SchemeFraction fa && b is SchemeFraction fb) return fa.Equals(fb) ? Const.TRUE : Const.FALSE;
-        if (a is SchemeFraction fa2 && b is long lf) return fa2.Equals(new SchemeFraction(lf, 1)) ? Const.TRUE : Const.FALSE;
-        if (a is long lf2 && b is SchemeFraction fb2) return fb2.Equals(new SchemeFraction(lf2, 1)) ? Const.TRUE : Const.FALSE;
-        if (a is double da && b is double db) return da == db ? Const.TRUE : Const.FALSE;
-        if (a is double da2 && b is long dl) return da2 == dl ? Const.TRUE : Const.FALSE;
-        if (a is long dl2 && b is double db2) return dl2 == db2 ? Const.TRUE : Const.FALSE;
-        if (a is Complex cxa && b is Complex cxb) return cxa == cxb ? Const.TRUE : Const.FALSE;
+        if (ScalarEquals(a, b)) return Const.TRUE;
         if (a is string s && b is string sb) return s == sb ? Const.TRUE : Const.FALSE;
         if (a is SchemeChar sca && b is SchemeChar scb) return sca.Codepoint == scb.Codepoint ? Const.TRUE : Const.FALSE;
         return Const.FALSE;
@@ -289,22 +281,7 @@ public static class JitRuntime
         if (a is string sa2 && b is SchemeString ssb2) return sa2 == ssb2.ToString() ? Const.TRUE : Const.FALSE;
         if (a is SchemeString ssa3 && b is SchemeString ssb3) return ssa3.ToString() == ssb3.ToString() ? Const.TRUE : Const.FALSE;
         if (a is string sa3 && b is string sb3) return sa3 == sb3 ? Const.TRUE : Const.FALSE;
-        if (a is long la && b is long lb) return la == lb ? Const.TRUE : Const.FALSE;
-        if (a is long la2 && b is int ib2) return la2 == ib2 ? Const.TRUE : Const.FALSE;
-        if (a is int ia3 && b is long lb3) return ia3 == lb3 ? Const.TRUE : Const.FALSE;
-        if (a is int ia4 && b is int ib4) return ia4 == ib4 ? Const.TRUE : Const.FALSE;
-        if (a is BigInteger ba && b is BigInteger bb) return ba == bb ? Const.TRUE : Const.FALSE;
-        if (a is BigInteger ba2 && b is long lb5) return ba2 == lb5 ? Const.TRUE : Const.FALSE;
-        if (a is long la6 && b is BigInteger bb6) return la6 == bb6 ? Const.TRUE : Const.FALSE;
-        if (a is BigInteger ba7 && b is int ib7) return ba7 == ib7 ? Const.TRUE : Const.FALSE;
-        if (a is int ia8 && b is BigInteger bb8) return ia8 == bb8 ? Const.TRUE : Const.FALSE;
-        if (a is SchemeFraction fa && b is SchemeFraction fb) return fa.Equals(fb) ? Const.TRUE : Const.FALSE;
-        if (a is SchemeFraction fa2 && b is long lf) return fa2.Equals(new SchemeFraction(lf, 1)) ? Const.TRUE : Const.FALSE;
-        if (a is long lf2 && b is SchemeFraction fb2) return fb2.Equals(new SchemeFraction(lf2, 1)) ? Const.TRUE : Const.FALSE;
-        if (a is double da && b is double db) return da == db ? Const.TRUE : Const.FALSE;
-        if (a is double da2 && b is long dl) return da2 == dl ? Const.TRUE : Const.FALSE;
-        if (a is long dl2 && b is double db2) return dl2 == db2 ? Const.TRUE : Const.FALSE;
-        if (a is Complex cxa && b is Complex cxb) return cxa == cxb ? Const.TRUE : Const.FALSE;
+        if (ScalarEquals(a, b)) return Const.TRUE;
         if (a is SchemeChar sca && b is SchemeChar scb) return sca.Codepoint == scb.Codepoint ? Const.TRUE : Const.FALSE;
         if (a is Sym syma && b is Sym symb) return syma.Name == symb.Name ? Const.TRUE : Const.FALSE;
         return Const.FALSE;

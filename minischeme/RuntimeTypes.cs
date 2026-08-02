@@ -57,7 +57,6 @@ public sealed class LambdaProc
     public Env ClosureEnv { get; }
     public bool IsSimple { get; }
     public string? Name { get; set; }
-    public int CallCount { get; set; }
     public object? CompiledVersion { get; set; }
 
     public LambdaProc(List<string> @params, object? body, Env env, bool isSimple, string? name = null)

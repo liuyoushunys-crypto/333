@@ -214,7 +214,6 @@ public static class AtomParser
 
     private static BigInteger BigIntegerParseRadix(string s, int radix)
     {
-        if (radix == 10) return BigInteger.Parse(s);
         BigInteger result = 0;
         bool neg = false;
         int i = 0;

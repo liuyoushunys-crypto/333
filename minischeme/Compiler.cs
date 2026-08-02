@@ -12,7 +12,6 @@ class CacheEntry
 {
     public int Version { get; set; }
     public string? Hash { get; set; }
-    public string? Name { get; set; }
     public List<string>? Params { get; set; }
     public List<string>? Body { get; set; }
 }
@@ -196,7 +195,6 @@ public static class Compiler
                     {
                         Version = CacheVersion,
                         Hash = bodySrc,
-                        Name = lp.Name,
                         Params = lp.Params,
                         Body = bodyForms.Select(f => Printer.Format(f)).ToList()
                     };
@@ -511,16 +509,6 @@ public static class Compiler
         if (node is BeginAst b) return b.Exprs.Any(e => RefersOuterVar(e, outerVars, innerParams));
         return false;
     }
-    // ── Mutation detection for self-recursion safety ──
-    static bool HasMutation(AstNode node, string varName)
-    {
-        if (node is SetBangAst s) return s.Name == varName;
-        if (node is IfAst i) return HasMutation(i.Test, varName) || HasMutation(i.Then, varName) || HasMutation(i.Else, varName);
-        if (node is AppAst a) { if (HasMutation(a.Proc, varName)) return true; return a.Args.Any(x => HasMutation(x, varName)); }
-        if (node is BeginAst b) return b.Exprs.Any(e => HasMutation(e, varName));
-        if (node is LambdaAst la) { if (la.Params.Select(CleanParamName).Contains(varName)) return false; return la.Body.Any(e => HasMutation(e, varName)); }
-        return false;
-    }
     static bool HasSelfRecursionInNestedLambda(List<AstNode> body, string selfName)
     {
         foreach (var node in body)
@@ -666,9 +654,6 @@ public static class Compiler
             {
                 if (node is AppAst app2)
                 {
-                    var inl = TryInlineOp(app2);
-                    if (inl is not null)
-                        return [Expression.Goto(BreakLabel, Expression.Convert(inl, typeof(object)))];
                     return [Expression.Goto(BreakLabel, Expression.Convert(CompileAppCall(app2), typeof(object)))];
                 }
                 return [Expression.Goto(BreakLabel, Expression.Convert(CompileExpr(node), typeof(object)))];
