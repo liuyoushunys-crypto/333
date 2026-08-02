@@ -13,6 +13,7 @@ class CacheEntry
     public int Version { get; set; }
     public string? Hash { get; set; }
     public string? Name { get; set; }
+    public List<string>? Params { get; set; }
     public List<string>? Body { get; set; }
 }
 public static class Compiler
@@ -104,7 +105,7 @@ public static class Compiler
     // Bump to invalidate cached expansions whose semantics changed
     // (e.g. quasiquote was previously expanded at compile time with a
     // wrong env, producing stale literals).
-    const int CacheVersion = 2;
+    const int CacheVersion = 4;
 
     // quasiquote depends on the runtime env (unquote), so it cannot be
     // pre-expanded at JIT compile time. If a lambda body contains one,
@@ -139,7 +140,9 @@ public static class Compiler
                     {
                         var json = File.ReadAllText(cacheFile);
                         var entry = JsonSerializer.Deserialize<CacheEntry>(json);
-                        if (entry?.Version == CacheVersion && entry.Hash == bodySrc && entry.Body is not null)
+                        if (entry?.Version == CacheVersion && entry.Hash == bodySrc
+                            && entry.Params is not null && entry.Params.SequenceEqual(lp.Params)
+                            && entry.Body is not null)
                         {
                             foreach (var s in entry.Body)
                                 bodyForms.Add(Parser.Read(s));
@@ -155,7 +158,7 @@ public static class Compiler
                     var expanded = Evaluator.MacroExpand(c.Car, lp.ClosureEnv);
                     if (HasQuasiquote(expanded))
                         return null; // needs runtime expansion; skip JIT
-                    bodyForms.Add(expanded);
+                    bodyForms.Add(FullyExpand(expanded));
                     cur = c.Cdr;
                 }
                 try
@@ -166,6 +169,7 @@ public static class Compiler
                         Version = CacheVersion,
                         Hash = bodySrc,
                         Name = lp.Name,
+                        Params = lp.Params,
                         Body = bodyForms.Select(f => Printer.Format(f)).ToList()
                     };
                     var json = JsonSerializer.Serialize(entry, new JsonSerializerOptions { WriteIndented = true });
@@ -311,6 +315,34 @@ public static class Compiler
             return new AppAst(procAst, argAsts);
         }
         return new LiteralAst(expr);
+    }
+
+    // Fully expand cond/let/letrec/let*/or/and into if/lambda/begin/set!
+    // so cached bodies store the final form. quote/quasiquote are left
+    // untouched (quasiquote needs the runtime env; JIT is skipped for it).
+    internal static object? FullyExpand(object? expr)
+    {
+        while (expr is SyntaxObject so) expr = so.Expr;
+        if (expr is not Cell c) return expr;
+        if (c.Car is Sym s)
+        {
+            if (s.Name == "quote" || s.Name == "quasiquote") return expr;
+            var args = c.Cdr as Cell;
+            switch (s.Name)
+            {
+                case "and": return FullyExpand(ExpandAnd(args));
+                case "or": return FullyExpand(ExpandOr(args));
+                case "cond": return FullyExpand(ExpandCond(args));
+                case "let": return FullyExpand(ExpandLet(args, false));
+                case "let*": return FullyExpand(ExpandLetStar(args));
+                case "letrec": return FullyExpand(ExpandLetRec(args));
+            }
+        }
+        var newCar = FullyExpand(c.Car);
+        var newCdr = FullyExpand(c.Cdr);
+        if (ReferenceEquals(newCar, c.Car) && ReferenceEquals(newCdr, c.Cdr))
+            return c;
+        return new Cell(newCar, newCdr);
     }
 
     // ── Expand C# built-in special forms to if/lambda ──
