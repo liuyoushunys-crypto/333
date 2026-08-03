@@ -1,6 +1,22 @@
 ;; my-definemacro2.scm — 从 .mscm_cache 生成的最小原语版 (微解释器)
 ;; 普通函数用缓存 Body (if/lambda/begin/set!/quote/应用) 重建;
 ;; define-macro 宏自举定义保留 (原版语法, 经 my-definemacro 注册)。
+(define (my-macro-expand expr env)
+  (my-macro-expand-helper expr env))
+
+(define (my-macro-expand-helper expr env)
+  (if (pair? expr)
+      (if (eq? (car expr) 'quote)
+          expr
+          (if (eq? (car expr) 'quasiquote)
+              expr
+              ((lambda (expanded)
+                 (if (eq? expanded #f)
+                     (cons (my-macro-expand (car expr) env)
+                           (my-macro-expand (cdr expr) env))
+                     (my-macro-expand-helper expanded env)))
+               (sx-expand-call expr env))))
+      expr))
 
 (define (my-bind-pattern pattern args) (if (symbol? pattern) (begin (if (eq? pattern (quote _)) (quote ()) (list (cons pattern args)))) (if (not (pair? pattern)) (begin (quote ())) (if (null? pattern) (begin (quote ())) (begin (append (my-bind-elem (car pattern) (car args)) (my-bind-pattern (cdr pattern) (cdr args))))))))
 (define (my-bind-elem elem arg) (if (eq? elem (quote _)) (begin (quote ())) (if (symbol? elem) (begin (list (cons elem arg))) (if (if (pair? elem) (if (symbol? (car elem)) (null? (cdr elem)) #f) #f) (begin (list (cons (car elem) arg))) (if (pair? elem) (begin (my-bind-pattern elem arg)) (begin (quote ())))))))

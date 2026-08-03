@@ -113,21 +113,5 @@
 ;; ── my-macro-expand (C# MacroExpand 的 Scheme 移植) ──
 ;; 递归宏展开: 顶层循环展开宏调用, 保留 quote/quasiquote, 递归 car/cdr。
 ;; 单次展开经 C# 桥接原语 sx-expand-call。
-(define (my-macro-expand expr env)
-  (my-macro-expand-helper expr env))
-
-(define (my-macro-expand-helper expr env)
-  (if (pair? expr)
-      (if (eq? (car expr) 'quote)
-          expr
-          (if (eq? (car expr) 'quasiquote)
-              expr
-              ((lambda (expanded)
-                 (if (eq? expanded #f)
-                     (cons (my-macro-expand (car expr) env)
-                           (my-macro-expand (cdr expr) env))
-                     (my-macro-expand-helper expanded env)))
-               (sx-expand-call expr env))))
-      expr))
 (display "=== boot-min2.scm 加载完成 ===\n")
 (newline)
