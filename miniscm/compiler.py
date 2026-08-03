@@ -1338,9 +1338,9 @@ def safe_file_name(name):
             sb.append(ch)
     return "".join(sb)
 
-# 与 C# Compiler.BodyHash 一致 — 用 body 源码 hash 命名缓存文件
+# 与 C# Compiler.BodyHash 一致 — 用 body 源码 hash 命名缓存文件 (大写 hex, 与 C# ToHexString 一致)
 def body_hash_src(body_src):
-    return hashlib.sha256(body_src.encode('utf-8')).hexdigest()[:16]
+    return hashlib.sha256(body_src.encode('utf-8')).hexdigest()[:16].upper()
 
 class LambdaProc:
     __slots__ = ('name', 'params', 'body', 'env', 'is_simple',
