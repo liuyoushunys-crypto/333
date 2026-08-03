@@ -180,7 +180,6 @@ def initenv():
     builtin('stream-take', lambda s, n: stream_take_fn(s, int(n)))
 
 # ── 符号操作 ──
-    builtin('symbol?', lambda x:TRUE if isinstance(x,Sym) else FALSE)
     builtin('string?', lambda x:TRUE if isinstance(x,(str,SchemeString)) else FALSE)
     # symbol=? 在 primitives_ext.py 和 scm/char-boolean.scm 中, symbol_eq_prim)
 
@@ -212,13 +211,11 @@ def initenv():
     builtin('string-ref', string_ref_prim)
     builtin('string-set!', lambda v,i,c: (str_mutate(v), str_set_char(v, i, c), VOID)[-1])
     builtin('string-fill!', string_fill_prim)
-    builtin('string-append', lambda *a: SchemeString(''.join(str(x) for x in a)))
     builtin('string-copy', lambda s,*a: SchemeString(str(s)) if not a else SchemeString(str(s)[a[0]:a[1]] if len(a)>1 else str(s)[a[0]:]))
     builtin('make-string', lambda n,*a: SchemeString((char_val(a[0]) if a else ' ') * n))
     builtin('substring', lambda s,i,j: str(s)[i:j])
     builtin('string->list', lambda s: _lst([SchemeChar(c) for c in str(s)]))
     builtin('symbol->string', str)
-    builtin('string->symbol', lambda s: Sym(str(s)) if isinstance(s, (str, SchemeString)) else s)
     builtin('string-downcase', lambda s: SchemeString(str(s).lower()))
     builtin('string-upcase', lambda s: SchemeString(str(s).upper()))
     builtin('list->string', lambda lst: SchemeString(''.join(c[1] if isinstance(c,tuple) else (c.char if hasattr(c,'char') else str(c)) for c in _plist(lst))))
@@ -228,14 +225,12 @@ def initenv():
 
 # ── 向量操作 ──
     # vector? 接受 list（Python list 作为不可变向量）和 SchemeVector
-    builtin('vector?', lambda x:TRUE if isinstance(x,(list,SchemeVector)) else FALSE)
     builtin('vector', lambda *a: SchemeVector(list(a)))
     builtin('vector-ref', lambda v,i: v.data[i] if hasattr(v,'data') else v[i])
     builtin('vector-length', lambda v: len(v.data) if hasattr(v, 'data') else len(v))
     builtin('vector-set!', lambda v, i, x: vec_set_elem(v, i, x))
     # make-vector: 可选的填充值，默认为 NIL；FALSE/NIL 保持原值
     builtin('make-vector', lambda n, *a: SchemeVector([(NIL if not a else (a[0] if (a[0] is not FALSE) else FALSE)) for _ in range(n)]))
-    builtin('list->vector', lambda lst: SchemeVector(_cells(lst)))
 
 # ── 字节向量操作 ──
     builtin('bytevector?', lambda x: TRUE if isinstance(x,SchemeBytevector) else FALSE)
@@ -271,8 +266,6 @@ def initenv():
     builtin('peek-char', pkc)
     builtin('write', write_proc)
     builtin('write-char', wc)
-    builtin('display', dsp)
-    builtin('newline', lambda: (sys.stdout.write("\n"), VOID)[-1])
     builtin('port-position', lambda p: (len(p[1][0]) and 0) if not (isinstance(p,tuple) and isinstance(p[1],list) and len(p[1])>1) else 0)
     builtin('set-port-position!', set_port_pos)
     builtin('get-output-string', lambda x: x[1][0] if isinstance(x,tuple) and x[0]=='str-port' and isinstance(x[1],list) else (x[1] if isinstance(x,tuple) and x[0]=='str-port' else (''.join(x.data) if hasattr(x,'data') else '')))
@@ -286,7 +279,6 @@ def initenv():
     builtin('values', lambda *a: tuple(a) if len(a)!=1 else a[0])
     builtin('apply', app)
     builtin('with-exception-handler', with_exception_handler)
-    builtin('error', error)
     builtin('raise', do_raise)
     builtin('error-object?', lambda x: TRUE if isinstance(x, ErrorObject) else FALSE)
     builtin('error-object-message', lambda x: str(x.message) if isinstance(x, ErrorObject) else str(x))
@@ -320,12 +312,10 @@ def initenv():
 
 # ── 杂项 ──
     builtin('compose', compose_fn)
-    builtin('procedure?', lambda x:TRUE if callable(x) or isinstance(x,tuple) else FALSE)
     builtin('gensym', lambda *a: next_gensym())
     builtin('gensym2', lambda: Sym(f'__g{id({})}'))
     builtin('features', lambda: Cell(Sym('r7rs'), Cell(Sym('miniscm'), NIL)))
     builtin('defined?', lambda x: TRUE if _sn(x) in be.data else FALSE)
-    builtin('void', lambda *a: VOID)
     builtin('sink', lambda *a: VOID)
     builtin('helper', lambda *a: VOID)
     # make-parameter：SRFI-39 参数对象

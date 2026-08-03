@@ -38,9 +38,9 @@ public static class Evaluator
         //     Scheme 端用 (eval expr (the-environment)) 在调用方词法环境求值
         //     unquote, 使 quasiquote/define-syntax 等可在 Scheme 自举实现。
         Put(Sym.THE_ENVIRONMENT, HTheEnvironment);
-        Put(Sym.UNQUOTE, HUnquote);
-        Put(Sym.UNSPLICE, HUnquote);
-        Put(Sym.USYNTAX, HUnquote);
+        // Put(Sym.UNQUOTE, HUnquote);
+        // Put(Sym.UNSPLICE, HUnquote);
+        // Put(Sym.USYNTAX, HUnquote);
         // 微解释器: and/or/cond/let/let*/letrec 特殊形式已移除,
         // 由 boot-core.scm 的 Scheme 宏 (define-syntax) 接管。
     }

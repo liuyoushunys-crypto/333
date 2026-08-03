@@ -11,6 +11,7 @@ public class Program
     public static void Main(string[] args)
     {
         Evaluator.InitSpecials();
+        PrimitiveRegistry.InitFirst();
         PrimitiveRegistry.Init();
 
         var baseDir = AppDomain.CurrentDomain.BaseDirectory;

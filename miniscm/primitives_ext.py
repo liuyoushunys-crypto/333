@@ -4,11 +4,12 @@
 import math, sys, json as _json
 from fractions import Fraction
 from mtypes import (
-    Sym, Cell, SchemeString, SchemeChar, SchemeVector, SchemeBytevector,
-    Promise, SyntaxObject, ErrorObject, NIL, VOID, EOF, TRUE, FALSE, Env,
+    SchemeException, Sym, Cell, SchemeString, SchemeChar, SchemeVector, SchemeBytevector,
+    Promise, SyntaxObject, ErrorObject, NIL, VOID, EOF, TRUE, FALSE, Env, TailCall,
     _pr, _so, _sn, _plist, _lst, builtin, be
 )
-from primitives import port_out, make_ht, vec_set_elem, do_raise, lst, do_force, cell_iter, cells, list_span, list_split_at, break_list_fn, partition_fn, stream_ref_fn, stream_map_fn, stream_filter_fn, stream_take_fn, bits_to_integer, bits_to_integer_lsb, integer_to_bits_list, booleans_to_integer, alist_copy_fn, cs_char, char_val, set_port_pos, hash_table_ref_default, hash_table_keys, hash_table_values, compose_fn, list_drop
+from primitives import port_out, scheme_truthy, cell_iter, cells, list_span, str_mutate, stream_filter_fn, cs_char, char_val 
+from primitives_first import call, port_out
 
 # char_ci_eq: 字符大小写不敏感比较（从 primitives.py 迁入）
 def char_ci_eq(a,b):
@@ -1352,6 +1353,7 @@ def filter_map_fn(fn, lst):
     return _lst(result)
 
 def map_fn(f, *lsts):
+    from miniscm import _eval as _eval_fn
     if not lsts: return NIL
     result = []
     curs = [l for l in lsts]

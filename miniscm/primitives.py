@@ -11,15 +11,7 @@ from reader import read
 
 # ── 从 primitives_first 导入自举核心函数 ──
 from primitives_first import (
-    cons, car, cdr, lst, add, sub, eqv, equal, memq, assq, map_,
-    list_ref, append, is_list, for_each_fn, error, dsp,
-    caar, cadr, cdar, cddr, eq_num, lt, gt, le, ge, filter_,
-    is_scheme_char, get_scheme_char, is_scheme_str, get_scheme_str,
-    is_scheme_vec, get_scheme_vec_data, _EqHashTable,
-    _eval_bridge, _sx_defined, _sx_defmacro, _sx_expand_call,
-    expand_macro, resolve_hygiene_markers, call, port_out,
-    _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV,
-    _sx_def_env, _sx_expand_env,
+    car, cdr, eqv, equal, call, port_out,
 )
 
 # char_val: extract Python str from SchemeChar
@@ -212,17 +204,15 @@ def div(a,*b):
 # gcd2: gcd(a/b, c/d) = gcd(a,c) / lcm(b,d)
 def gcd2(a,b):
     a,b=abs(a),abs(b)
+    _gcd = math.gcd
+    _lcm = lambda x,y: x * y // _gcd(x, y) if x and y else 0
     if isinstance(a,Fraction) and isinstance(b,Fraction):
         g = lambda: 0
-        _gcd = math.gcd
-        _lcm = lambda x,y: x * y // _gcd(x, y) if x and y else 0
         return Fraction(_gcd(a.numerator,b.numerator), _lcm(a.denominator,b.denominator))
     if isinstance(a,Fraction) or isinstance(b,Fraction):
-        _gcd = math.gcd
-        _lcm = lambda x,y: x * y // _gcd(x, y) if x and y else 0
         na, da = a.numerator, a.denominator if isinstance(a,Fraction) else (int(a),1)
         nb, db = b.numerator, b.denominator if isinstance(b,Fraction) else (int(b),1)
-        return Fraction(_igcd(na,nb), _ilcm(da,db))
+        return Fraction(_gcd(na,nb), _lcm(da,db))
     a,b=int(a),int(b)
     while b: a,b=b,a%b
     return a
@@ -241,7 +231,7 @@ def lcm2(a,b):
         _lcm = lambda x,y: x * y // _gcd(x, y) if x and y else 0
         a=Fraction(a,1) if isinstance(a,int) else a
         b=Fraction(b,1) if isinstance(b,int) else b
-        return Fraction(_ilcm(a.numerator,b.numerator), _igcd(a.denominator,b.denominator))
+        return Fraction(_lcm(a.numerator,b.numerator), _gcd(a.denominator,b.denominator))
     return abs(int(a)*int(b))//gcd2(a,b)
 def lcm(*a):
     if not a: return 1

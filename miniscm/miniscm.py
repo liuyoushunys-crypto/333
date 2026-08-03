@@ -312,7 +312,7 @@ def _eval_tuple_lambda(proc_val, _cur, env):
 
 def _eval(expr, env):
     _unbound_sentinel = _UNBOUND
-    from primitives import expand_macro
+    from primitives_first import expand_macro
     while True:
         # B0: 符号
         if isinstance(expr, Sym):
