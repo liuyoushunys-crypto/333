@@ -219,7 +219,7 @@ def parse_param_list(cell):
     cur = cell
     has_rest = False
     _cell_cls = Cell
-    while cur.__class__ is _cell_cls:
+    while isinstance(cur, _cell_cls):
         params.append(_sn(cur.car))
         cur = cur.cdr
     if cur is not NIL:
@@ -232,7 +232,7 @@ def parse_body(cell):
     exprs = []
     cur = cell
     _cell_cls = Cell
-    while cur.__class__ is _cell_cls:
+    while isinstance(cur, _cell_cls):
         exprs.append(to_ast(cur.car))
         cur = cur.cdr
     return exprs
@@ -242,7 +242,7 @@ def cell_to_list(cell):
     result = []
     cur = cell
     _cell_cls = Cell
-    while cur.__class__ is _cell_cls:
+    while isinstance(cur, _cell_cls):
         result.append(cur.car)
         cur = cur.cdr
     return result
@@ -255,24 +255,24 @@ def to_ast(expr):
     _sym_cls = Sym
     _cell_cls = Cell
 
-    if expr.__class__ is _sym_cls:
+    if isinstance(expr, _sym_cls):
         if expr is TRUE or expr is FALSE:
             return LiteralAst(expr)
         return VarAst(expr.name)
 
-    if expr.__class__ is _cell_cls:
+    if isinstance(expr, _cell_cls):
         op = expr.car
         args = expr.cdr
 
         if op is SYM_QUOTE:
-            return LiteralAst(args.car if args.__class__ is _cell_cls else NIL)
+            return LiteralAst(args.car if isinstance(args, _cell_cls) else NIL)
 
         if op is SYM_IF:
             test = to_ast(args.car)
             then_expr = to_ast(args.cdr.car)
             else_expr = LiteralAst(VOID)
             rest = args.cdr.cdr
-            if rest is not NIL and rest.__class__ is _cell_cls:
+            if rest is not NIL and isinstance(rest, _cell_cls):
                 else_expr = to_ast(rest.car)
             return IfAst(test, then_expr, else_expr)
 
@@ -286,13 +286,13 @@ def to_ast(expr):
 
         if op is SYM_DEFINE:
             pat = args.car
-            if pat.__class__ is _cell_cls:
+            if isinstance(pat, _cell_cls):
                 name = _sn(pat.car)
                 params, has_rest = parse_param_list(pat.cdr)
                 body_exprs = parse_body(args.cdr)
                 return DefineAst(name, LambdaAst(params, body_exprs, not has_rest))
             else:
-                val_expr = args.cdr.car if args.cdr.__class__ is _cell_cls else NIL
+                val_expr = args.cdr.car if isinstance(args.cdr, _cell_cls) else NIL
                 return DefineAst(_sn(pat), to_ast(val_expr))
 
         if op is SYM_SETBANG:
@@ -338,10 +338,10 @@ def fold_constants(node):
                 if op_name == 'null?':
                     return LiteralAst(TRUE if av is NIL else FALSE)
                 if op_name == 'pair?':
-                    return LiteralAst(TRUE if av.__class__ is Cell else FALSE)
-                if op_name == 'car' and av.__class__ is Cell:
+                    return LiteralAst(TRUE if isinstance(av, Cell) else FALSE)
+                if op_name == 'car' and isinstance(av, Cell):
                     return LiteralAst(av.car)
-                if op_name == 'cdr' and av.__class__ is Cell:
+                if op_name == 'cdr' and isinstance(av, Cell):
                     return LiteralAst(av.cdr)
 
         # 双参算术/比较折叠 — 复盘7：限定数值类型 + try/except 双重保护
@@ -507,50 +507,50 @@ def _invoke_compiled(cv, args_val):
 # re-entry into the full interpreter. (C# JitRuntime.EvalTailCall 等价)
 def __mscm_eval_tail_call__(tc):
     expr = tc.expr
-    if expr.__class__ is not Cell:
+    if not isinstance(expr, Cell):
         from miniscm import _eval as _eval_fn
         return _eval_fn(expr, tc.env)
     proc = expr.car
     args = []
     cur = expr.cdr
-    while cur.__class__ is Cell:
+    while isinstance(cur, Cell):
         arg = cur.car
         # MakeTailCall wraps each arg in (quote v)
-        if arg.__class__ is Cell and arg.car is SYM_QUOTE:
-            if arg.cdr.__class__ is Cell:
+        if isinstance(arg, Cell) and arg.car is SYM_QUOTE:
+            if isinstance(arg.cdr, Cell):
                 arg = arg.cdr.car
         args.append(arg)
         cur = cur.cdr
     r = __mscm_invoke__(proc, args, tc.env)
-    while r.__class__ is TailCall:
+    while isinstance(r, TailCall):
         r = __mscm_eval_tail_call__(r)
     return r
 
 def __mscm_invoke__(proc_val, args_val, env):
     global _IS_COMPILING
-    if proc_val.__class__ is LambdaProc:
+    if isinstance(proc_val, LambdaProc):
         if proc_val.compiled_version is not None:
             r = _invoke_compiled(proc_val.compiled_version, args_val)
-            while r.__class__ is TailCall:
+            while isinstance(r, TailCall):
                 r = __mscm_eval_tail_call__(r)
             return r
         old_flag = _IS_COMPILING
         _IS_COMPILING = False
         try:
             r = proc_val(*args_val)
-            while r.__class__ is TailCall:
+            while isinstance(r, TailCall):
                 r = __mscm_eval_tail_call__(r)
             return r
         finally:
             _IS_COMPILING = old_flag
     if isinstance(proc_val, CompiledLambda):
         r = _invoke_compiled(proc_val, args_val)
-        while r.__class__ is TailCall:
+        while isinstance(r, TailCall):
             r = __mscm_eval_tail_call__(r)
         return r
     if callable(proc_val):
         r = proc_val(*args_val)
-        while r.__class__ is TailCall:
+        while isinstance(r, TailCall):
             r = __mscm_eval_tail_call__(r)
         return r
     if isinstance(proc_val, tuple) and proc_val[0] == 'lambda':
@@ -559,7 +559,7 @@ def __mscm_invoke__(proc_val, args_val, env):
         nenv = Env(penv)
         _bind_params(params, args_val, nenv)
         r = eval_seq(body, nenv)
-        while r.__class__ is TailCall:
+        while isinstance(r, TailCall):
             from miniscm import _eval as _eval_fn
             r = _eval_fn(r.expr, r.env)
         return r
@@ -1107,11 +1107,11 @@ def expand_via_scheme(expr, env):
 # quasiquote 依赖运行时环境 (unquote), 不能在 JIT 编译期预展开。
 # 若 lambda 体包含 quasiquote, 跳过 JIT 让解释器展开。
 def has_quasiquote(expr):
-    while expr.__class__ is SyntaxObject:
+    while isinstance(expr, SyntaxObject):
         expr = expr.expr
-    if expr.__class__ is Cell:
+    if isinstance(expr, Cell):
         c = expr
-        if c.car.__class__ is Sym and c.car.name == 'quasiquote':
+        if isinstance(c.car, Sym) and c.car.name == 'quasiquote':
             return True
         return has_quasiquote(c.car) or has_quasiquote(c.cdr)
     return False
@@ -1119,12 +1119,12 @@ def has_quasiquote(expr):
 # 递归展开 quote/quasiquote 之外的所有子形式。
 # quote/quasiquote 保持原样 (quasiquote 需运行时环境, JIT 已跳过)。
 def fully_expand(expr):
-    while expr.__class__ is SyntaxObject:
+    while isinstance(expr, SyntaxObject):
         expr = expr.expr
-    if expr.__class__ is not Cell:
+    if not isinstance(expr, Cell):
         return expr
     c = expr
-    if c.car.__class__ is Sym and c.car.name in ('quote', 'quasiquote'):
+    if isinstance(c.car, Sym) and c.car.name in ('quote', 'quasiquote'):
         return expr
     new_car = fully_expand(c.car)
     new_cdr = fully_expand(c.cdr)
@@ -1228,7 +1228,7 @@ def compile_lambda_proc(lambda_proc):
                     except Exception:
                         body_forms = []
                 if cur is not None:
-                    while cur.__class__ is Cell:
+                    while isinstance(cur, Cell):
                         expanded = expand_via_scheme(cur.car, lambda_proc.env)
                         if has_quasiquote(expanded):
                             _mark_failed()
@@ -1248,7 +1248,7 @@ def compile_lambda_proc(lambda_proc):
                     except Exception:
                         pass
             else:
-                while cur.__class__ is Cell:
+                while isinstance(cur, Cell):
                     expanded = expand_via_scheme(cur.car, lambda_proc.env)
                     if has_quasiquote(expanded):
                         return None
@@ -1385,7 +1385,7 @@ class LambdaProc:
             if self.compiled_version is not None:
                 try:
                     r = _invoke_compiled(self.compiled_version, args)
-                    while r.__class__ is TailCall:
+                    while isinstance(r, TailCall):
                         r = __mscm_eval_tail_call__(r)
                     return r
                 except Exception:
@@ -1400,6 +1400,6 @@ class LambdaProc:
         _bind_params(self.params, args, nenv)
         r = eval_seq(self.body, nenv)
         eval_fn = self._get_eval_fn()
-        while r.__class__ is TailCall:
+        while isinstance(r, TailCall):
             r = eval_fn(r.expr, r.env)
         return r

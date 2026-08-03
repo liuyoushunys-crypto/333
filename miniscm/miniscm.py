@@ -81,10 +81,10 @@ def seq_tail_call(seq, env):
     if seq is NIL: return VOID
     cur = seq
     _cell_cls = Cell
-    while cur.__class__ is _cell_cls and cur.cdr.__class__ is _cell_cls:
+    while isinstance(cur, _cell_cls) and isinstance(cur.cdr, _cell_cls):
         _eval(cur.car, env)
         cur = cur.cdr
-    if cur.__class__ is _cell_cls:
+    if isinstance(cur, _cell_cls):
         return TailCall(cur.car, env)
     return _eval(cur, env)
 
@@ -110,9 +110,9 @@ def strip_syntax(v):
     # 避免了 Python 递归深度问题。
     _stx_cls = SyntaxObject
     _cell_cls = Cell
-    while v.__class__ is _stx_cls:
+    while isinstance(v, _stx_cls):
         v = v.expr
-    if v.__class__ is _cell_cls:
+    if isinstance(v, _cell_cls):
         return Cell(strip_syntax(v.car), strip_syntax(v.cdr))
     return v
 
@@ -160,7 +160,7 @@ def h_lambda(args,env):
     cur = args.car
     has_rest = False
     _cell_cls = Cell
-    while cur.__class__ is _cell_cls: 
+    while isinstance(cur, _cell_cls): 
         params.append(_sn(cur.car))
         cur = cur.cdr
     if cur is not NIL: 
@@ -185,12 +185,12 @@ def h_define(args,env):
     # 自递归（self-recursion）并生成 while 循环优化代码。
     pat = args.car
     _cell_cls = Cell
-    if pat.__class__ is _cell_cls:
+    if isinstance(pat, _cell_cls):
         name = _sn(pat.car)
         params = []
         cur = pat.cdr
         has_rest = False
-        while cur.__class__ is _cell_cls: 
+        while isinstance(cur, _cell_cls): 
             params.append(_sn(cur.car))
             cur = cur.cdr
         if cur is not NIL: 
@@ -212,7 +212,7 @@ def h_set(args,env):
     #
     # 特殊路径：如果 set! 的目标不是符号（如 (set! (car x) v)），
     # 则转化为 SYM_SETF 调用，由 h_setf 处理通用位置设置。
-    if args.car.__class__ is Sym:
+    if isinstance(args.car, Sym):
         n=args.car.name; v=_eval(args.cdr.car,env)
         e=env
         while e:
@@ -227,12 +227,12 @@ def h_setf(args,env):
     # (set! (car x) v) → (set-car! x v); (set! (cdr x) v) → (set-cdr! x v)。
     a = args
     place = a.car
-    val = a.cdr.car if a.cdr.__class__ is Cell else NIL
-    if place.__class__ is Cell and place.car.__class__ is Sym:
+    val = a.cdr.car if isinstance(a.cdr, Cell) else NIL
+    if isinstance(place, Cell) and isinstance(place.car, Sym):
         ps = place.car.name
         if ps in ('car', 'cdr'):
             setter = Sym('set-' + ps + '!')
-            target = place.cdr.car if place.cdr.__class__ is Cell else NIL
+            target = place.cdr.car if isinstance(place.cdr, Cell) else NIL
             return TailCall(Cell(setter, Cell(target, Cell(val, NIL))), env)
     raise Exception(f"set!: invalid place: {place}")
 
@@ -251,24 +251,24 @@ def eval_seq(seq, env):
     _cell_cls = Cell
     r = VOID
     cur = seq
-    while cur.__class__ is _cell_cls: 
+    while isinstance(cur, _cell_cls): 
         r = _eval(cur.car, env)
         cur = cur.cdr
     return r
 
 def eval_args_to_array(_cur, env):
     _cell_cls = Cell
-    if _cur.__class__ is not _cell_cls:
+    if not isinstance(_cur, _cell_cls):
         return []
     c = _cur
     if c.cdr is NIL:
         return [_eval(c.car, env)]
-    if c.cdr.__class__ is _cell_cls and c.cdr.cdr is NIL:
+    if isinstance(c.cdr, _cell_cls) and c.cdr.cdr is NIL:
         return [_eval(c.car, env), _eval(c.cdr.car, env)]
-    if c.cdr.__class__ is _cell_cls and c.cdr.cdr.__class__ is _cell_cls and c.cdr.cdr.cdr is NIL:
+    if isinstance(c.cdr, _cell_cls) and isinstance(c.cdr.cdr, _cell_cls) and c.cdr.cdr.cdr is NIL:
         return [_eval(c.car, env), _eval(c.cdr.car, env), _eval(c.cdr.cdr.car, env)]
     evaled = []
-    while _cur.__class__ is _cell_cls:
+    while isinstance(_cur, _cell_cls):
         evaled.append(_eval(_cur.car, env))
         _cur = _cur.cdr
     return evaled
@@ -326,16 +326,16 @@ def _eval(expr, env):
 
     while True:
         # B0: 符号
-        if expr.__class__ is _sym_cls:
+        if isinstance(expr, _sym_cls):
             if expr is TRUE or expr is FALSE:
                 return expr
             return env.lookup(expr)
 
         # B1: 列表
-        if expr.__class__ is not _cell_cls:
+        if not isinstance(expr, _cell_cls):
             if expr is TRUE or expr is FALSE or expr is NIL or expr is VOID or expr is EOF:
                 return expr
-            if expr.__class__ is _stx_cls:
+            if isinstance(expr, _stx_cls):
                 return expr.expr
             return expr
 
@@ -346,7 +346,7 @@ def _eval(expr, env):
         handler = SPECIALS.get(op)
         if handler is not None:
             r = handler(args, env)
-            if r.__class__ is _tail_cls:
+            if isinstance(r, _tail_cls):
                 expr, env = r.expr, r.env
                 continue
             return r
@@ -356,7 +356,7 @@ def _eval(expr, env):
         #   "macro" 元组, 否则返回 None); 展开成功 → 继续主循环。
         #   未绑定 → 求值 op 本身作为过程值。
         proc = _unbound_sentinel
-        if op.__class__ is _sym_cls:
+        if isinstance(op, _sym_cls):
             proc = env.lookup_silent(op, _unbound_sentinel)
             if proc is not _unbound_sentinel:
                 new_expr = expand_macro(proc, args, env)
@@ -371,12 +371,12 @@ def _eval(expr, env):
         _cur = args
 
         # B1c: LambdaProc (与 C# LambdaProc 分支一致)
-        if proc.__class__ is LambdaProc:
+        if isinstance(proc, LambdaProc):
             if proc.compiled_version is None:
                 _ensure_jit_compiled(proc)
             if proc.compiled_version is not None:
                 r = _eval_compiled_lambda(proc.compiled_version, _cur, env)
-                if r.__class__ is _tail_cls:
+                if isinstance(r, _tail_cls):
                     expr, env = r.expr, r.env
                     continue
                 if r is True: r = TRUE
@@ -385,7 +385,7 @@ def _eval(expr, env):
             nenv = Env(proc.env)
             _bind_params(proc.params, eval_args_to_array(_cur, env), nenv)
             r = seq_tail_call(proc.body, nenv)
-            if r.__class__ is _tail_cls:
+            if isinstance(r, _tail_cls):
                 expr, env = r.expr, r.env
                 continue
             if r is True: r = TRUE
@@ -397,7 +397,7 @@ def _eval(expr, env):
         # B1d: 普通 callable (与 C# Func/Delegate 分支一致)
         if callable(proc):
             r = proc(*evaled_args)
-            if r.__class__ is _tail_cls:
+            if isinstance(r, _tail_cls):
                 expr, env = r.expr, r.env
                 continue
             if r is True: r = TRUE
@@ -407,10 +407,10 @@ def _eval(expr, env):
         # B1f: Tuple Lambda (与 C# ITuple "lambda" 分支一致)
         if isinstance(proc, tuple) and proc[0] == 'lambda':
             r = _eval_tuple_lambda(proc, _cur, env)
-            if r.__class__ is _tail_cls:
+            if isinstance(r, _tail_cls):
                 expr, env = r.expr, r.env
                 continue
-            if r.__class__ is _stx_cls:
+            if isinstance(r, _stx_cls):
                 return r.expr
             return r
 
@@ -443,7 +443,7 @@ def expand_macro(proc, args, env):
     mbody = proc[2]
 
     nenv = Env(env)
-    if proc[1].__class__ is Sym:
+    if isinstance(proc[1], Sym):
         nenv.data[proc[1].name] = args if args is not None else NIL
 
     savedDefEnv = _CURRENT_MACRO_DEF_ENV
@@ -451,14 +451,14 @@ def expand_macro(proc, args, env):
     _CURRENT_EXPAND_ENV = env
     try:
         r = eval_seq(mbody, nenv)
-        while r.__class__ is TailCall:
+        while isinstance(r, TailCall):
             r = _eval(r.expr, r.env)
     finally:
         # _CURRENT_EXPAND_ENV 不在此恢复: 宏展开结果 (如 my-definemacro 调用)
         # 在展开后求值, 需通过 (sx-expand-env) 读到宏定义点词法环境。
         _CURRENT_MACRO_DEF_ENV = savedDefEnv
 
-    result = r.expr if r.__class__ is SyntaxObject else r
+    result = r.expr if isinstance(r, SyntaxObject) else r
     return resolve_hygiene_markers(result, defEnv)
 
 # ── ResolveHygieneMarkers: 解析 (sx-hygiene name) 标记 (C# 等价) ──
@@ -466,13 +466,13 @@ def expand_macro(proc, args, env):
 # 需在宏定义环境 defEnv 中解析。数据值内联为 quote 字面量;
 # 过程/宏保留为名字。非标记子表达式原样返回。
 def resolve_hygiene_markers(expr, defEnv):
-    while expr.__class__ is SyntaxObject:
+    while isinstance(expr, SyntaxObject):
         expr = expr.expr
-    if expr.__class__ is Cell:
+    if isinstance(expr, Cell):
         c = expr
-        if c.car.__class__ is Sym and c.car.name == 'sx-hygiene':
+        if isinstance(c.car, Sym) and c.car.name == 'sx-hygiene':
             name = None
-            if c.cdr.__class__ is Cell and c.cdr.cdr is NIL and c.cdr.car.__class__ is Sym:
+            if isinstance(c.cdr, Cell) and c.cdr.cdr is NIL and isinstance(c.cdr.car, Sym):
                 name = c.cdr.car.name
             if name is not None:
                 v = defEnv.data.get(name)
@@ -537,7 +537,7 @@ def _register_scheme_bridges():
     # sx-expand-call: 单次宏展开。若 (car expr) 是宏元组则展开, 否则返回 FALSE。
     def _sx_expand_call(expr, env=None):
         env = env if isinstance(env, Env) else _be
-        if expr.__class__ is Cell and expr.car.__class__ is Sym:
+        if isinstance(expr, Cell) and isinstance(expr.car, Sym):
             proc = env.lookup_silent(expr.car.name, _UNBOUND)
             if proc is not _UNBOUND:
                 expanded = expand_macro(proc, expr.cdr, env)

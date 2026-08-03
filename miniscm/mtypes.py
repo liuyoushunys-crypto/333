@@ -36,7 +36,7 @@ class Sym:
             cls._intern[s] = obj
             return obj
     def __repr__(self): return self.name
-    def __eq__(self, o): return o.__class__ is Sym and self.name == o.name
+    def __eq__(self, o): return isinstance(o, Sym) and self.name == o.name
     def __hash__(self): return hash(self.name)
     def __bool__(self): return self is not FALSE
 
@@ -136,7 +136,7 @@ class Cell:
         # 迭代遍历计算标准列表长度，规避递归引起的 Python 栈帧消耗
         # 使用 while 循环而非递归，确保对 100k+ 长度的列表也不会栈溢出。
         n=0; cur=self
-        while cur.__class__ is Cell:
+        while isinstance(cur, Cell):
             n+=1
             cur=cur.cdr
         return n
@@ -146,12 +146,12 @@ class Cell:
         # 若在到达目标索引前遇到非 Cell 对象（如 NIL 或非列表的点对），抛出 IndexError。
         cur=self
         for _ in range(i):
-            if cur.__class__ is not Cell: raise IndexError
+            if not isinstance(cur, Cell): raise IndexError
             cur=cur.cdr
         return cur.car
     def __iter__(self):
         cur = self
-        while cur.__class__ is Cell:
+        while isinstance(cur, Cell):
             yield cur.car
             cur = cur.cdr
 
@@ -198,7 +198,7 @@ class SchemeChar:
     def __init__(self,c): self.char=c
     def __hash__(self): return hash(self.char)
     def __repr__(self): return '#\\'+('space' if self.char==' ' else self.char)
-    def __eq__(self,o): return o.__class__ is SchemeChar and self.char==o.char
+    def __eq__(self,o): return isinstance(o, SchemeChar) and self.char==o.char
 
 class SchemeVector:
     """Scheme 向量（数组）类型，底层基于 Python list
@@ -417,7 +417,7 @@ class Env:
         注意：k 可以是 Python str！_sn(x) 可能在入口处已被调用，
         因此 lookup 内部也处理 k 不是 Sym 的情况。
         """
-        name = k.name if k.__class__ is Sym else k
+        name = k.name if isinstance(k, Sym) else k
         data = self.data
         if name in data:
             return data[name]
@@ -442,7 +442,7 @@ class Env:
         sentinel 默认是 _UNBOUND 哨兵对象（模块级唯一的 object() 实例），
         调用者可以通过 sentinel is _UNBOUND 判断变量是否未绑定。
         """
-        name = k.name if k.__class__ is Sym else k
+        name = k.name if isinstance(k, Sym) else k
         val = self.data.get(name, sentinel)
         if val is not sentinel:
             return val
@@ -474,7 +474,7 @@ class Env:
         即使传入 Sym，define 也会提取 .name 作为字典键。
         这是为与 _sn 辅助函数保持一致 —— 所有环境操作最终以字符串为键。
         """
-        name = k.name if k.__class__ is Sym else k
+        name = k.name if isinstance(k, Sym) else k
         self.data[name]=v
 
     def set_val(self, k, v):
@@ -494,7 +494,7 @@ class Env:
 
         注意：set_val 返回 VOID 而非 None，以确保 REPL 不打印 #<void>。
         """
-        name = k.name if k.__class__ is Sym else k
+        name = k.name if isinstance(k, Sym) else k
         e = self
         while e is not None:
             if name in e.data:
@@ -557,12 +557,12 @@ def _rep(p, seen=None):
     注意：seen 只在第一次调用时创建 set()。递归调用传递 seen 引用，
     因此同一次打印过程中的所有嵌套 _rep 调用共享同一个 seen 集合。
     """
-    if p.__class__ is not Cell: return _pr(p)
+    if not isinstance(p, Cell): return _pr(p)
     if seen is None: seen=set()
     if id(p) in seen: return '...'
     seen.add(id(p))
     r=_pr(p.car); q=p.cdr
-    while q.__class__ is Cell:
+    while isinstance(q, Cell):
         if id(q) in seen: r+=' ...'; q=NIL; break
         seen.add(id(q))
         r+=' '+_pr(q.car); q=q.cdr
@@ -602,18 +602,18 @@ def _pr(x):
     if x is TRUE: return '#t'
     if x is FALSE: return '#f'
     if x is NIL: return '()'
-    if x.__class__ is Sym: return x.name
-    if x.__class__ is str: return '"'+x.replace('\\','\\\\').replace('"','\\"')+'"'
-    if x.__class__ is int: return str(x)
-    if x.__class__ is Fraction:
+    if isinstance(x, Sym): return x.name
+    if isinstance(x, str): return '"'+x.replace('\\','\\\\').replace('"','\\"')+'"'
+    if isinstance(x, int): return str(x)
+    if isinstance(x, Fraction):
         if x.denominator==1: return str(x.numerator)
         return f'{x.numerator}/{x.denominator}'
-    if x.__class__ is float:
+    if isinstance(x, float):
         if x==float('inf'): return '+inf.0'
         if x==float('-inf'): return '-inf.0'
         if x!=x: return '+nan.0'
         return str(x)
-    if x.__class__ is complex:
+    if isinstance(x, complex):
         r,i=x.real,x.imag
         if i==0:
             if r==int(r): return str(int(r))
@@ -625,9 +625,9 @@ def _pr(x):
         if r==0 and i<0: si='-'+si
         return sr+sgn+si
     if isinstance(x,tuple) and len(x) == 2 and x[0]=='char': return '#\\'+('space' if x[1]==' ' else x[1])
-    if x.__class__ is _Void: return '#<void>'
-    if x.__class__ is list: return '#('+' '.join(_pr(v) for v in x)+')'
-    if x.__class__ is Cell: return '('+_rep(x)+')'
+    if isinstance(x, _Void): return '#<void>'
+    if isinstance(x, list): return '#('+' '.join(_pr(v) for v in x)+')'
+    if isinstance(x, Cell): return '('+_rep(x)+')'
     return repr(x)
 
 def _cells(p):
@@ -641,7 +641,7 @@ def _cells(p):
     
     注意：如果 p 不是 Cell（即 NIL），生成器立即结束，不 yield 任何值。
     """
-    while p.__class__ is Cell: yield p.car; p=p.cdr
+    while isinstance(p, Cell): yield p.car; p=p.cdr
 
 def _cell_len(p):
     """计算列表物理长度
@@ -653,7 +653,7 @@ def _cell_len(p):
     非标准列表（点对）的长度计算不包括末尾的非 NIL cdr。
     """
     n=0; cur=p
-    while cur.__class__ is Cell: n+=1; cur=cur.cdr
+    while isinstance(cur, Cell): n+=1; cur=cur.cdr
     return n
 
 def _so(x):
@@ -665,7 +665,7 @@ def _so(x):
     这是实现卫生宏的关键 —— 宏生成的代码可能包裹在 SyntaxObject 中，
     但 eval 需要看到内部的裸 S-表达式。
     """
-    return x.expr if x.__class__ is SyntaxObject else x
+    return x.expr if isinstance(x, SyntaxObject) else x
 
 def _sn(x):
     """提取符号或字符串的名字
@@ -679,7 +679,7 @@ def _sn(x):
     调用者需要先使用 _so(x) 解包，如果有必要再使用 _sn。
     某些代码路径同时使用 _so 和 _sn 来处理嵌套 SyntaxObject(Sym) 的情况。
     """
-    return x.name if x.__class__ is Sym else x
+    return x.name if isinstance(x, Sym) else x
 
 def _plist(p):
     """解开链表，返回一个平面列表，包含最后一个 cdr（哪怕是点号非规范列表）
@@ -698,7 +698,7 @@ def _plist(p):
     用途：宏系统中的模式匹配需要处理非标准列表（点对）形式的参数列表。
     """
     r=[]
-    while p.__class__ is Cell: r.append(p.car); p=p.cdr
+    while isinstance(p, Cell): r.append(p.car); p=p.cdr
     if p is not NIL: r.append(p)
     return r
 

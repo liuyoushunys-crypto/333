@@ -443,14 +443,14 @@ class _InfixParser:
             right = self._expr(nxt)
             # = 等号赋值展开为 (set! x y)
             if op == '=':
-                if left.__class__ is not Sym:
+                if not isinstance(left, Sym):
                     raise SyntaxError(f"Invalid lvalue in assignment: {left}")
                 left = _lst([Sym('set!'), left, right])
                 continue
             # += -= *= /= 自赋值展开为 (set! x (op x y))
             for assign_op, scheme_op in [('+=', '+'), ('-=', '-'), ('*=', '*'), ('/=', '/')]:
                 if op == assign_op:
-                    if left.__class__ is not Sym:
+                    if not isinstance(left, Sym):
                         raise SyntaxError(f"Invalid lvalue in assignment: {left}")
                     left = _lst([Sym('set!'), left, _lst([Sym(scheme_op), left, right])])
                     break
