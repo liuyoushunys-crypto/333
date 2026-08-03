@@ -32,6 +32,10 @@ public class Env
     public void Define(string name, object? v) => Data[name] = v;
     public void Define(Sym sym, object? v) => Data[sym.Name] = v;
 
+    public static Env MakeChild(Env parent) => new(parent);
+
+    public Env MakeChildEnv() => new(this);
+
     public object? SetVal(string name, object? v)
     {
         var e = this;

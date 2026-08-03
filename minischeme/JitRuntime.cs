@@ -112,6 +112,12 @@ public static class JitRuntime
         return new LambdaProc(@params, body, env, isSimple);
     }
 
+    public static Env MakeClosure(Env env, string name, object? val)
+    {
+        env.Data[name] = val;
+        return env;
+    }
+
     public static object? Append2(object? a, object? b)
     {
         if (a is Nil) return b;

@@ -149,6 +149,8 @@ public static class Compiler
     }
     public static CompiledLambda? CompileLambdaProc(LambdaProc lp)
     {
+        if (Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG") is not null)
+            Console.Error.WriteLine($"CompileLambdaProc ENTER: {lp.Name} params=[{string.Join(",", lp.Params)}]");
         if (!ShouldJit(lp)) return null;
         try
         {
@@ -217,10 +219,6 @@ public static class Compiler
             var bodyAsts = bodyForms.Select(ToAst).ToList();
             var cleanedParams = lp.Params.Select(CleanParamName).ToList();
             var lexicalVars = new HashSet<string>(cleanedParams);
-            // Step 3: Closure check
-            foreach (var astNode in bodyAsts)
-                if (HasNestedClosure(astNode, lexicalVars))
-                    return null;
             // Step 3b: Check for self-recursion inside nested lambdas
             // This pattern (created by `let` expansion) causes stack overflow
             // because each self-recursion re-creates and re-invokes the inner lambda
@@ -508,6 +506,56 @@ public static class Compiler
         if (node is AppAst a) { if (RefersOuterVar(a.Proc, outerVars, innerParams)) return true; return a.Args.Any(x => RefersOuterVar(x, outerVars, innerParams)); }
         if (node is BeginAst b) return b.Exprs.Any(e => RefersOuterVar(e, outerVars, innerParams));
         return false;
+    }
+    internal static HashSet<string> CollectOuterRefs(AstNode node, HashSet<string> outerVars, HashSet<string> innerParams)
+    {
+        if (node is VarAst v)
+        {
+            if (outerVars.Contains(v.Name) && !innerParams.Contains(v.Name))
+                return [v.Name];
+            return [];
+        }
+        if (node is LiteralAst) return [];
+        if (node is LambdaAst la)
+        {
+            var nested = la.Params.Select(CleanParamName).ToHashSet();
+            var combined = new HashSet<string>(innerParams);
+            combined.UnionWith(nested);
+            var acc = new HashSet<string>();
+            foreach (var bodyNode in la.Body)
+                acc.UnionWith(CollectOuterRefs(bodyNode, outerVars, combined));
+            return acc;
+        }
+        if (node is DefineAst d) return CollectOuterRefs(d.Val, outerVars, innerParams);
+        if (node is SetBangAst s)
+        {
+            var acc = CollectOuterRefs(s.Val, outerVars, innerParams);
+            if (outerVars.Contains(s.Name) && !innerParams.Contains(s.Name))
+                acc.Add(s.Name);
+            return acc;
+        }
+        if (node is IfAst i)
+        {
+            var acc = CollectOuterRefs(i.Test, outerVars, innerParams);
+            acc.UnionWith(CollectOuterRefs(i.Then, outerVars, innerParams));
+            acc.UnionWith(CollectOuterRefs(i.Else, outerVars, innerParams));
+            return acc;
+        }
+        if (node is AppAst a)
+        {
+            var acc = CollectOuterRefs(a.Proc, outerVars, innerParams);
+            foreach (var argNode in a.Args)
+                acc.UnionWith(CollectOuterRefs(argNode, outerVars, innerParams));
+            return acc;
+        }
+        if (node is BeginAst beginNode)
+        {
+            var acc = new HashSet<string>();
+            foreach (var subNode in beginNode.Exprs)
+                acc.UnionWith(CollectOuterRefs(subNode, outerVars, innerParams));
+            return acc;
+        }
+        return [];
     }
     static bool HasSelfRecursionInNestedLambda(List<AstNode> body, string selfName)
     {
@@ -995,6 +1043,21 @@ public static class Compiler
             }
             if (node is LambdaAst ln)
             {
+                var innerParams = ln.Params.Select(CleanParamName).ToHashSet();
+                var captured = CollectOuterRefs(ln, LexicalVars, innerParams);
+                if (ln.RawBody is not null && captured.Count > 0)
+                {
+                    if (Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG") is not null)
+                        Console.Error.WriteLine($"CLOSURE_DOWNGRADE: params=[{string.Join(",", ln.Params)}] captured=[{string.Join(",", captured.OrderBy(x => x))}]");
+                    // 闭包：构建子环境绑定捕获变量，降级为运行时 LambdaProc
+                    Expression childEnv = Expression.Call(typeof(Env), "MakeChild", null, EnvParam);
+                    foreach (var name in captured.OrderBy(x => x))
+                        childEnv = Expression.Call(typeof(JitRuntime), "MakeClosure", null,
+                            childEnv, ConstVal(name), ParamVars[ParamIndexMap[name]]);
+                    return Expression.Call(typeof(JitRuntime), "MakeLambda", null,
+                        ConstVal(ln.Params), ConstVal(ln.IsSimple), childEnv,
+                        ConstVal(ln.RawBody ?? Const.NIL));
+                }
                 return Expression.Call(typeof(JitRuntime), "MakeLambda", null,
                     ConstVal(ln.Params), ConstVal(ln.IsSimple), EnvParam,
                     ConstVal(ln.RawBody ?? Const.NIL));
