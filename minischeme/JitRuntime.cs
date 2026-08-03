@@ -118,6 +118,14 @@ public static class JitRuntime
         return env;
     }
 
+    public static object? ArgsToList(object?[] args)
+    {
+        object? r = Const.NIL;
+        for (int i = args.Length - 1; i >= 0; i--)
+            r = new Cell(args[i], r);
+        return r;
+    }
+
     public static object? Append2(object? a, object? b)
     {
         if (a is Nil) return b;

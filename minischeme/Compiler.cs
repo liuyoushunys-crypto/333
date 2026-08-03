@@ -152,6 +152,28 @@ public static class Compiler
         if (Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG") is not null)
             Console.Error.WriteLine($"CompileLambdaProc ENTER: {lp.Name} params=[{string.Join(",", lp.Params)}]");
         if (!ShouldJit(lp)) return null;
+        // 编译失败标记：结构性失败(自递归/quasiquote)跨进程一致，记录后避免重复编译尝试
+        // 重入保护由调用方 Evaluator 的 !IsCompiling 检查提供
+        string? failFile = null;
+        if (lp.Name is not null)
+        {
+            var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
+            var failName = SafeFileName(lp.Name) + "_" + BodyHash(Printer.Format(lp.Body)) + ".fail";
+            failFile = Path.Combine(cacheDir, failName);
+            if (File.Exists(failFile)) return null;
+        }
+        void MarkFailed()
+        {
+            if (failFile is not null)
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(failFile)!);
+                    File.WriteAllText(failFile, "1");
+                }
+                catch { }
+            }
+        }
         try
         {
             // Step 1: Macro-expand body (with cache)
@@ -224,7 +246,10 @@ public static class Compiler
             // because each self-recursion re-creates and re-invokes the inner lambda
             // through the interpreter, growing the C# call stack.
             if (lp.Name is not null && HasSelfRecursionInNestedLambda(bodyAsts, lp.Name))
+            {
+                MarkFailed();
                 return null;
+            }
             // Step 4: Constant folding
             var foldedBody = bodyAsts.Select(FoldConstants).ToList();
             // Step 5: Compile to expression tree
@@ -251,6 +276,7 @@ public static class Compiler
         }
         catch (Exception ex)
         {
+            MarkFailed();
             var dbg = Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG");
             if (dbg is not null)
                 Console.Error.WriteLine($"JIT compile error for {lp.Name}: {ex}");
@@ -675,8 +701,8 @@ public static class Compiler
             // Tail position AppAst → check self-recursion, cross-call, inline
             if (isTail && node is AppAst app && app.Proc is VarAst pv)
             {
-                // Self-recursion
-                if (SelfName is not null && pv.Name == SelfName && IsSimple)
+                // Self-recursion (rest-param handled in CompileSelfTailCall)
+                if (SelfName is not null && pv.Name == SelfName)
                     return CompileSelfTailCall(app);
                 // Inline ops
                 if (!LexicalVars.Contains(pv.Name))
@@ -715,24 +741,51 @@ public static class Compiler
             var stmts = new List<Expression>();
             int nParams = Params.Count;
             int nArgs = node.Args.Count;
+            // rest 参数处理：固定参数取前 nFixed 个实参，剩余实参打包成列表
+            int nFixed = nParams;
+            if (!IsSimple)
+            {
+                for (int i = 0; i < nParams; i++)
+                    if (Params[i].StartsWith("rest:")) { nFixed = i; break; }
+            }
             var temps = new List<ParameterExpression>();
             var tempAssigns = new List<Expression>();
-            for (int i = 0; i < nArgs && i < nParams; i++)
+            for (int i = 0; i < nArgs && i < nFixed; i++)
             {
                 var temp = Expression.Variable(typeof(object), $"__t_{i}");
                 temps.Add(temp);
                 AdditionalVars.Add(temp);
                 tempAssigns.Add(Expression.Assign(temp, Expression.Convert(CompileExpr(node.Args[i]), typeof(object))));
             }
-            for (int i = nArgs; i < nParams; i++)
+            for (int i = nArgs; i < nFixed; i++)
             {
                 var temp = Expression.Variable(typeof(object), $"__t_{i}");
                 temps.Add(temp);
                 AdditionalVars.Add(temp);
                 tempAssigns.Add(Expression.Assign(temp, ObjConst(Const.NIL)));
             }
-            tempAssigns.AddRange(temps.Select((t, i) =>
-                Expression.Assign(ParamVars[i], t)));
+            if (!IsSimple)
+            {
+                // rest 参数：剩余实参打包为列表
+                var restExprs = node.Args.Skip(nFixed)
+                    .Select(a => Expression.Convert(CompileExpr(a), typeof(object)))
+                    .ToList();
+                var restArray = Expression.NewArrayInit(typeof(object), restExprs);
+                var tempRest = Expression.Variable(typeof(object), $"__t_rest");
+                temps.Add(tempRest);
+                AdditionalVars.Add(tempRest);
+                tempAssigns.Add(Expression.Assign(tempRest,
+                    Expression.Call(typeof(JitRuntime), "ArgsToList", null, restArray)));
+                // 重新分配：固定参数 + rest 列表
+                for (int i = 0; i < nFixed; i++)
+                    tempAssigns.Add(Expression.Assign(ParamVars[i], temps[i]));
+                tempAssigns.Add(Expression.Assign(ParamVars[nFixed], tempRest));
+            }
+            else
+            {
+                tempAssigns.AddRange(temps.Select((t, i) =>
+                    Expression.Assign(ParamVars[i], t)));
+            }
             stmts.AddRange(tempAssigns);
             stmts.Add(Expression.Goto(ContinueLabel));
             return stmts;
@@ -1058,9 +1111,34 @@ public static class Compiler
                         ConstVal(ln.Params), ConstVal(ln.IsSimple), childEnv,
                         ConstVal(ln.RawBody ?? Const.NIL));
                 }
-                return Expression.Call(typeof(JitRuntime), "MakeLambda", null,
-                    ConstVal(ln.Params), ConstVal(ln.IsSimple), EnvParam,
-                    ConstVal(ln.RawBody ?? Const.NIL));
+                // 非闭包内层 lambda：递归编译为 CompiledLambda（与 Python 一致）
+                var innerCleaned = ln.Params.Select(CleanParamName).ToList();
+                var innerLexical = new HashSet<string>(innerCleaned);
+                var nestedCompiler = new AstExprCompiler(null, innerCleaned, ln.IsSimple, innerLexical);
+                var innerBodyExprs = nestedCompiler.CompileStmtSeq(ln.Body, true);
+                if (innerBodyExprs.Count == 0)
+                    innerBodyExprs = [Expression.Goto(nestedCompiler.BreakLabel, ObjConst(Const.VOID))];
+                var innerLoop = Expression.Loop(
+                    Expression.Block(innerBodyExprs),
+                    nestedCompiler.BreakLabel,
+                    nestedCompiler.ContinueLabel
+                );
+                var innerAllVars = new List<ParameterExpression>(nestedCompiler.ParamVars);
+                innerAllVars.AddRange(nestedCompiler.AdditionalVars);
+                var innerLambdaBody = Expression.Block(
+                    innerAllVars,
+                    nestedCompiler.AssignStmts.Concat([innerLoop])
+                );
+                var innerLambda = Expression.Lambda<Func<Env, object?[], object?>>(
+                    innerLambdaBody, nestedCompiler.EnvParam, nestedCompiler.ArgsParam);
+                var innerFunc = innerLambda.Compile();
+                var ctor = typeof(CompiledLambda).GetConstructor(
+                    [typeof(Func<Env, object?[], object?>), typeof(List<string>), typeof(Env), typeof(bool)])!;
+                return Expression.New(ctor,
+                    Expression.Constant(innerFunc),
+                    ConstVal(ln.Params),
+                    EnvParam,
+                    Expression.Constant(ln.IsSimple));
             }
             if (node is AppAst an)
             {
