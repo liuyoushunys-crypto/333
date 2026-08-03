@@ -231,9 +231,9 @@ def h_setf(args,env):
             return TailCall(Cell(setter, Cell(target, Cell(val, NIL))), env)
     raise Exception(f"set!: invalid place: {place}")
 
-@put(SYM_UNQUOTE)
-@put(SYM_UNSPLICE)
-@put(SYM_USYNTAX)
+# @put(SYM_UNQUOTE)
+# @put(SYM_UNSPLICE)
+# @put(SYM_USYNTAX)
 def h_unquote(args, env):
     # unquote/unsyntax 在 quasiquote 外使用时报错 (与 C# HUnquote 一致)
     raise Exception("unquote outside quasiquote")
@@ -312,7 +312,7 @@ def _eval_tuple_lambda(proc_val, _cur, env):
 
 def _eval(expr, env):
     _unbound_sentinel = _UNBOUND
-
+    from primitives import expand_macro
     while True:
         # B0: 符号
         if isinstance(expr, Sym):
@@ -409,75 +409,6 @@ def _eval(expr, env):
 # 4. 引导启动与内置环境装载
 # ═══════════════════════════════════════════════════════════════
 
-# ── 宏展开动态环境 (与 C# Evaluator.CurrentMacroDefEnv/CurrentExpandEnv 对应) ──
-# sx-def-env: 当前宏的定义环境 (free template identifiers 在此解析)
-# sx-expand-env: 当前宏调用点环境 (模板求值时模式替换的局部符号正确解析)
-_CURRENT_MACRO_DEF_ENV = None
-_CURRENT_EXPAND_ENV = None
-
-# ── ExpandMacro: 单次宏展开 (C# Evaluator.ExpandMacro 的 Python 等价) ──
-# proc 为 ("macro", pattern, body, defEnv, true) 元组时:
-#   1. 绑定 pattern rest 符号 → args 于新环境 (父为调用点 env)
-#   2. 动态设置 CurrentMacroDefEnv / CurrentExpandEnv
-#   3. 求值宏体 (EvalSeq), 解包 TailCall
-#   4. ResolveHygieneMarkers 解析 (sx-hygiene name) 标记
-# 非 "macro" 元组返回 None (未展开)。
-def expand_macro(proc, args, env):
-    global _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV
-    if not (isinstance(proc, tuple) and len(proc) >= 5 and proc[0] == 'macro'):
-        return None
-    if not isinstance(proc[3], Env):
-        return None
-    defEnv = proc[3]
-    mbody = proc[2]
-
-    nenv = Env(env)
-    if isinstance(proc[1], Sym):
-        nenv.data[proc[1].name] = args if args is not None else NIL
-
-    savedDefEnv = _CURRENT_MACRO_DEF_ENV
-    _CURRENT_MACRO_DEF_ENV = defEnv
-    _CURRENT_EXPAND_ENV = env
-    try:
-        r = eval_seq(mbody, nenv)
-        while isinstance(r, TailCall):
-            r = _eval(r.expr, r.env)
-    finally:
-        # _CURRENT_EXPAND_ENV 不在此恢复: 宏展开结果 (如 my-definemacro 调用)
-        # 在展开后求值, 需通过 (sx-expand-env) 读到宏定义点词法环境。
-        _CURRENT_MACRO_DEF_ENV = savedDefEnv
-
-    result = r.expr if isinstance(r, SyntaxObject) else r
-    return resolve_hygiene_markers(result, defEnv)
-
-# ── ResolveHygieneMarkers: 解析 (sx-hygiene name) 标记 (C# 等价) ──
-# 宏模板中自由标识符经 sx-expand-sym 标记为 (sx-hygiene name),
-# 需在宏定义环境 defEnv 中解析。数据值内联为 quote 字面量;
-# 过程/宏保留为名字。非标记子表达式原样返回。
-def resolve_hygiene_markers(expr, defEnv):
-    while isinstance(expr, SyntaxObject):
-        expr = expr.expr
-    if isinstance(expr, Cell):
-        c = expr
-        if isinstance(c.car, Sym) and c.car.name == 'sx-hygiene':
-            name = None
-            if isinstance(c.cdr, Cell) and c.cdr.cdr is NIL and isinstance(c.cdr.car, Sym):
-                name = c.cdr.car.name
-            if name is not None:
-                v = defEnv.data.get(name)
-                if v is not None:
-                    if isinstance(v, tuple) and len(v) >= 2 and v[0] == 'macro':
-                        return c.cdr.car
-                    if callable(v):
-                        return c.cdr.car
-                    return Cell(SYM_QUOTE, Cell(v, NIL))
-            return c.cdr.car
-        new_car = resolve_hygiene_markers(c.car, defEnv)
-        new_cdr = resolve_hygiene_markers(c.cdr, defEnv)
-        if new_car is c.car and new_cdr is c.cdr:
-            return c
-        return Cell(new_car, new_cdr)
-    return expr
 
 # 注册 Scheme 宏系统自举所需的桥接原语。
 # 移除 Python 端 define-macro/define-syntax 等特殊形式后,
@@ -490,50 +421,6 @@ def resolve_hygiene_markers(expr, defEnv):
 #   sx-defined?     — 名称在环境中是否有绑定
 #   sx-defmacro     — 注册 ("macro", pattern, body, env, true) 元组
 #   sx-expand-call  — 单次宏展开; (car expr) 为 "macro" 元组则展开, 否则 FALSE
-def _register_scheme_bridges():
-    from mtypes import be as _be
-
-    # eval: (eval expr env) — 求值表达式于指定环境
-    def _eval_bridge(expr, env=None):
-        env = env if isinstance(env, Env) else _be
-        return _eval(expr, env)
-    _be.define('eval', _eval_bridge)
-
-    # sx-def-env: 返回当前宏定义环境或全局 (C#: CurrentMacroDefEnv ?? GlobalEnv)
-    _be.define('sx-def-env', lambda: _CURRENT_MACRO_DEF_ENV or _be)
-
-    # sx-expand-env: 返回当前宏调用点环境或全局 (C#: CurrentExpandEnv ?? GlobalEnv)
-    _be.define('sx-expand-env', lambda: _CURRENT_EXPAND_ENV or _be)
-
-    # sx-defined?: 检查名称在环境中是否有绑定 (C#: env.LookupSilent(name) is not null)
-    def _sx_defined(name, env=None):
-        env = env if isinstance(env, Env) else _be
-        nm = name.name if hasattr(name, 'name') else str(name)
-        return TRUE if env.lookup_silent(nm, _UNBOUND) is not _UNBOUND else FALSE
-    _be.define('sx-defined?', _sx_defined)
-
-    # sx-defmacro: 注册宏元组 ('macro', pattern, body, env, is_simple)
-    # pattern 是 rest 符号 (如 'args) — 展开时绑定全部实参 (与 C# 兼容)
-    # env 是 my-definemacro 传入的 (sx-expand-env) 宏定义点词法环境。
-    # 宏注册到全局, defEnv 字段记录词法定义点环境 (顶层→全局, let-syntax→局部)。
-    def _sx_defmacro(name, pattern, body, env=None):
-        env = env if isinstance(env, Env) else _be
-        nm = name.name if hasattr(name, 'name') else str(name)
-        _be.data[nm] = ('macro', pattern, body, env, True)
-        return name
-    _be.define('sx-defmacro', _sx_defmacro)
-
-    # sx-expand-call: 单次宏展开。若 (car expr) 是宏元组则展开, 否则返回 FALSE。
-    def _sx_expand_call(expr, env=None):
-        env = env if isinstance(env, Env) else _be
-        if isinstance(expr, Cell) and isinstance(expr.car, Sym):
-            proc = env.lookup_silent(expr.car.name, _UNBOUND)
-            if proc is not _UNBOUND:
-                expanded = expand_macro(proc, expr.cdr, env)
-                if expanded is not None:
-                    return expanded
-        return FALSE
-    _be.define('sx-expand-call', _sx_expand_call)
 
 def load_file(path):
     # 加载并求值 Scheme 文件中的所有顶层表达式。
@@ -667,14 +554,14 @@ if __name__=='__main__':
     from initenv import initenv
     initenv()
     # ── Scheme 宏系统桥接原语 (boot-min2 自举所需) ──
-    _register_scheme_bridges()
     import compiler
     compiler.PYB_MODE = 'scm'
     compiler.USE_JIT = True
     # 全功能引导: 核心宏引擎 + 扩展库。
     # define-macro/define-syntax/quasiquote/syntax-rules 由 Scheme 端实现,
     # Python 侧仅保留桥接原语 (sx-defmacro/sx-expand-call 等)。
-    _libs = ['my-definemacro2.scm','boot-min2.scm','boot-core.scm','boot-sugar.scm']
+    # _libs = ['my-definemacro2.scm','boot-min2.scm','boot-core.scm','boot-sugar.scm']
+    _libs = ['boot-min2.scm','boot-core.scm','boot-sugar.scm']
     for f in _libs:
         try:
             n=load_file(_BASE+'/scm/'+f)

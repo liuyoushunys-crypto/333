@@ -193,8 +193,8 @@ def euclidean_rem(n, d):
 # SRFI-143: Fixnums (64-bit)
 # ═══════════════════════════════════════════════════════════════════
 FX_WIDTH = 64
-FX_GREATEST = (1 << 62) - 1
-FX_LEAST = -(1 << 62)
+FX_GREATEST = (1 << 63) - 1
+FX_LEAST = -(1 << 63)
 
 def fxcheck(x):
     if not isinstance(x, int):

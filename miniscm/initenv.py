@@ -9,6 +9,8 @@ from mtypes import (
 from reader import parse_number_scheme
 from primitives import *
 from primitives import set_port_pos, hash_table_keys, hash_table_values, hash_table_ref_default, compose_fn, list_drop
+from primitives import _eval_bridge,_sx_defined,_sx_defmacro,_sx_expand_call,_CURRENT_MACRO_DEF_ENV
+import primitives as _prim
 
 
 def _last_pair(lst):
@@ -413,3 +415,13 @@ def initenv():
     builtin('alist->hash-table', alist2ht)
     builtin('hash-table-for-each', lambda f, ht: [f(k, v) for k, v in ht.items()] and VOID)
 
+    builtin('eval', _eval_bridge)
+
+    # sx-def-env: 返回当前宏定义环境或全局 (C#: CurrentMacroDefEnv ?? GlobalEnv)
+    builtin('sx-def-env', lambda: _prim._CURRENT_MACRO_DEF_ENV or be)
+
+    # sx-expand-env: 返回当前宏调用点环境或全局 (C#: CurrentExpandEnv ?? GlobalEnv)
+    builtin('sx-expand-env', lambda: _prim._CURRENT_EXPAND_ENV or be)
+    builtin('sx-defined?', _sx_defined)
+    builtin('sx-defmacro', _sx_defmacro)
+    builtin('sx-expand-call', _sx_expand_call)

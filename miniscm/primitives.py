@@ -4,7 +4,7 @@ from fractions import Fraction
 
 from mtypes import (
     Sym, Cell, SchemeString, SchemeChar, SchemeVector, SchemeBytevector,
-    Promise, SyntaxObject, SchemeException, ErrorObject, TailCall, NIL, VOID, EOF, TRUE, FALSE, Env,
+    Promise, SyntaxObject, SchemeException, ErrorObject, TailCall, NIL, VOID, EOF, TRUE, FALSE, Env, SYM_QUOTE,_UNBOUND,
     _pr, _sn, _plist, _lst, _ContinuationEscape, _cont_id, _gensym_ctr, builtin, be
 )
 from reader import read
@@ -1161,3 +1161,110 @@ def string_ref_prim(s, *a):
     if not a: raise SchemeException("string-ref: wrong number of arguments")
     if isinstance(s, SchemeString): return SchemeChar(str(s)[a[0]])
     return SchemeChar(str(s)[a[0]])
+
+
+from mtypes import be as _be
+
+# eval: (eval expr env) — 求值表达式于指定环境
+def _eval_bridge(expr, env=None):
+    from miniscm import _eval as _eval_fn
+    env = env if isinstance(env, Env) else be
+    return _eval_fn(expr, env)
+
+# sx-defined?: 检查名称在环境中是否有绑定 (C#: env.LookupSilent(name) is not null)
+def _sx_defined(name, env=None):
+    env = env if isinstance(env, Env) else _be
+    nm = name.name if hasattr(name, 'name') else str(name)
+    return TRUE if env.lookup_silent(nm, _UNBOUND) is not _UNBOUND else FALSE
+
+# sx-defmacro: 注册宏元组 ('macro', pattern, body, env, is_simple)
+# pattern 是 rest 符号 (如 'args) — 展开时绑定全部实参 (与 C# 兼容)
+# env 是 my-definemacro 传入的 (sx-expand-env) 宏定义点词法环境。
+# 宏注册到全局, defEnv 字段记录词法定义点环境 (顶层→全局, let-syntax→局部)。
+def _sx_defmacro(name, pattern, body, env=None):
+    env = env if isinstance(env, Env) else _be
+    nm = name.name if hasattr(name, 'name') else str(name)
+    _be.data[nm] = ('macro', pattern, body, env, True)
+    return name
+
+# sx-expand-call: 单次宏展开。若 (car expr) 是宏元组则展开, 否则返回 FALSE。
+def _sx_expand_call(expr, env=None):
+    env = env if isinstance(env, Env) else _be
+    if isinstance(expr, Cell) and isinstance(expr.car, Sym):
+        proc = env.lookup_silent(expr.car.name, _UNBOUND)
+        if proc is not _UNBOUND:
+            expanded = expand_macro(proc, expr.cdr, env)
+            if expanded is not None:
+                return expanded
+    return FALSE
+
+# ── 宏展开动态环境 (与 C# Evaluator.CurrentMacroDefEnv/CurrentExpandEnv 对应) ──
+# sx-def-env: 当前宏的定义环境 (free template identifiers 在此解析)
+# sx-expand-env: 当前宏调用点环境 (模板求值时模式替换的局部符号正确解析)
+_CURRENT_MACRO_DEF_ENV = None
+_CURRENT_EXPAND_ENV = None
+
+# ── ExpandMacro: 单次宏展开 (C# Evaluator.ExpandMacro 的 Python 等价) ──
+# proc 为 ("macro", pattern, body, defEnv, true) 元组时:
+#   1. 绑定 pattern rest 符号 → args 于新环境 (父为调用点 env)
+#   2. 动态设置 CurrentMacroDefEnv / CurrentExpandEnv
+#   3. 求值宏体 (EvalSeq), 解包 TailCall
+#   4. ResolveHygieneMarkers 解析 (sx-hygiene name) 标记
+# 非 "macro" 元组返回 None (未展开)。
+def expand_macro(proc, args, env):
+    global _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV
+    from miniscm import eval_seq,_eval
+    if not (isinstance(proc, tuple) and len(proc) >= 5 and proc[0] == 'macro'):
+        return None
+    if not isinstance(proc[3], Env):
+        return None
+    defEnv = proc[3]
+    mbody = proc[2]
+
+    nenv = Env(env)
+    if isinstance(proc[1], Sym):
+        nenv.data[proc[1].name] = args if args is not None else NIL
+
+    savedDefEnv = _CURRENT_MACRO_DEF_ENV
+    _CURRENT_MACRO_DEF_ENV = defEnv
+    _CURRENT_EXPAND_ENV = env
+    try:
+        r = eval_seq(mbody, nenv)
+        while isinstance(r, TailCall):
+            r = _eval(r.expr, r.env)
+    finally:
+        # _CURRENT_EXPAND_ENV 不在此恢复: 宏展开结果 (如 my-definemacro 调用)
+        # 在展开后求值, 需通过 (sx-expand-env) 读到宏定义点词法环境。
+        _CURRENT_MACRO_DEF_ENV = savedDefEnv
+
+    result = r.expr if isinstance(r, SyntaxObject) else r
+    return resolve_hygiene_markers(result, defEnv)
+
+# ── ResolveHygieneMarkers: 解析 (sx-hygiene name) 标记 (C# 等价) ──
+# 宏模板中自由标识符经 sx-expand-sym 标记为 (sx-hygiene name),
+# 需在宏定义环境 defEnv 中解析。数据值内联为 quote 字面量;
+# 过程/宏保留为名字。非标记子表达式原样返回。
+def resolve_hygiene_markers(expr, defEnv):
+    while isinstance(expr, SyntaxObject):
+        expr = expr.expr
+    if isinstance(expr, Cell):
+        c = expr
+        if isinstance(c.car, Sym) and c.car.name == 'sx-hygiene':
+            name = None
+            if isinstance(c.cdr, Cell) and c.cdr.cdr is NIL and isinstance(c.cdr.car, Sym):
+                name = c.cdr.car.name
+            if name is not None:
+                v = defEnv.data.get(name)
+                if v is not None:
+                    if isinstance(v, tuple) and len(v) >= 2 and v[0] == 'macro':
+                        return c.cdr.car
+                    if callable(v):
+                        return c.cdr.car
+                    return Cell(SYM_QUOTE, Cell(v, NIL))
+            return c.cdr.car
+        new_car = resolve_hygiene_markers(c.car, defEnv)
+        new_cdr = resolve_hygiene_markers(c.cdr, defEnv)
+        if new_car is c.car and new_cdr is c.cdr:
+            return c
+        return Cell(new_car, new_cdr)
+    return expr
