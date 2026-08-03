@@ -122,11 +122,12 @@
           expr
           (if (eq? (car expr) 'quasiquote)
               expr
-              (let ((expanded (sx-expand-call expr env)))
-                (if (eq? expanded #f)
-                    (cons (my-macro-expand (car expr) env)
-                          (my-macro-expand (cdr expr) env))
-                    (my-macro-expand-helper expanded env)))))
+              ((lambda (expanded)
+                 (if (eq? expanded #f)
+                     (cons (my-macro-expand (car expr) env)
+                           (my-macro-expand (cdr expr) env))
+                     (my-macro-expand-helper expanded env)))
+               (sx-expand-call expr env))))
       expr))
 (display "=== boot-min2.scm 加载完成 ===\n")
 (newline)
