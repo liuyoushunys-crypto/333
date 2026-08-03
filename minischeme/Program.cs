@@ -18,7 +18,7 @@ public class Program
         var scmDir = Path.Combine(projectDir, "scm");
 
         var _libs = new[] {
-            "my-definemacro2.scm", "boot-min2.scm", "boot-core.scm", "boot-sugar.scm",
+            "boot-min2.scm", "boot-core.scm", "boot-sugar.scm",
         };
         if (Directory.Exists(scmDir))
         {
