@@ -218,8 +218,7 @@ def parse_param_list(cell):
     params = []
     cur = cell
     has_rest = False
-    _cell_cls = Cell
-    while isinstance(cur, _cell_cls):
+    while isinstance(cur, Cell):
         params.append(_sn(cur.car))
         cur = cur.cdr
     if cur is not NIL:
@@ -231,8 +230,7 @@ def parse_body(cell):
     """将 Cell 链的每个元素转为 AST"""
     exprs = []
     cur = cell
-    _cell_cls = Cell
-    while isinstance(cur, _cell_cls):
+    while isinstance(cur, Cell):
         exprs.append(to_ast(cur.car))
         cur = cur.cdr
     return exprs
@@ -241,8 +239,7 @@ def cell_to_list(cell):
     """将 Cell 链转为 Python list"""
     result = []
     cur = cell
-    _cell_cls = Cell
-    while isinstance(cur, _cell_cls):
+    while isinstance(cur, Cell):
         result.append(cur.car)
         cur = cur.cdr
     return result
@@ -252,27 +249,25 @@ def cell_to_list(cell):
 # ═══════════════════════════════════════════════════════════════
 
 def to_ast(expr):
-    _sym_cls = Sym
-    _cell_cls = Cell
 
-    if isinstance(expr, _sym_cls):
+    if isinstance(expr, Sym):
         if expr is TRUE or expr is FALSE:
             return LiteralAst(expr)
         return VarAst(expr.name)
 
-    if isinstance(expr, _cell_cls):
+    if isinstance(expr, Cell):
         op = expr.car
         args = expr.cdr
 
         if op is SYM_QUOTE:
-            return LiteralAst(args.car if isinstance(args, _cell_cls) else NIL)
+            return LiteralAst(args.car if isinstance(args, Cell) else NIL)
 
         if op is SYM_IF:
             test = to_ast(args.car)
             then_expr = to_ast(args.cdr.car)
             else_expr = LiteralAst(VOID)
             rest = args.cdr.cdr
-            if rest is not NIL and isinstance(rest, _cell_cls):
+            if rest is not NIL and isinstance(rest, Cell):
                 else_expr = to_ast(rest.car)
             return IfAst(test, then_expr, else_expr)
 
@@ -286,13 +281,13 @@ def to_ast(expr):
 
         if op is SYM_DEFINE:
             pat = args.car
-            if isinstance(pat, _cell_cls):
+            if isinstance(pat, Cell):
                 name = _sn(pat.car)
                 params, has_rest = parse_param_list(pat.cdr)
                 body_exprs = parse_body(args.cdr)
                 return DefineAst(name, LambdaAst(params, body_exprs, not has_rest))
             else:
-                val_expr = args.cdr.car if isinstance(args.cdr, _cell_cls) else NIL
+                val_expr = args.cdr.car if isinstance(args.cdr, Cell) else NIL
                 return DefineAst(_sn(pat), to_ast(val_expr))
 
         if op is SYM_SETBANG:

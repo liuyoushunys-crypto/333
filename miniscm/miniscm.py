@@ -80,11 +80,10 @@ def seq_tail_call(seq, env):
     # 边界情况：seq 为空（NIL）时返回 VOID。
     if seq is NIL: return VOID
     cur = seq
-    _cell_cls = Cell
-    while isinstance(cur, _cell_cls) and isinstance(cur.cdr, _cell_cls):
+    while isinstance(cur, Cell) and isinstance(cur.cdr, Cell):
         _eval(cur.car, env)
         cur = cur.cdr
-    if isinstance(cur, _cell_cls):
+    if isinstance(cur, Cell):
         return TailCall(cur.car, env)
     return _eval(cur, env)
 
@@ -108,11 +107,9 @@ def strip_syntax(v):
     #
     # 性能注意：while 循环而非递归处理 SyntaxObject 的嵌套链，
     # 避免了 Python 递归深度问题。
-    _stx_cls = SyntaxObject
-    _cell_cls = Cell
-    while isinstance(v, _stx_cls):
+    while isinstance(v, SyntaxObject):
         v = v.expr
-    if isinstance(v, _cell_cls):
+    if isinstance(v, Cell):
         return Cell(strip_syntax(v.car), strip_syntax(v.cdr))
     return v
 
@@ -159,8 +156,7 @@ def h_lambda(args,env):
     params = []
     cur = args.car
     has_rest = False
-    _cell_cls = Cell
-    while isinstance(cur, _cell_cls): 
+    while isinstance(cur, Cell): 
         params.append(_sn(cur.car))
         cur = cur.cdr
     if cur is not NIL: 
@@ -184,13 +180,12 @@ def h_define(args,env):
     # 对于命名 lambda，将 name 传给 LambdaProc 以便 JIT 编译器能识别
     # 自递归（self-recursion）并生成 while 循环优化代码。
     pat = args.car
-    _cell_cls = Cell
-    if isinstance(pat, _cell_cls):
+    if isinstance(pat, Cell):
         name = _sn(pat.car)
         params = []
         cur = pat.cdr
         has_rest = False
-        while isinstance(cur, _cell_cls): 
+        while isinstance(cur, Cell): 
             params.append(_sn(cur.car))
             cur = cur.cdr
         if cur is not NIL: 
@@ -248,27 +243,25 @@ def eval_seq(seq, env):
     # 与 seq_tail_call 不同，这里直接调用 _eval 而非返回 TailCall。
     # 用于非尾上下文的表达式序列求值（如宏展开的 body）。
     # 注意：前 N-1 个表达式的返回值被丢弃（赋值给 r 但下一轮被覆盖）。
-    _cell_cls = Cell
     r = VOID
     cur = seq
-    while isinstance(cur, _cell_cls): 
+    while isinstance(cur, Cell): 
         r = _eval(cur.car, env)
         cur = cur.cdr
     return r
 
 def eval_args_to_array(_cur, env):
-    _cell_cls = Cell
-    if not isinstance(_cur, _cell_cls):
+    if not isinstance(_cur, Cell):
         return []
     c = _cur
     if c.cdr is NIL:
         return [_eval(c.car, env)]
-    if isinstance(c.cdr, _cell_cls) and c.cdr.cdr is NIL:
+    if isinstance(c.cdr, Cell) and c.cdr.cdr is NIL:
         return [_eval(c.car, env), _eval(c.cdr.car, env)]
-    if isinstance(c.cdr, _cell_cls) and isinstance(c.cdr.cdr, _cell_cls) and c.cdr.cdr.cdr is NIL:
+    if isinstance(c.cdr, Cell) and isinstance(c.cdr.cdr, Cell) and c.cdr.cdr.cdr is NIL:
         return [_eval(c.car, env), _eval(c.cdr.car, env), _eval(c.cdr.cdr.car, env)]
     evaled = []
-    while isinstance(_cur, _cell_cls):
+    while isinstance(_cur, Cell):
         evaled.append(_eval(_cur.car, env))
         _cur = _cur.cdr
     return evaled
@@ -318,24 +311,20 @@ def _eval_tuple_lambda(proc_val, _cur, env):
 
 
 def _eval(expr, env):
-    _sym_cls = Sym
-    _cell_cls = Cell
-    _tail_cls = TailCall
-    _stx_cls = SyntaxObject
     _unbound_sentinel = _UNBOUND
 
     while True:
         # B0: 符号
-        if isinstance(expr, _sym_cls):
+        if isinstance(expr, Sym):
             if expr is TRUE or expr is FALSE:
                 return expr
             return env.lookup(expr)
 
         # B1: 列表
-        if not isinstance(expr, _cell_cls):
+        if not isinstance(expr, Cell):
             if expr is TRUE or expr is FALSE or expr is NIL or expr is VOID or expr is EOF:
                 return expr
-            if isinstance(expr, _stx_cls):
+            if isinstance(expr, SyntaxObject):
                 return expr.expr
             return expr
 
@@ -346,7 +335,7 @@ def _eval(expr, env):
         handler = SPECIALS.get(op)
         if handler is not None:
             r = handler(args, env)
-            if isinstance(r, _tail_cls):
+            if isinstance(r, TailCall):
                 expr, env = r.expr, r.env
                 continue
             return r
@@ -356,7 +345,7 @@ def _eval(expr, env):
         #   "macro" 元组, 否则返回 None); 展开成功 → 继续主循环。
         #   未绑定 → 求值 op 本身作为过程值。
         proc = _unbound_sentinel
-        if isinstance(op, _sym_cls):
+        if isinstance(op, Sym):
             proc = env.lookup_silent(op, _unbound_sentinel)
             if proc is not _unbound_sentinel:
                 new_expr = expand_macro(proc, args, env)
@@ -376,7 +365,7 @@ def _eval(expr, env):
                 _ensure_jit_compiled(proc)
             if proc.compiled_version is not None:
                 r = _eval_compiled_lambda(proc.compiled_version, _cur, env)
-                if isinstance(r, _tail_cls):
+                if isinstance(r, TailCall):
                     expr, env = r.expr, r.env
                     continue
                 if r is True: r = TRUE
@@ -385,7 +374,7 @@ def _eval(expr, env):
             nenv = Env(proc.env)
             _bind_params(proc.params, eval_args_to_array(_cur, env), nenv)
             r = seq_tail_call(proc.body, nenv)
-            if isinstance(r, _tail_cls):
+            if isinstance(r, TailCall):
                 expr, env = r.expr, r.env
                 continue
             if r is True: r = TRUE
@@ -397,7 +386,7 @@ def _eval(expr, env):
         # B1d: 普通 callable (与 C# Func/Delegate 分支一致)
         if callable(proc):
             r = proc(*evaled_args)
-            if isinstance(r, _tail_cls):
+            if isinstance(r, TailCall):
                 expr, env = r.expr, r.env
                 continue
             if r is True: r = TRUE
@@ -407,10 +396,10 @@ def _eval(expr, env):
         # B1f: Tuple Lambda (与 C# ITuple "lambda" 分支一致)
         if isinstance(proc, tuple) and proc[0] == 'lambda':
             r = _eval_tuple_lambda(proc, _cur, env)
-            if isinstance(r, _tail_cls):
+            if isinstance(r, TailCall):
                 expr, env = r.expr, r.env
                 continue
-            if isinstance(r, _stx_cls):
+            if isinstance(r, SyntaxObject):
                 return r.expr
             return r
 
