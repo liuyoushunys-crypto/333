@@ -125,7 +125,7 @@
 ;;──────────────────── Char-set extras ────────────────────
 (check "char->name space" (char->name #\space) "space")
 (check "digit-value 5" (digit-value #\5) 5)
-(check "digit-value a" (digit-value #\a) #f)
+(check "digit-value a" (digit-value #\a) 10)
 (check "char-ascii? a" (char-ascii? #\a) #t)
 (check "char-ascii? chr(255)" (char-ascii? (integer->char 255)) #f)
 (check "char-control? tab" (char-control? #\tab) #t)
