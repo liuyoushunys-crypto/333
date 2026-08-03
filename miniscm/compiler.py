@@ -189,11 +189,12 @@ class SetBangAst(ASTNode):
         self.val = val
 
 class LambdaAst(ASTNode):
-    __slots__ = ('params', 'body', 'is_simple')
-    def __init__(self, params, body, is_simple=True):
+    __slots__ = ('params', 'body', 'is_simple', 'original_cell')
+    def __init__(self, params, body, is_simple=True, original_cell=None):
         self.params = params
         self.body = body
         self.is_simple = is_simple
+        self.original_cell = original_cell
 
 class BeginAst(ASTNode):
     __slots__ = ('exprs',)
@@ -274,7 +275,7 @@ def to_ast(expr):
         if op is SYM_LAMBDA:
             params, has_rest = parse_param_list(args.car)
             body_exprs = parse_body(args.cdr)
-            return LambdaAst(params, body_exprs, not has_rest)
+            return LambdaAst(params, body_exprs, not has_rest, original_cell=args.cdr)
 
         if op is SYM_BEGIN:
             return BeginAst(parse_body(args))
@@ -285,7 +286,7 @@ def to_ast(expr):
                 name = _sn(pat.car)
                 params, has_rest = parse_param_list(pat.cdr)
                 body_exprs = parse_body(args.cdr)
-                return DefineAst(name, LambdaAst(params, body_exprs, not has_rest))
+                return DefineAst(name, LambdaAst(params, body_exprs, not has_rest, original_cell=args.cdr))
             else:
                 val_expr = args.cdr.car if isinstance(args.cdr, Cell) else NIL
                 return DefineAst(_sn(pat), to_ast(val_expr))
@@ -362,7 +363,7 @@ def fold_constants(node):
         return AppAst(proc, args)
 
     if isinstance(node, LambdaAst):
-        return LambdaAst(node.params, [fold_constants(e) for e in node.body], node.is_simple)
+        return LambdaAst(node.params, [fold_constants(e) for e in node.body], node.is_simple, original_cell=node.original_cell)
     if isinstance(node, DefineAst):
         return DefineAst(node.name, fold_constants(node.val))
     if isinstance(node, SetBangAst):
@@ -459,6 +460,46 @@ def refers_outer_var(node, outer_vars, inner_params):
     if isinstance(node, BeginAst):
         return any(refers_outer_var(e, outer_vars, inner_params) for e in node.exprs)
     return False
+
+def collect_outer_refs(node, outer_vars, inner_params):
+    """
+    收集 node 中引用的外层变量集合（未被 inner_params 遮蔽）。
+    """
+    if isinstance(node, VarAst):
+        if node.name in outer_vars and node.name not in inner_params:
+            return {node.name}
+        return set()
+    if isinstance(node, LiteralAst):
+        return set()
+    if isinstance(node, LambdaAst):
+        nested_params = {clean_param_name(p) for p in node.params}
+        combined = inner_params | nested_params
+        acc = set()
+        for b in node.body:
+            acc |= collect_outer_refs(b, outer_vars, combined)
+        return acc
+    if isinstance(node, DefineAst):
+        return collect_outer_refs(node.val, outer_vars, inner_params)
+    if isinstance(node, SetBangAst):
+        acc = collect_outer_refs(node.val, outer_vars, inner_params)
+        if node.name in outer_vars and node.name not in inner_params:
+            acc.add(node.name)
+        return acc
+    if isinstance(node, IfAst):
+        return (collect_outer_refs(node.test, outer_vars, inner_params)
+                | collect_outer_refs(node.then, outer_vars, inner_params)
+                | collect_outer_refs(node.else_, outer_vars, inner_params))
+    if isinstance(node, AppAst):
+        acc = collect_outer_refs(node.proc, outer_vars, inner_params)
+        for a in node.args:
+            acc |= collect_outer_refs(a, outer_vars, inner_params)
+        return acc
+    if isinstance(node, BeginAst):
+        acc = set()
+        for e in node.exprs:
+            acc |= collect_outer_refs(e, outer_vars, inner_params)
+        return acc
+    return set()
 
 # ═══════════════════════════════════════════════════════════════
 # CompiledLambda — 复盘20：预计算 _n_regular
@@ -570,6 +611,10 @@ def __mscm_env_set_var__(env, name, val):
     env.define(name, val)
     return VOID
 
+def __mscm_closure_set__(env, name, val):
+    env.data[name] = val
+    return env
+
 def __mscm_make_tail_call__(proc, args_list, env):
     # 用 (quote v) 包裹已估值参数，避免 _eval_args_to_list 把 Cell 值当表达式求值
     arg_cells = NIL
@@ -601,9 +646,10 @@ def _make_jit_globals(constants):
         'Fraction': Fraction, 'cells': _cells, '_cell_len': _cell_len,
         'car': car, 'cdr': cdr, 'cons': cons,
         '_vec_set_elem': vec_set_elem,
-        'CompiledLambda': CompiledLambda, 'TailCall': TailCall,
+        'CompiledLambda': CompiledLambda, 'TailCall': TailCall, 'LambdaProc': LambdaProc,
         '__mscm_invoke__': __mscm_invoke__,
         '__mscm_env_set_var__': __mscm_env_set_var__,
+        '__mscm_closure_set__': __mscm_closure_set__,
         '__mscm_make_tail_call__': __mscm_make_tail_call__,
         '__mscm_resolve_ic__': __mscm_resolve_ic__,
         '_lst': _lst,
@@ -714,6 +760,43 @@ class AstExprCompiler:
         )
 
     def _compile_LambdaAst(self, node, lexical_vars):
+        # 闭包检测：内层 lambda 引用外层变量 → 降级为运行时 LambdaProc
+        inner_params = {clean_param_name(p) for p in node.params}
+        captured = collect_outer_refs(node, lexical_vars, inner_params)
+        if node.original_cell is not None and captured:
+            _JIT_LOG("CLOSURE_DOWNGRADE: params=", node.params, " captured=", sorted(captured))
+            body_cell_idx = self.register_constant(node.original_cell)
+            params_idx = self.register_constant(node.params)
+            is_simple_idx = self.register_constant(node.is_simple)
+            # 构建子环境并绑定捕获的外层变量
+            child_env = ast.Call(
+                func=ast.Name(id='Env', ctx=ast.Load()),
+                args=[ast.Name(id='env', ctx=ast.Load())],
+                keywords=[]
+            )
+            for name in sorted(captured):
+                child_env = ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id='__mscm_closure_set__', ctx=ast.Load()),
+                        attr='__call__', ctx=ast.Load()
+                    ),
+                    args=[child_env, ast.Constant(value=name), ast.Name(id=name, ctx=ast.Load())],
+                    keywords=[]
+                )
+            return ast.Call(
+                func=ast.Name(id='LambdaProc', ctx=ast.Load()),
+                args=[
+                    ast.Subscript(value=ast.Name(id='__mscm_consts__', ctx=ast.Load()),
+                                  slice=ast.Constant(value=params_idx), ctx=ast.Load()),
+                    ast.Subscript(value=ast.Name(id='__mscm_consts__', ctx=ast.Load()),
+                                  slice=ast.Constant(value=body_cell_idx), ctx=ast.Load()),
+                    child_env,
+                    ast.Subscript(value=ast.Name(id='__mscm_consts__', ctx=ast.Load()),
+                                  slice=ast.Constant(value=is_simple_idx), ctx=ast.Load()),
+                    ast.Constant(value=None),
+                ],
+                keywords=[]
+            )
         nested_compiler = AstExprCompiler()
         cleaned_params = [clean_param_name(p) for p in node.params]
         combined_vars = lexical_vars | set(cleaned_params)
@@ -1254,13 +1337,6 @@ def compile_lambda_proc(lambda_proc):
             body_asts = [to_ast(f) for f in body_forms]
             cleaned_params = [clean_param_name(p) for p in lambda_proc.params]
             lexical_vars = set(cleaned_params)
-
-            # Step 3: 闭包检测
-            for i, ast_node in enumerate(body_asts):
-                if has_nested_closure(ast_node, lexical_vars):
-                    _JIT_LOG("CLOSURE BLOCKED: ", lambda_proc.name, " body_idx=", i)
-                    _mark_failed()
-                    return None
 
             # Step 3b: 嵌套 lambda 自递归检测 (let 展开模式, 与 C# 一致)
             if lambda_proc.name is not None and has_self_recursion_in_nested_lambda(body_asts, lambda_proc.name):

@@ -11,7 +11,7 @@ from reader import read
 
 # ── 从 primitives_first 导入自举核心函数 ──
 from primitives_first import (
-    car, cdr, eqv, equal, call, port_out,
+    car, cdr, cons, eqv, equal, call, port_out,
 )
 
 # char_val: extract Python str from SchemeChar
