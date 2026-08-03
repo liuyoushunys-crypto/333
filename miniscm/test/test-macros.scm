@@ -4,14 +4,6 @@
 ;; =============================================================================
 ;; test2.scm — 综合压力测试 & 复杂边缘场景 (Enterprise Scheme)
 ;; =============================================================================
-(define (check label actual expected)
-  (if (equal? actual expected)
-      (begin (display "[PASS] ") (display label) (newline))
-      (begin (display "[FAIL] ") (display label)
-             (display "  expected: ") (display expected)
-             (display "  actual: ") (display actual) (newline))))
-
-
 ;; =============================================================================
 ;; 1. define-macro 压力测试
 ;; =============================================================================

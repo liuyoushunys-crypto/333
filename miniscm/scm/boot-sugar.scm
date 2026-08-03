@@ -221,34 +221,12 @@
     ((_ expr)
      expr)))
 
-;; ── check ──
-;; 简单测试断言：比较表达式结果与期望值。
-;;   用法: (check expr expected)
-;;   示例: (check (+ 1 2) 3)
-;;   输出: [CHECK PASS] 或 [CHECK FAIL] + 期望/实际值
-(define-syntax check1
-  (syntax-rules ()
-    ((_ expr expected)
-     (let ((actual expr) (exp expected))
-       (if (equal? actual exp)
-         (begin (display "  [CHECK PASS] ") (display 'expr) (newline))
-         (begin (display "  [CHECK FAIL] ") (display 'expr) (newline)
-                (display "    expected: ") (write exp) (newline)
-                (display "    actual:   ") (write actual) (newline)))))))
-
-;; ── check (带名字三参形式) ──
-;; 用法: (check label expr expected)
-;; 示例: (check "add" (+ 1 2) 3)
-;; 输出: [CHECK PASS] label 或 [CHECK FAIL] label + 期望/实际值
-(define-syntax check
-  (syntax-rules ()
-    ((_ label expr expected)
-     (let ((actual expr) (exp expected))
-       (if (equal? actual exp)
-         (begin (display "  [CHECK PASS] ") (display label) (newline))
-         (begin (display "  [CHECK FAIL] ") (display label) (newline)
-                (display "    expected: ") (write exp) (newline)
-                (display "    actual:   ") (write actual) (newline)))))))
+(define (check label actual expected)
+  (if (equal? actual expected)
+      (begin (display "[PASS] ") (display label) (newline))
+      (begin (display "[FAIL] ") (display label)
+             (display "  expected: ") (display expected)
+             (display "  actual: ") (display actual) (newline))))
 
 ;; ── check-ec ──
 ;; 推导式测试断言：检查推导中所有元素均符合预期。

@@ -116,55 +116,6 @@ def strip_syntax(v):
         return Cell(strip_syntax(v.car), strip_syntax(v.cdr))
     return v
 
-@put(SYM_IMPORT)
-def h_import(args,env):
-    """Python 导入：(import "mod") / (import "mod" :as name)
-       from 形式：(import "mod" (name1 :as a1 name2))
-       :as 为命名空间别名，names 内 :as 为具体函数别名"""
-    import importlib
-    _cell_cls = Cell
-    modname = _sn(args.car) if args.car.__class__ is Sym else str(args.car)
-    mod = importlib.import_module(modname)
-    rest = args.cdr
-    if rest.__class__ is _cell_cls and hasattr(rest.car, 'name') and rest.car.name == ':as':
-        ns_alias = _sn(rest.cdr.car) if rest.cdr.car.__class__ is Sym else str(rest.cdr.car)
-        for name in dir(mod):
-            if name.startswith('_'): continue
-            be.define(name, getattr(mod, name))
-        be.define(ns_alias, mod)
-        return TRUE
-    if rest.__class__ is _cell_cls and rest.cdr.__class__ is _cell_cls and hasattr(rest.car, 'name') and rest.car.name == ':as':
-        pass
-    if rest is not NIL:
-        cur = rest
-        while cur.__class__ is _cell_cls:
-            spec = cur.car
-            alias = None
-            name = spec
-            if isinstance(spec, Cell):
-                alias = spec.cdr.cdr.car if isinstance(spec.cdr, Cell) and isinstance(spec.cdr.cdr, Cell) else None
-                name = spec.car
-            if isinstance(spec, Sym) and spec.name == ':as' and cur.cdr.__class__ is _cell_cls:
-                cur = cur.cdr.cdr if cur.cdr.cdr is not NIL else cur.cdr
-                continue
-            nxt = cur.cdr
-            if isinstance(nxt, Cell) and isinstance(nxt.car, Sym) and nxt.car.name == ':as':
-                alias = nxt.cdr.car if isinstance(nxt.cdr, Cell) else None
-                name = spec
-                cur = nxt.cdr.cdr if nxt.cdr.cdr is not NIL else NIL
-            else:
-                cur = nxt
-            nm_str = _sn(name) if isinstance(name, Sym) else str(name)
-            tg_str = _sn(alias) if alias and isinstance(alias, Sym) else (str(alias) if alias else nm_str)
-            be.define(tg_str, getattr(mod, nm_str))
-        return TRUE
-    for name in dir(mod):
-        if name.startswith('_'): continue
-        be.define(name, getattr(mod, name))
-    basename = modname.split('.')[-1]
-    be.define(basename, mod)
-    # return TRUE
-
 @put(SYM_QUOTE)
 def h_quote(args,env): 
     # quote: 返回字面量本身，不求值。使用 strip_syntax 去掉所有
@@ -760,8 +711,8 @@ if __name__=='__main__':
                 sys.stderr.write(f"loaded {n} from {f}\n")
             except: pass
 
-    from initenv_py import initenv_py
-    initenv_py()
+    # from initenv_py import initenv_py
+    # initenv_py()
 
     if len(sys.argv)>1:
         for p in sys.argv[1:]: n=load_file(p); print(f"loaded {n} forms from {p}")
