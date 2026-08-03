@@ -7,7 +7,7 @@
 (define-syntax unless (syntax-rules (end) ((_ cond body ... end) (if (not cond) (begin body ...) #f))))
 (define-macro (each lst . body) `(for-each (lambda ,(car body) ,@(cdr body)) ,lst))
 (define lang-map map)
-(define-macro (map f lst) `(lang-map ,f ,lst))
+(define-macro (newmap f lst) `(lang-map ,f ,lst))
 (define-macro (select lst pred) `(let loop ((xs ,lst) (acc '())) (if (null? xs) (reverse acc) (loop (cdr xs) (if (,pred (car xs)) (cons (car xs) acc) acc)))))
 (define-macro (or-or-set var val) `(if (not ,var) (set! ,var ,val)))
 (define-macro (?? a b) `(let ((v ,a)) (if v v ,b)))

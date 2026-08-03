@@ -24,13 +24,25 @@ CORE_TESTS = [
     'test/test-compiler.scm',       # JIT/宏引擎
     'test/test-standards.scm',
     'test/test-data-structures.scm',
+    'test/test-lang-c.scm',
+    'test/test-lang-elixir.scm',
+    'test/test-lang-go.scm',
+    'test/test-lang-hs.scm',
+    'test/test-lang-java.scm',
+    'test/test-lang-js.scm',
+    'test/test-lang-julia.scm',
+    'test/test-lang-kt.scm',
+    'test/test-lang-lua.scm',
+    'test/test-lang-py.scm',
+    'test/test-lang-rb.scm',
+    'test/test-lang-rust.scm',
+    'test/test-lang-sh.scm',
+    'test/test-lang-swift.scm',
+    'test/test-lang-ts.scm',
 ]
 
 # 每个测试允许的已知失败数 (pyb 扩展库实现缺陷 / DSL 测试差异, 非核心回归)
 KNOWN_FAILS = {
-    'test-arithmetic.scm': 3,  # fx-greatest/least/fxnot (fixnum 宽度)
-    'test-strings.scm': 1,     # digit-value a (非数字字符)
-    'test-language.scm': 16,   # DSL 语言演示 (typeof 返回 number 等差异)
 }
 
 def run_test(path, timeout=180):

@@ -9,9 +9,9 @@
 (define-macro (when val . arms) `(cond ,@(map (lambda (a) `((equal? ,val (quote ,(car a))) ,@(cdr a))) arms) (else (error "when: no match"))))
 (define-macro (!! x) x)
 (define-macro (elvis a b) `(let ((v ,a)) (if v v ,b)))
-(define-macro (filter lst pred) `(let loop ((xs ,lst) (acc '())) (if (null? xs) (reverse acc) (loop (cdr xs) (if (,pred (car xs)) (cons (car xs) acc) acc)))))
+(define-macro (newfilter lst pred) `(let loop ((xs ,lst) (acc '())) (if (null? xs) (reverse acc) (loop (cdr xs) (if (,pred (car xs)) (cons (car xs) acc) acc)))))
 (define lang-map map)
-(define-macro (map f lst) `(lang-map ,f ,lst))
+(define-macro (newmap f lst) `(lang-map ,f ,lst))
 (define-syntax Int (syntax-rules () ((_) 'Int)))
 (define-syntax String (syntax-rules () ((_) 'String)))
 ;; (fun fact (n) (if #{n <= 1} 1 (* n (fact #{n - 1}))))
@@ -32,8 +32,8 @@
 (fib 10)
 
 (fun chain-demo (lst)
-  (var evens = (filter lst (lambda (x) (zero? #{x % 2}))))
-  (var doubled = (map (lambda (x) #{x * 2}) evens))
+  (var evens = (newfilter lst (lambda (x) (zero? #{x % 2}))))
+  (var doubled = (newmap (lambda (x) #{x * 2}) evens))
   (println (format "evens doubled: ~a" doubled)))
 (chain-demo (list 1 2 3 4 5 6))
 
@@ -71,7 +71,7 @@
 
 ;; --- 3. elvis + filter chain ---
 ;; (fun chain (lst)
-;;   (var evens = (filter lst (lambda (x) (zero? #{x % 2}))))
+;;   (var evens = (newfilter lst (lambda (x) (zero? #{x % 2}))))
 ;;   (var first = (elvis (and (pair? evens) (car evens)) "none"))
 ;;   (println (format "first even: ~a" first)))
 ;; (chain (list 1 3 5 7))

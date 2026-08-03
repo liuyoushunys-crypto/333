@@ -1,5 +1,5 @@
 (display "=== lang-hs loaded ===\n")
-(define-syntax define (syntax-rules () ((_ name (args ...) body ...) (define name (lambda (args ...) body ...)))))
+(define-syntax newdefine (syntax-rules () ((_ name (args ...) body ...) (define name (lambda (args ...) body ...)))))
 (define-syntax let/in (syntax-rules (= in) ((_ name = val in body ...) (let ((name val)) body ...)) ((_ (name = val) ... in body ...) (let ((name val) ...) body ...))))
 (define-macro (where expr . defs) (let loop ((ds defs) (binds '())) (if (null? ds) `(let ,(reverse binds) ,expr) (loop (cdr ds) (cons (list (car (car ds)) (cadr (cdr (car ds)))) binds)))))
 (define-macro (lambda args . body) `(lambda ,args ,@body))
@@ -7,11 +7,11 @@
 (define-macro (comp f g) `(lambda (x) (,f (,g x))))
 (define-macro (++ a b) `(append ,a ,b))
 (define lang-cons cons)
-(define-macro (cons x xs) `(lang-cons ,x ,xs))
+(define-macro (newcons x xs) `(lang-cons ,x ,xs))
 (define-macro (!! xs n) `(list-ref ,xs ,n))
 (define lang-map map)
-(define-macro (map f lst) `(lang-map ,f ,lst))
-(define-macro (filter lst pred) `(let loop ((xs ,lst) (acc '())) (if (null? xs) (reverse acc) (loop (cdr xs) (if (,pred (car xs)) (cons (car xs) acc) acc)))))
+(define-macro (newmap f lst) `(lang-map ,f ,lst))
+(define-macro (newfilter lst pred) `(let loop ((xs ,lst) (acc '())) (if (null? xs) (reverse acc) (loop (cdr xs) (if (,pred (car xs)) (cons (car xs) acc) acc)))))
 (define-macro (foldl f init lst) `(let loop ((acc ,init) (xs ,lst)) (if (null? xs) acc (loop (,f (car xs) acc) (cdr xs)))))
 (define-macro (foldr f init lst) `(letrec ((fr (lambda (xs) (if (null? xs) ,init (,f (car xs) (fr (cdr xs))))))) (fr ,lst)))
 (define-macro (guard name conds) `(letrec ((,name (lambda xs (cond ,@(map (lambda (c) `(,(car c) (begin ,@(cdr c)))) conds))))) ,name))
@@ -45,8 +45,8 @@
 (define demo (lst)
   ($ display
     (format "evens doubled: ~a"
-      (map (lambda (x) #{x * 2})
-        (filter lst (lambda (x) (zero? #{x % 2}))))))
+      (newmap (lambda (x) #{x * 2})
+        (newfilter lst (lambda (x) (zero? #{x % 2}))))))
   (newline))
 (demo (list 1 2 3 4 5 6))
 
@@ -79,7 +79,7 @@
 ;; (define evens-doubled (lst)
 ;;   ($ display
 ;;     (map (lambda (x) #{x * 2})
-;;       (filter lst (lambda (x) (zero? #{x % 2})))))
+;;       (newfilter lst (lambda (x) (zero? #{x % 2})))))
 ;;   (newline))
 ;; (evens-doubled (list 1 2 3 4 5 6))
 

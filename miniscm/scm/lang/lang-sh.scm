@@ -4,7 +4,7 @@
 (define-syntax sh-for (syntax-rules (in do done) ((_ var in list do body ... done) (for-each (lambda (var) body ...) list))))
 (define-syntax sh-while (syntax-rules (do done) ((_ cond do body ... done) (let loop () (if cond (begin body ... (loop)) #f)))))
 (define-macro (sh-if . clauses) (let loop ((cs clauses)) (if (null? cs) #f (let ((kw (car cs))) (case kw ((then) (if (null? (cdr cs)) #f `(begin ,@(cadr cs)))) ((elif) (if (null? (cddr cs)) #f `(if ,(cadr cs) (begin ,@(caddr cs)) ,(loop (cdddr cs))))) ((else) (if (null? (cdr cs)) #f `(begin ,@(cdr cs)))) ((fi) #f) (else `(if ,cs ,(loop (cdr cs)) #f)))))))
-(define-syntax test (syntax-rules (= > <) ((_ a = b) (equal? a b)) ((_ a > b) (#{a > b})) ((_ a < b) (#{a < b})) ((_ -z str) (= (string-length str) 0))))
+(define-syntax test (syntax-rules (= > <) ((_ a = b) (equal? a b)) ((_ a > b) #{a > b}) ((_ a < b) #{a < b}) ((_ -z str) (= (string-length str) 0))))
 (define-syntax seq (syntax-rules () ((_ n) (iota n))))
 (define-syntax sh-pipe (syntax-rules (|) ((_ cmd1 | cmd2) (cmd2 cmd1))))
 (define-syntax exit (syntax-rules () ((_ n) n)))
