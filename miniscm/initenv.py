@@ -9,8 +9,6 @@ from mtypes import (
 from reader import parse_number_scheme
 from primitives import *
 from primitives import set_port_pos, hash_table_keys, hash_table_values, hash_table_ref_default, compose_fn, list_drop
-from primitives import _eval_bridge,_sx_defined,_sx_defmacro,_sx_expand_call,_CURRENT_MACRO_DEF_ENV
-import primitives as _prim
 
 
 def _last_pair(lst):
@@ -59,26 +57,12 @@ def make_coroutine_generator(proc):
 
 def initenv():
     builtin('pi', math.pi)
-    builtin('+', add)
-    builtin('-', sub)
     builtin('*', mul)
     builtin('/', div)
 
 # ── 比较运算符（多参语义）──
 # =、<、>、<=、>=：多参数版本 R7RS 要求全部满足才为真
 #   注意：<、>、<=、>= 拒绝 complex 参数（复数不可比较大小）
-    builtin('=', lambda *a: FALSE if any(
-        (type(a[i]) is bool) != (type(a[i+1]) is bool)
-        or (not isinstance(a[i], (int,float,complex,Fraction))
-            and not isinstance(a[i+1], (int,float,complex,Fraction))
-            and type(a[i]) is not type(a[i+1]))
-        or a[i] != a[i+1]
-        for i in range(len(a)-1)) else TRUE)
-    # builtin('=', lambda *a: FALSE if any(type(a[i]) is not type(a[i+1]) or a[i]!=a[i+1] for i in range(len(a)-1)) else TRUE)
-    builtin('<', lambda *a: FALSE if any(isinstance(x,complex) for x in a) or any(a[i]>=a[i+1] for i in range(len(a)-1)) else TRUE)
-    builtin('>', lambda *a: FALSE if any(isinstance(x,complex) for x in a) or any(a[i]<=a[i+1] for i in range(len(a)-1)) else TRUE)
-    builtin('<=', lambda *a: FALSE if any(isinstance(x,complex) for x in a) or any(a[i]>a[i+1] for i in range(len(a)-1)) else TRUE)
-    builtin('>=', lambda *a: FALSE if any(isinstance(x,complex) for x in a) or any(a[i]<a[i+1] for i in range(len(a)-1)) else TRUE)
 
 # ── 数值谓词 ──
     builtin('zero?', lambda x: TRUE if x==0 else FALSE)
@@ -108,7 +92,6 @@ def initenv():
         if isinstance(x, Fraction) and x.denominator == 1: return int(x)
         return x
     builtin('inexact->exact', _inexact_to_exact_fn)
-    builtin('number->string', str)
     builtin('string->number', lambda s: parse_number_scheme(str(s)))
     builtin('numerator', lambda x: int(x) if isinstance(x,int) else (x.numerator if isinstance(x,Fraction) else x))
     builtin('denominator', lambda x: 1 if isinstance(x,int) else (x.denominator if isinstance(x,Fraction) else x.numerator if isinstance(x,float) and x==int(x) else 1))
@@ -154,51 +137,27 @@ def initenv():
 # ── 布尔操作 ──
     # boolean=? 多参全等
     builtin('boolean?', lambda x:TRUE if x is TRUE or x is FALSE else FALSE)
-    builtin('not', lambda x:TRUE if x is FALSE else FALSE)
 
 # ── eq?/eqv?/equal? ──
-    builtin('eq?', lambda a,b: TRUE if a is b else FALSE)
-    builtin('eqv?', eqv)
-    builtin('equal?', equal)
 
 # ── 对与列表操作 ──
-    builtin('pair?', lambda x:TRUE if isinstance(x,Cell) else FALSE)
-    builtin('null?', lambda x:TRUE if x is NIL else FALSE)
-    builtin('cons', cons)
-    builtin('car', car)
-    builtin('cdr', cdr)
     builtin('set-car!', lambda p,v: setattr(p,'car',v) or VOID)
     builtin('set-cdr!', lambda p,v: setattr(p,'cdr',v) or VOID)
-    builtin('caar', lambda x: x.car.car)
-    builtin('cadr', lambda x: x.cdr.car)
-    builtin('cdar', lambda x: x.car.cdr)
-    builtin('cddr', lambda x: x.cdr.cdr)
     builtin('caddr', lambda x: x.cdr.cdr.car)
     builtin('cadddr', lambda x: x.cdr.cdr.cdr.car)
-    builtin('list', lst)
-    builtin('list?', is_list)
     # length: list 返回 _cell_len，非 list 返回 0
-    builtin('length', lambda lst: _cell_len(lst) if isinstance(lst, Cell) else 0)
-    builtin('append', append)
-    builtin('list-ref', list_ref)
     builtin('list-tail', lambda lst, n: list_drop(lst, int(n)))
-    builtin('map', map_)
-    builtin('memq', memq)
     builtin('memv', memv)
     builtin('member', lambda x, l: member_py(x, l, equal))
-    builtin('assq', assq)
     builtin('assv', assv)
     builtin('assoc', assoc)
     
-    builtin('for-each', for_each_fn)
     builtin('pair-fold', pair_fold_fn)
     builtin('pair-fold-right', pair_fold_right_fn)
     # filter / last / vector->list: 基础原语 (boot-min2 宏引擎依赖,
     # 原位于 initenv_ext (pyb 模式), 提升为基础 builtin 与 C# 一致)
-    builtin('filter', lambda pred, lst: _lst([x for x in _cells(lst) if pred(x) is not FALSE]))
     builtin('remove', lambda pred, lst: _lst([x for x in _cells(lst) if pred(x) is FALSE]))
     builtin('last', lambda lst: (lambda c: c.car if isinstance(c, Cell) else FALSE)(_last_pair(lst)))
-    builtin('vector->list', lambda v: _lst(list(v.data if hasattr(v, 'data') else v)))
 
     builtin('booleans->integer', booleans_to_integer)
     builtin('bits->integer', bits_to_integer_lsb)
@@ -415,13 +374,7 @@ def initenv():
     builtin('alist->hash-table', alist2ht)
     builtin('hash-table-for-each', lambda f, ht: [f(k, v) for k, v in ht.items()] and VOID)
 
-    builtin('eval', _eval_bridge)
 
     # sx-def-env: 返回当前宏定义环境或全局 (C#: CurrentMacroDefEnv ?? GlobalEnv)
-    builtin('sx-def-env', lambda: _prim._CURRENT_MACRO_DEF_ENV or be)
 
     # sx-expand-env: 返回当前宏调用点环境或全局 (C#: CurrentExpandEnv ?? GlobalEnv)
-    builtin('sx-expand-env', lambda: _prim._CURRENT_EXPAND_ENV or be)
-    builtin('sx-defined?', _sx_defined)
-    builtin('sx-defmacro', _sx_defmacro)
-    builtin('sx-expand-call', _sx_expand_call)

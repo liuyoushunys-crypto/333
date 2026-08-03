@@ -551,6 +551,8 @@ if __name__=='__main__':
     #
     # 库加载失败（如文件不存在）被静默处理（except: pass），
     # 确保解释器即使在库不全的情况下也能启动。
+    from initenv_first import initenv_first
+    initenv_first()
     from initenv import initenv
     initenv()
     # ── Scheme 宏系统桥接原语 (boot-min2 自举所需) ──

@@ -9,6 +9,19 @@ from mtypes import (
 )
 from reader import read
 
+# ── 从 primitives_first 导入自举核心函数 ──
+from primitives_first import (
+    cons, car, cdr, lst, add, sub, eqv, equal, memq, assq, map_,
+    list_ref, append, is_list, for_each_fn, error, dsp,
+    caar, cadr, cdar, cddr, eq_num, lt, gt, le, ge, filter_,
+    is_scheme_char, get_scheme_char, is_scheme_str, get_scheme_str,
+    is_scheme_vec, get_scheme_vec_data, _EqHashTable,
+    _eval_bridge, _sx_defined, _sx_defmacro, _sx_expand_call,
+    expand_macro, resolve_hygiene_markers, call, port_out,
+    _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV,
+    _sx_def_env, _sx_expand_env,
+)
+
 # char_val: extract Python str from SchemeChar
 _has_sc = False
 def cs_char(c):
@@ -29,18 +42,6 @@ XOR = lambda a,b: a^b
 def scheme_truthy(v):
     return v is not FALSE and v is not False and v is not NIL
 
-# isnum: 判断是否为 Scheme 数值类型（int/float/complex/Fraction）
-def isnum(x): return isinstance(x,(int,float,complex,Fraction)) and type(x) is not bool
-
-# num: 将数值统一转为 Fraction（Scheme 精确数的内部表示）
-#   注意：float 和 complex 原样返回，不做强制转换
-def num(x):
-    if type(x) is bool: raise TypeError(f"not a number: {x}")
-    if isinstance(x,Fraction): return x
-    if isinstance(x,int): return Fraction(x,1)
-    if isinstance(x,float): return x
-    if isinstance(x,complex): return x
-    raise TypeError(f"not a number: {x}")
 
 # char_val: 从字符表示中提取纯 Python str
 #   支持 SchemeChar 对象和 ('char', str) 元组两种格式
@@ -83,13 +84,6 @@ def bv_set_u8(v, i, x):
 
 # is_list: 循环检测 true list（含环形链表检测 via seen set）
 #   返回值是 TRUE/FALSE（Scheme 布尔值），不是 Python bool
-def is_list(x):
-    seen=set()
-    while isinstance(x,Cell):
-        if id(x) in seen: return FALSE
-        seen.add(id(x))
-        x=x.cdr
-    return TRUE if x is NIL else FALSE
 
 # str_cons: 从多个字符参数构造字符串
 def str_cons(*chars):
@@ -139,81 +133,14 @@ def compose(fns):
     return comp
 
 # ── 辅助函数（模块级，避免 equal?/eqv? 每次调用重复创建）──
-def is_scheme_char(x):
-    return isinstance(x, SchemeChar) or (isinstance(x, tuple) and len(x) == 2 and x[0] == 'char')
-def get_scheme_char(x):
-    return x.char if isinstance(x, SchemeChar) else x[1]
-def is_scheme_str(x):
-    return isinstance(x, (str, SchemeString))
-def get_scheme_str(x):
-    return ''.join(x.data) if isinstance(x, SchemeString) else x
-def is_scheme_vec(x):
-    return isinstance(x, (list, SchemeVector))
-def get_scheme_vec_data(x):
-    return x.data if isinstance(x, SchemeVector) else x
 
-class _EqHashTable:
-    __slots__ = ('data',)
-    def __init__(self): self.data = {}
 
 # ── eqv? 与 equal? ──
 # eqv? 的数值相等判定：需要类型一致（exact vs inexact），0 的符号检测
 #   注意：NaN 比较 (x != x) 和 signed zero 的特殊处理
-def eqv(a, b):
-    if a is b: return TRUE
-    is_num_a = isinstance(a, (int, float, complex, Fraction)) and type(a) is not bool
-    is_num_b = isinstance(b, (int, float, complex, Fraction)) and type(b) is not bool
-    if is_num_a and is_num_b:
-        exact_a = isinstance(a, (int, Fraction))
-        exact_b = isinstance(b, (int, Fraction))
-        if exact_a != exact_b: return FALSE
-        if isinstance(a, float) and isinstance(b, float):
-            if a != a and b != b: return TRUE
-        if a == 0 and b == 0:
-            ar = a.real if isinstance(a, complex) else a
-            br = b.real if isinstance(b, complex) else b
-            if isinstance(ar, float) and isinstance(br, float):
-                if math.copysign(1.0, ar) != math.copysign(1.0, br): return FALSE
-        try: return TRUE if a == b else FALSE
-        except: return FALSE
-    if is_scheme_char(a) and is_scheme_char(b): return TRUE if get_scheme_char(a) == get_scheme_char(b) else FALSE
-    return FALSE
 
 # equal? 递归比较：支持链表、向量、字节向量、hash-table、字符串、字符
 #   使用 seen set 检测循环引用（环形链表不导致无限递归）
-def equal(a, b, seen=None):
-    if eqv(a, b) is TRUE: return TRUE
-    if is_scheme_char(a) and is_scheme_char(b): return TRUE if get_scheme_char(a) == get_scheme_char(b) else FALSE
-    if is_scheme_str(a) and is_scheme_str(b): return TRUE if get_scheme_str(a) == get_scheme_str(b) else FALSE
-    if seen is None: seen = set()
-    pair_id = (id(a), id(b))
-    if pair_id in seen: return TRUE
-    seen.add(pair_id)
-    if isinstance(a, Cell) and isinstance(b, Cell):
-        if equal(a.car, b.car, seen) is TRUE: return equal(a.cdr, b.cdr, seen)
-        return FALSE
-    if is_scheme_vec(a) and is_scheme_vec(b):
-        da = get_scheme_vec_data(a); db = get_scheme_vec_data(b)
-        if len(da) != len(db): return FALSE
-        for x, y in zip(da, db):
-            if equal(x, y, seen) is FALSE: return FALSE
-        return TRUE
-    if isinstance(a, SchemeBytevector) and isinstance(b, SchemeBytevector):
-         return TRUE if a.data == b.data else FALSE
-    if isinstance(a, _EqHashTable) and isinstance(b, _EqHashTable):
-        if len(a.data) != len(b.data): return FALSE
-        for k, v in a.data.items():
-            if k not in b.data: return FALSE
-            if equal(v, b.data[k], seen) is FALSE: return FALSE
-        return TRUE
-    # Handle plain Python dicts (from make-strong-hash-table etc.)
-    if (isinstance(a, dict) or isinstance(a, _EqHashTable)) and (isinstance(b, dict) or isinstance(b, _EqHashTable)):
-        if len(a) != len(b): return FALSE
-        for k, v in a.items():
-            if k not in b: return FALSE
-            if equal(v, b[k], seen) is FALSE: return FALSE
-        return TRUE
-    return FALSE
 
 # member_py: 通用列表成员查找（使用自定义相等判定 _e）
 def member_py(k, lst, _e):
@@ -228,61 +155,13 @@ def next_gensym():
     return Sym(f"g{_gensym_ctr[0]}")
 
 # ── 原生基础库绑定 ──
-def cons(a,d): return Cell(a,d)
 
-def car(p):
-    if isinstance(p,Cell): return p.car
-    raise TypeError("car: not a pair")
 
-def cdr(p):
-    if isinstance(p,Cell): return p.cdr
-    raise TypeError("cdr: not a pair")
-def lst(*a):
-    r=NIL
-    for x in reversed(a): r=Cell(x,r)
-    return r
 # +：加法，多参，支持 int/Fraction/float/complex 混合运算
 #   如果任一参数是 complex，所有参数转 complex 计算
 #   如果任一参数是 Fraction，int 参数先转 Fraction
-def add(*a):
-    if not a: return 0
-    all_int = True
-    for x in a:
-        if not isinstance(x, int):
-            all_int = False
-            break
-    if all_int:
-        r = 0
-        for x in a: r += x
-        return r
-    if any(isinstance(x,complex) for x in a):
-        return sum(complex(x) if not isinstance(x,complex) else x for x in a)
-    if any(isinstance(x,Fraction) for x in a):
-        return sum((Fraction(x,1) if isinstance(x,int) else x) for x in a)
-    return sum(a)
 # -：减法，单参取负，多参连续减
 #   complex/Fraction 混合处理同 +
-def sub(*a):
-    if not a: raise SchemeException("-\: wrong number of arguments")
-    if len(a)==1: return -a[0] if isnum(a[0]) else -num(a[0])
-    all_int = True
-    for x in a:
-        if not isinstance(x, int):
-            all_int = False
-            break
-    if all_int:
-        r = a[0]
-        for x in a[1:]: r -= x
-        return r
-    if any(isinstance(x,complex) for x in a):
-        ca=a[0] if isinstance(a[0],complex) else complex(float(a[0].real if isinstance(a[0],Fraction) else a[0]),0)
-        for x in a[1:]: ca-=x if isinstance(x,complex) else complex(float(x.real if isinstance(x,Fraction) else x),0)
-        return ca
-    if any(isinstance(x,Fraction) for x in a):
-        r=Fraction(a[0],1) if isinstance(a[0],int) else a[0]
-        for x in a[1:]: r-=Fraction(x,1) if isinstance(x,int) else x
-        return r
-    return a[0]-sum(a[1:])
 # *：乘法，多参
 def mul(*a):
     if not a: return 1
@@ -376,65 +255,12 @@ def load(path):
 #   TailCall 陷阱：f_real() 调用可能返回 TailCall（当 f 是编译后的跨函数尾调用时）
 #   必须用 _eval_fn 解析 TailCall 后才 cons 到结果 Cell 中
 #   递归调用 map_ 处理 cdr（非尾递归，深度受限）
-def map_(f,*lsts):
-    from mtypes import Cell, NIL, TailCall
-    from miniscm import _eval as _eval_fn
-    f_real=f if callable(f) else lambda *a: call(f,list(a))
-    result = NIL
-    tail = None
-    while True:
-        heads=[l for l in lsts if isinstance(l,Cell)]
-        if len(heads) < len(lsts) or not heads:
-            if tail is None:
-                # Reverse result
-                prev = NIL
-                cur = result
-                while isinstance(cur, Cell):
-                    nxt = cur.cdr
-                    cur.cdr = prev
-                    prev = cur
-                    cur = nxt
-                return prev
-            return result
-        r=f_real(*(l.car for l in heads))
-        while isinstance(r, TailCall):
-            r = _eval_fn(r.expr, r.env)
-        result = Cell(r, result)
-        lsts = tuple(h.cdr for h in heads)
-def list_ref(lst,k):
-    for _ in range(k):
-        if not isinstance(lst,Cell): raise IndexError("list-ref")
-        lst=lst.cdr
-    if not isinstance(lst, Cell): raise IndexError("list-ref")
-    return lst.car
 def list_tail(lst,k):
     for _ in range(k):
         if not isinstance(lst,Cell): raise IndexError("list-tail")
         lst=lst.cdr
     return lst
 # append: append，逆转+平坦化后重建
-def append(*ls):
-    if not ls: return NIL
-    r = NIL
-    last = ls[-1]
-    if isinstance(last, Cell):
-        for l in reversed(ls):
-            if isinstance(l, Cell):
-                rev = NIL; cur = l
-                while isinstance(cur, Cell): rev = Cell(cur.car, rev); cur = cur.cdr
-                cur = rev
-                while isinstance(cur, Cell): r = Cell(cur.car, r); cur = cur.cdr
-            elif l is not NIL: r = Cell(l, r)
-    else:
-        r = last
-        for l in reversed(ls[:-1]):
-            if isinstance(l, Cell):
-                rev = NIL; cur = l
-                while isinstance(cur, Cell): rev = Cell(cur.car, rev); cur = cur.cdr
-                cur = rev
-                while isinstance(cur, Cell): r = Cell(cur.car, r); cur = cur.cdr
-            elif l is not NIL: r = Cell(l, r)
-    return r
 def member(k,lst):
     while isinstance(lst,Cell):
         if equal(lst.car,k) is TRUE: return lst
@@ -447,11 +273,6 @@ def memv(k,lst):
         lst=lst.cdr
     return FALSE
 
-def memq(k,lst):
-    while isinstance(lst,Cell):
-        if lst.car is k: return lst
-        lst=lst.cdr
-    return FALSE
 
 # assoc: 通用关联列表查找，支持自定义比较（第三个参数）
 #   默认比较器是 equal；注意 eq 返回 TRUE 或 True 都算匹配
@@ -472,12 +293,6 @@ def assv(k,al):
         al=al.cdr
     return FALSE
 
-def assq(k,al):
-    while isinstance(al,Cell):
-        p=al.car
-        if isinstance(p,Cell) and p.car is k: return p
-        al=al.cdr
-    return FALSE
 # call/cc: call-with-current-continuation
 #   通过 _ContinuationEscape 异常实现控制流逃逸
 #   _cont_id 用于匹配逃逸来源，防止外部逃逸被内部捕获
@@ -534,13 +349,6 @@ def do_force(p):
 # port_out: 输出端口写入
 #   str-port 使用 list 包裹字符串实现引用传递（'str-port', [缓冲串]）
 #   file-port 直接写入 .write()
-def port_out(port, s):
-    if isinstance(port, tuple):
-        if port[0] == 'str-port' and isinstance(port[1], list):
-            port[1][0] += s; return True
-        if port[0] == 'file-port' and len(port) > 3:
-            port[3].write(s); port[3].flush(); return True
-    return False
 
 def port_in(port):
     if isinstance(port, tuple):
@@ -551,11 +359,6 @@ def port_in(port):
     return None
 
 # dsp: display（字符串不引号包裹，其他值使用 _pr 打印）
-def dsp(x, port=None):
-    s=str(x) if isinstance(x,(str,SchemeString)) else _pr(x)
-    if not port_out(port, s): sys.stdout.write(s); return VOID
-    return VOID
-# rc: read-char，从端口读一个字符
 #   坑：str-port 从列表缓冲取第一个字符并截断，无字符返回 EOF
 def rc(p):
     if p is None: p = ('str-port', [sys.stdin.read()])
@@ -635,30 +438,6 @@ def cwof(n,f):
 #   TailCall 陷阱：可调用过程 proc 执行后可能返回 TailCall（来自 JIT 编译的跨函数尾调用）
 #   必须用 _eval_fn 循环解析直到返回非 TailCall 值
 #   lambda 元组（'lambda', params, body, penv, _）直接构造 env 并 eval_seq
-def call(proc,args):
-    from miniscm import eval_seq, _eval as _eval_fn
-    from mtypes import TailCall
-    if callable(proc):
-        r = proc(*args)
-        while isinstance(r, TailCall):
-            r = _eval_fn(r.expr, r.env)
-        return r
-    if isinstance(proc,tuple) and proc[0]=='lambda':
-        _,params,body,penv, _ = proc; nenv=Env(penv); pi=0
-        for p in params:
-            ps=_sn(p)
-            if ps.startswith('rest:'):
-                nenv.define(ps[5:], _lst(args[pi:]))
-                pi=len(args)
-            else:
-                nenv.define(ps, args[pi]); pi+=1
-        return eval_seq(body,nenv)
-    raise TypeError(f"not callable: {proc}")
-# app: apply
-#   Cell 展开为平坦参数列表（list** 的 Scheme 版本）
-#   先展开 args 中的 Cell 为 all_args 平坦列表
-#   然后对 fn 分派：callable / lambda 元组 / be.lookup 符号
-#   为何检查 r is True/r is False？
 #     因为 proc(*all_args) 返回 Python bool 时需要转成 Scheme TRUE/FALSE
 def app(fn,*args):
     from miniscm import eval_seq
@@ -700,10 +479,6 @@ def with_exception_handler(handler,thunk):
 def do_raise(x):
     raise SchemeException(x)
 
-def error(*a):
-    msg=str(a[0]) if a else ""
-    irr=_lst(a[1:]) if len(a)>1 else NIL
-    raise SchemeException(ErrorObject(msg, irr))
 
 # make_coro_gen: 协程生成器（收集 yield 值后顺序返回）
 def make_coro_gen(proc):
@@ -830,17 +605,6 @@ def symbol_eq_prim(*args):
     return TRUE
 
 # for-each: 对列表/字符串/字符每个元素执行过程（副作用）
-def for_each_fn(f, *lsts):
-    if not lsts: return VOID
-    xs = lsts[0]
-    if isinstance(xs, (str, SchemeString)):
-        iters = [str(x) for x in lsts]
-        for items in zip(*iters):
-            call(f, [SchemeChar(c) for c in items])
-    else:
-        iters = [_plist(x) for x in lsts]
-        for items in zip(*iters):
-            call(f, list(items))
     return VOID
 def make_ht():
     return {}
@@ -1164,107 +928,3 @@ def string_ref_prim(s, *a):
 
 
 from mtypes import be as _be
-
-# eval: (eval expr env) — 求值表达式于指定环境
-def _eval_bridge(expr, env=None):
-    from miniscm import _eval as _eval_fn
-    env = env if isinstance(env, Env) else be
-    return _eval_fn(expr, env)
-
-# sx-defined?: 检查名称在环境中是否有绑定 (C#: env.LookupSilent(name) is not null)
-def _sx_defined(name, env=None):
-    env = env if isinstance(env, Env) else _be
-    nm = name.name if hasattr(name, 'name') else str(name)
-    return TRUE if env.lookup_silent(nm, _UNBOUND) is not _UNBOUND else FALSE
-
-# sx-defmacro: 注册宏元组 ('macro', pattern, body, env, is_simple)
-# pattern 是 rest 符号 (如 'args) — 展开时绑定全部实参 (与 C# 兼容)
-# env 是 my-definemacro 传入的 (sx-expand-env) 宏定义点词法环境。
-# 宏注册到全局, defEnv 字段记录词法定义点环境 (顶层→全局, let-syntax→局部)。
-def _sx_defmacro(name, pattern, body, env=None):
-    env = env if isinstance(env, Env) else _be
-    nm = name.name if hasattr(name, 'name') else str(name)
-    _be.data[nm] = ('macro', pattern, body, env, True)
-    return name
-
-# sx-expand-call: 单次宏展开。若 (car expr) 是宏元组则展开, 否则返回 FALSE。
-def _sx_expand_call(expr, env=None):
-    env = env if isinstance(env, Env) else _be
-    if isinstance(expr, Cell) and isinstance(expr.car, Sym):
-        proc = env.lookup_silent(expr.car.name, _UNBOUND)
-        if proc is not _UNBOUND:
-            expanded = expand_macro(proc, expr.cdr, env)
-            if expanded is not None:
-                return expanded
-    return FALSE
-
-# ── 宏展开动态环境 (与 C# Evaluator.CurrentMacroDefEnv/CurrentExpandEnv 对应) ──
-# sx-def-env: 当前宏的定义环境 (free template identifiers 在此解析)
-# sx-expand-env: 当前宏调用点环境 (模板求值时模式替换的局部符号正确解析)
-_CURRENT_MACRO_DEF_ENV = None
-_CURRENT_EXPAND_ENV = None
-
-# ── ExpandMacro: 单次宏展开 (C# Evaluator.ExpandMacro 的 Python 等价) ──
-# proc 为 ("macro", pattern, body, defEnv, true) 元组时:
-#   1. 绑定 pattern rest 符号 → args 于新环境 (父为调用点 env)
-#   2. 动态设置 CurrentMacroDefEnv / CurrentExpandEnv
-#   3. 求值宏体 (EvalSeq), 解包 TailCall
-#   4. ResolveHygieneMarkers 解析 (sx-hygiene name) 标记
-# 非 "macro" 元组返回 None (未展开)。
-def expand_macro(proc, args, env):
-    global _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV
-    from miniscm import eval_seq,_eval
-    if not (isinstance(proc, tuple) and len(proc) >= 5 and proc[0] == 'macro'):
-        return None
-    if not isinstance(proc[3], Env):
-        return None
-    defEnv = proc[3]
-    mbody = proc[2]
-
-    nenv = Env(env)
-    if isinstance(proc[1], Sym):
-        nenv.data[proc[1].name] = args if args is not None else NIL
-
-    savedDefEnv = _CURRENT_MACRO_DEF_ENV
-    _CURRENT_MACRO_DEF_ENV = defEnv
-    _CURRENT_EXPAND_ENV = env
-    try:
-        r = eval_seq(mbody, nenv)
-        while isinstance(r, TailCall):
-            r = _eval(r.expr, r.env)
-    finally:
-        # _CURRENT_EXPAND_ENV 不在此恢复: 宏展开结果 (如 my-definemacro 调用)
-        # 在展开后求值, 需通过 (sx-expand-env) 读到宏定义点词法环境。
-        _CURRENT_MACRO_DEF_ENV = savedDefEnv
-
-    result = r.expr if isinstance(r, SyntaxObject) else r
-    return resolve_hygiene_markers(result, defEnv)
-
-# ── ResolveHygieneMarkers: 解析 (sx-hygiene name) 标记 (C# 等价) ──
-# 宏模板中自由标识符经 sx-expand-sym 标记为 (sx-hygiene name),
-# 需在宏定义环境 defEnv 中解析。数据值内联为 quote 字面量;
-# 过程/宏保留为名字。非标记子表达式原样返回。
-def resolve_hygiene_markers(expr, defEnv):
-    while isinstance(expr, SyntaxObject):
-        expr = expr.expr
-    if isinstance(expr, Cell):
-        c = expr
-        if isinstance(c.car, Sym) and c.car.name == 'sx-hygiene':
-            name = None
-            if isinstance(c.cdr, Cell) and c.cdr.cdr is NIL and isinstance(c.cdr.car, Sym):
-                name = c.cdr.car.name
-            if name is not None:
-                v = defEnv.data.get(name)
-                if v is not None:
-                    if isinstance(v, tuple) and len(v) >= 2 and v[0] == 'macro':
-                        return c.cdr.car
-                    if callable(v):
-                        return c.cdr.car
-                    return Cell(SYM_QUOTE, Cell(v, NIL))
-            return c.cdr.car
-        new_car = resolve_hygiene_markers(c.car, defEnv)
-        new_cdr = resolve_hygiene_markers(c.cdr, defEnv)
-        if new_car is c.car and new_cdr is c.cdr:
-            return c
-        return Cell(new_car, new_cdr)
-    return expr
