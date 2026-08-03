@@ -15,7 +15,6 @@ public static partial class PrimitiveRegistry
     public static void Init()
     {
         // ── Type predicates ──
-        _b("boolean?", args => args[0] is Sym s && (s == Const.TRUE || s == Const.FALSE) ? Const.TRUE : Const.FALSE);
         _b("bound-identifier=?", args => EqSymbols(args[0], args[1]) ? Const.TRUE : Const.FALSE);
         _b("box?", args => args[0] is ValueTuple<string, object?> b && b.Item1 == "box" ? Const.TRUE : Const.FALSE);
         _b("bytevector?", args => args[0] is SchemeBytevector ? Const.TRUE : Const.FALSE);
@@ -27,59 +26,30 @@ public static partial class PrimitiveRegistry
         _b("free-identifier=?", args => EqSymbols(args[0], args[1]) ? Const.TRUE : Const.FALSE);
         _b("input-port?", args => IsPort(args[0], "input") ? Const.TRUE : Const.FALSE);
         _b("integer?", args => IsInteger(args[0]) ? Const.TRUE : Const.FALSE);
-        _b("not", args => args[0] is Sym s && s == Const.FALSE ? Const.TRUE : Const.FALSE);
-        _b("null?", args => args[0] is Nil ? Const.TRUE : Const.FALSE);
         _b("number?", args => args[0] is int or long or BigInteger or double or float or decimal or Complex or SchemeFraction ? Const.TRUE : Const.FALSE);
         _b("output-port?", args => IsPort(args[0], "output") ? Const.TRUE : Const.FALSE);
-        _b("pair?", args => args[0] is Cell ? Const.TRUE : Const.FALSE);
         _b("port?", args => IsPort(args[0], null) ? Const.TRUE : Const.FALSE);
-        _b("procedure?", args => args[0] is Delegate or LambdaProc or ValueTuple<string, object?> ? Const.TRUE : Const.FALSE);
         _b("promise?", args => args[0] is Promise ? Const.TRUE : Const.FALSE);
         _b("rational?", args => args[0] is SchemeFraction or int or long or BigInteger ? Const.TRUE : Const.FALSE);
         _b("real?", args => args[0] is int or long or BigInteger or SchemeFraction or double or float or decimal ? Const.TRUE : Const.FALSE);
         _b("string?", args => args[0] is string or SchemeString ? Const.TRUE : Const.FALSE);
-        _b("symbol?", args => args[0] is Sym ? Const.TRUE : Const.FALSE);
         _b("syntax->datum", args => args[0]);
         _b("syntax?", args => args[0] is Sym ? Const.TRUE : Const.FALSE);
         _b("vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
         _b("void?", args => args[0] is Void ? Const.TRUE : Const.FALSE);
 
         // ── Equality ──
-        _b("eq?", args => ReferenceEquals(args[0], args[1]) || (args[0] is not null && args[0]!.Equals(args[1])) ? Const.TRUE : Const.FALSE);
-        _b("equal?", args => Eql(args[0], args[1]));
-        _b("eqv?", PEqvQ);
 
         // ── Pairs and lists ──
-        _b("append", PAppend);
         _b("assoc", args => Assoc(args[0], args[1], false));
-        _b("assq", args => Assoc(args[0], args[1], true));
         _b("assv", args => Assoc(args[0], args[1], false));
-        _b("caar", args => CarFn(CarFn(args[0])));
-        _b("cadr", args => CarFn(CdrFn(args[0])));
-        _b("car", args => CarFn(args[0]));
-        _b("cdar", args => CdrFn(CarFn(args[0])));
-        _b("cddr", args => CdrFn(CdrFn(args[0])));
-        _b("cdr", args => CdrFn(args[0]));
-        _b("cons", args => new Cell(args[0], args[1]));
-        _b("length", args => args[0].CellLength());
-        _b("list", args => args.ToCell());
-        _b("list-copy", PListCopy);
-        _b("list-ref", args => args[0].AsCell()![NumericHelper.ToInt(args[1])]);
         _b("list-set!", PListSetBang);
-        _b("list-tail", PListTail);
-        _b("list?", PListQ);
         _b("make-list", PMakeList);
         _b("member", PMember);
-        _b("memq", PMemq);
         _b("memv", PMemv);
-        _b("reverse", PReverse);
-        _b("set-car!", args => { if (args[0] is Cell c) c.Car = args[1]; return Const.VOID; });
-        _b("set-cdr!", args => { if (args[0] is Cell c) c.Cdr = args[1]; return Const.VOID; });
 
         // ── Arithmetic ──
         _b("*", args => args.Aggregate((object?)1L, (acc, x) => NumericHelper.Mul(acc!, x))!);
-        _b("+", args => args.Aggregate((object?)0L, (acc, x) => NumericHelper.Add(acc!, x))!);
-        _b("-", PMinus);
         _b("-1+", args => NumericHelper.ToLong(args[0]) - 1);
         _b("/", PDiv);
         _b("1+", args => NumericHelper.ToLong(args[0]) + 1);
@@ -106,7 +76,6 @@ public static partial class PrimitiveRegistry
         _b("min", PMin);
         _b("modulo", args => NumericHelper.Modulo(args[0], args[1]));
         _b("negative?", args => NumericHelper.Compare(args[0], 0L) < 0 ? Const.TRUE : Const.FALSE);
-        _b("number->string", PNumberString);
         _b("numerator", PNumerator);
         _b("odd?", POddQ);
         _b("positive?", args => NumericHelper.Compare(args[0], 0L) > 0 ? Const.TRUE : Const.FALSE);
@@ -122,11 +91,6 @@ public static partial class PrimitiveRegistry
         _b("zero?", args => NumericHelper.IsZero(args[0]) ? Const.TRUE : Const.FALSE);
 
         // ── Comparisons ──
-        _b("<", PLt);
-        _b("<=", PLe);
-        _b("=", PEq);
-        _b(">", PGt);
-        _b(">=", PGe);
         _b("condition-message", args => args[0] is ErrorObject eo ? eo.Message : args[0] is SchemeException se ? se.Val?.ToString() ?? "" : "");
         _b("condition?", args => args[0] is SchemeException or ErrorObject ? Const.TRUE : Const.FALSE);
         _b("digit-value", PDigitValue);
@@ -206,13 +170,10 @@ public static partial class PrimitiveRegistry
         _b("drop", PDrop);
         _b("drop-while", PDropWhile);
         _b("every", PEvery);
-        _b("filter", PFilter);
         _b("find", PFind);
         _b("fold", PFold);
         _b("fold-right", PFoldRight);
-        _b("for-each", PForEach);
         _b("iota", PIota);
-        _b("map", PMap);
         _b("partition", PPartition);
         _b("span", PSpan);
         _b("take", PTake);
@@ -226,9 +187,7 @@ public static partial class PrimitiveRegistry
         _b("current-error-port", args => MakePort("output", Console.Error));
         _b("current-input-port", args => MakePort("input", Console.In));
         _b("current-output-port", PCurrentOutputPort);
-        _b("display", PDisplay);
         _b("get-output-string", PGetOutputString);
-        _b("newline", args => { Console.WriteLine(); return Const.VOID; });
         _b("open-input-string", args => MakePort("input", new StringPort(ToStr(args[0]))));
         _b("open-output-string", args => MakePort("output", new StringBuilder()));
         _b("peek-char", PPeekChar);
@@ -240,11 +199,8 @@ public static partial class PrimitiveRegistry
         _b("set-port-position!", PSetPortPositionBang);
         _b("with-input-from-file", PWithInputFromFile);
         _b("with-output-to-file", PWithOutputToFile);
-        _b("write", PWrite);
-        _b("write-char", PWriteChar);
 
         // ── Exceptions ──
-        _b("error", PError);
         _b("error-object-irritants", args => args[0] is ErrorObject eo ? eo.Irritants : Const.NIL);
         _b("error-object-message", args => args[0] is ErrorObject eo ? eo.Message : Const.FALSE);
         _b("error-object?", args => args[0] is ErrorObject ? Const.TRUE : Const.FALSE);
@@ -267,38 +223,11 @@ public static partial class PrimitiveRegistry
 
         // ── Environment ──
         _b("environment", args => Evaluator.GlobalEnv);
-        _b("eval", args => Evaluator.Eval(args[0],args.Length > 1 && args[1] is Env e ? e : Evaluator.GlobalEnv));
         _b("exit", args => Const.VOID);
         _b("interaction-environment", args => Evaluator.GlobalEnv);
         _b("load", PLoad);
         _b("null-environment", args => Evaluator.GlobalEnv);
         _b("scheme-report-environment", args => Evaluator.GlobalEnv);
-        _b("sx-def-env", args => Evaluator.CurrentMacroDefEnv ?? Evaluator.GlobalEnv);
-        _b("sx-defined?", PSxDefinedQ);
-        _b("sx-defmacro", PSxDefmacro);
-        _b("sx-expand-env", args => Evaluator.CurrentExpandEnv ?? Evaluator.GlobalEnv);
-        _b("sx-expand-call", args =>
-        {
-            // (sx-expand-call expr env) — 单次宏展开桥接。
-            // 若 (car expr) 绑定为 "macro" 元组, 调用 C# ExpandMacro 返回展开结果;
-            // 否则返回 #f (未展开)。Scheme 端 my-macro-expand 递归调用直至稳定。
-            if (args.Length >= 1 && args[0] is Cell call)
-            {
-                var env = args.Length > 1 && args[1] is Env e2 ? e2 : Evaluator.GlobalEnv;
-                var op = call.Car;
-                if (op is Sym ops)
-                {
-                    var proc = env.LookupSilent(ops.Name, null);
-                    if (proc is not null)
-                    {
-                        var expanded = Evaluator.ExpandMacro(proc, call.Cdr, env);
-                        if (expanded is not null) return expanded;
-                    }
-                }
-            }
-            return Const.FALSE;
-        });
-
         // ── Hash tables ──
         _b("hash-table-clear!", PHashTableClearBang);
         _b("hash-table-contains?", PHashTableContainsQ);
@@ -322,7 +251,6 @@ public static partial class PrimitiveRegistry
         _b("identity", args => args[0]);
         _b("make-promise", args => new Promise(() => args.Length > 0 ? args[0] : Const.VOID));
         _b("sum", args => args.Select(Convert.ToInt64).Sum());
-        _b("void", args => Const.VOID);
 
         // ── Bitwise ──
         _b("arithmetic-shift", PArithmeticShift);
