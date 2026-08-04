@@ -674,15 +674,29 @@ public static partial class PrimitiveRegistry
 
     private static bool IsDottedList(object? lst)
     {
+        if (lst is Nil) return false;
+        if (lst is not Cell) return true;
+        var seen = new HashSet<Cell>(ReferenceEqualityComparer.Instance);
         var cur = lst;
-        while (cur is Cell c) cur = c.Cdr;
+        while (cur is Cell c)
+        {
+            if (!seen.Add(c)) return false; // circular
+            cur = c.Cdr;
+        }
         return cur is not Nil;
     }
 
     private static bool IsProperList(object? lst)
     {
+        if (lst is Nil) return true;
+        if (lst is not Cell) return false;
+        var seen = new HashSet<Cell>(ReferenceEqualityComparer.Instance);
         var cur = lst;
-        while (cur is Cell c) cur = c.Cdr;
+        while (cur is Cell c)
+        {
+            if (!seen.Add(c)) return false; // circular
+            cur = c.Cdr;
+        }
         return cur is Nil;
     }
 
