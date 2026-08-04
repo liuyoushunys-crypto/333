@@ -27,8 +27,13 @@ public static partial class PrimitiveRegistry
     {
         var n = NumericHelper.ToInt(args[1]);
         object? cur = args[0];
-        for (int i = 0; i < n; i++) cur = cur is Cell c ? c.Cdr : Const.NIL;
-        if (cur is Cell target) target.Car = args[2];
+        for (int i = 0; i < n; i++)
+        {
+            if (cur is not Cell c) throw new Exception("list-set!: index out of range");
+            cur = c.Cdr;
+        }
+        if (cur is not Cell target) throw new Exception("list-set!: index out of range");
+        target.Car = args[2];
         return Const.VOID;
     }
 
@@ -63,6 +68,22 @@ public static partial class PrimitiveRegistry
             var base_ = NumericHelper.ToBigInt(a); var exp = NumericHelper.ToInt(b);
             var r = BigInteger.Pow(base_, exp);
             return r <= long.MaxValue && r >= long.MinValue ? (long)r : r;
+        }
+        if (tb == NumericHelper.NumType.Int)
+        {
+            var fa = NumericHelper.ToFraction(a);
+            var exp = NumericHelper.ToLong(b);
+            BigInteger num = fa.Num, den = fa.Den;
+            if (exp < 0)
+            {
+                (num, den) = (den, num);
+                exp = -exp;
+            }
+            var rn = BigInteger.Pow(num, (int)exp);
+            var rd = BigInteger.Pow(den, (int)exp);
+            if (rd == 1)
+                return rn <= long.MaxValue && rn >= long.MinValue ? (long)rn : rn;
+            return new SchemeFraction(rn, rd);
         }
         return Math.Pow(NumericHelper.ToDouble(a), NumericHelper.ToDouble(b));
     }
@@ -186,17 +207,53 @@ public static partial class PrimitiveRegistry
     static object? PGcd(object?[] args)
     {
         BigInteger Gcd(BigInteger a, BigInteger b) => b == 0 ? BigInteger.Abs(a) : Gcd(b, a % b);
-        var r = args.Select(NumericHelper.ToBigInt).Aggregate(Gcd);
-        return r <= long.MaxValue ? (long)r : r;
+        BigInteger Lcm(BigInteger a, BigInteger b) => a == 0 || b == 0 ? 0 : BigInteger.Abs(a * b) / Gcd(a, b);
+        object? acc = 0L;
+        foreach (var x in args)
+        {
+            if (acc is SchemeFraction af || x is SchemeFraction)
+            {
+                var fa = acc is SchemeFraction f1 ? f1 : NumericHelper.ToFraction(acc);
+                var fb = x is SchemeFraction f2 ? f2 : NumericHelper.ToFraction(x);
+                var num = Gcd(fa.Num, fb.Num);
+                var den = Lcm(fa.Den, fb.Den);
+                acc = den == 1 ? (num <= long.MaxValue ? (object?)(long)num : num)
+                               : new SchemeFraction(num, den);
+            }
+            else
+            {
+                var r = Gcd(acc is int ? (long)(int)acc : (long)acc!, NumericHelper.ToBigInt(x));
+                acc = r <= long.MaxValue ? (long)r : r;
+            }
+        }
+        return acc!;
     }
 
     static object? PLcm(object?[] args)
     {
         BigInteger Gcd(BigInteger a, BigInteger b) => b == 0 ? BigInteger.Abs(a) : Gcd(b, a % b);
-        var items = args.Select(NumericHelper.ToBigInt).ToList();
-        if (items.Count == 0) return 1L;
-        var r = items.Aggregate((a, b) => a / Gcd(a, b) * b);
-        return r <= long.MaxValue ? (long)r : r;
+        BigInteger Lcm(BigInteger a, BigInteger b) => a == 0 || b == 0 ? 0 : BigInteger.Abs(a * b) / Gcd(a, b);
+        if (args.Length == 0) return 1L;
+        object? acc = args[0];
+        for (int i = 1; i < args.Length; i++)
+        {
+            var x = args[i];
+            if (acc is SchemeFraction af || x is SchemeFraction)
+            {
+                var fa = acc is SchemeFraction f1 ? f1 : NumericHelper.ToFraction(acc);
+                var fb = x is SchemeFraction f2 ? f2 : NumericHelper.ToFraction(x);
+                var num = Lcm(fa.Num, fb.Num);
+                var den = Gcd(fa.Den, fb.Den);
+                acc = den == 1 ? (num <= long.MaxValue ? (object?)(long)num : num)
+                               : new SchemeFraction(num, den);
+            }
+            else
+            {
+                var r = Lcm(acc is int ? (long)(int)acc : (long)acc!, NumericHelper.ToBigInt(x));
+                acc = r <= long.MaxValue ? (long)r : r;
+            }
+        }
+        return acc!;
     }
 
 
@@ -483,7 +540,7 @@ public static partial class PrimitiveRegistry
         var fail = new List<object?>();
         object? cur = args[1];
         while (cur is Cell c) { if (App(pred, c.Car) is Sym s && s != Const.FALSE) pass.Add(c.Car); else fail.Add(c.Car); cur = c.Cdr; }
-        return new SchemeVector([pass.ToCell(), fail.ToCell()]);
+        return new Cell(pass.ToCell(), new Cell(fail.ToCell(), Const.NIL));
     }
 
     static object? PTake(object?[] args)
@@ -526,7 +583,7 @@ public static partial class PrimitiveRegistry
         object? cur = args[1];
         while (cur is Cell c && App(pred, c.Car) is Sym s && s != Const.FALSE)
         { pass.Add(c.Car); cur = c.Cdr; }
-        return new SchemeVector([pass.ToCell(), cur]);
+        return new Cell(pass.ToCell(), new Cell(cur, Const.NIL));
     }
 
     static object? PBreak(object?[] args)
@@ -536,14 +593,18 @@ public static partial class PrimitiveRegistry
         object? cur = args[1];
         while (cur is Cell c && App(pred, c.Car) is Sym s && s == Const.FALSE)
         { before.Add(c.Car); cur = c.Cdr; }
-        return new SchemeVector([before.ToCell(), cur]);
+        return new Cell(before.ToCell(), new Cell(cur, Const.NIL));
     }
 
     static object? PIota(object?[] args)
     {
         var n = NumericHelper.ToInt(args[0]);
         var start = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0;
-        return Enumerable.Range((int)start, n).Select(i => (object?)(long)i).ToCell();
+        var step = args.Length > 2 ? NumericHelper.ToInt(args[2]) : 1;
+        var result = new List<object?>();
+        long cur = start;
+        for (int i = 0; i < n; i++) { result.Add(cur); cur += step; }
+        return result.ToCell();
     }
 
 
@@ -756,8 +817,7 @@ public static partial class PrimitiveRegistry
         var b = args[0]; var x = args[1];
         if (b is ValueTuple<string, object?> t && t.Item1 == "box")
         {
-            var field = b.GetType().GetFields()[0];
-            field.SetValue(b, ("box", x));
+            b.GetType().GetField("Item2")!.SetValue(b, x);
         }
         return Const.VOID;
     }
@@ -769,6 +829,11 @@ public static partial class PrimitiveRegistry
         var vals = App(producer);
         if (vals is SchemeVector sv) return App(consumer, [.. sv.Data]);
         if (vals is Cell c && c.Cdr is not Cell && c.Cdr is not Nil) return App(consumer, [c.Car, c.Cdr]);
+        if (vals is Cell c2 && c2.Cdr is Cell c2r && c2r.Cdr is Nil)
+        {
+            if (c2.Car is Cell or Nil || c2r.Car is Cell or Nil)
+                return App(consumer, [c2.Car, c2r.Car]);
+        }
         return App(consumer, vals);
     }
 
@@ -979,9 +1044,10 @@ public static partial class PrimitiveRegistry
 
     static object? PBitwiseLength(object?[] args)
     {
-        var n = NumericHelper.ToLong(args[0]);
-        if (n == 0) return 0L;
-        return (long)(Math.Floor(Math.Log(n < 0 ? -n : n, 2)) + 1);
+        var n = NumericHelper.ToBigInt(args[0]);
+        if (n >= 0) return (long)n.GetBitLength();
+        if (n == -1) return 0L;
+        return (long)(~n).GetBitLength() - 1;
     }
 
     static object? PBitwiseCount(object?[] args)

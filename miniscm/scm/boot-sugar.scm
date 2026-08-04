@@ -546,7 +546,7 @@
 (define-syntax repeat
   (syntax-rules ()
     ((_ n body ...)
-     (do ((i 0 (+ i 1))) ((>= i n)) body ...))))
+     (do ((__idx__ 0 (+ __idx__ 1))) ((>= __idx__ n)) body ...))))
 
 ;; ── do-while ──
 ;; 后测试循环：至少执行一次 body。
@@ -641,8 +641,8 @@
 (define-syntax countdown
   (syntax-rules ()
     ((_ var start end body ...)
-     (do ((i (- end 1) (- i 1))) ((< i start))
-       (let ((var i)) body ...)))))
+     (do ((__idx__ (- end 1) (- __idx__ 1))) ((< __idx__ start))
+       (let ((var __idx__)) body ...)))))
 
 ;; ── times ──
 ;; 重复执行 n 次，i 从 0 到 n-1。
@@ -651,8 +651,8 @@
 (define-syntax times
   (syntax-rules ()
     ((_ n body ...)
-     (do ((i 0 (+ i 1))) ((>= i n))
-       (let ((i i)) body ...)))))
+     (do ((__idx__ 0 (+ __idx__ 1))) ((>= __idx__ n))
+       (let ((i __idx__)) body ...)))))
 
 ;; ── with ──
 ;; 对同一对象连续调用方法（D with 语句）。
@@ -742,11 +742,11 @@
   (syntax-rules ()
     ((_ . args) (values . args))))
 
-;; ── str ──
+;; ── str-join ──
 ;; 字符串模板：string-append 简写。
-;;   用法: (str part ...)
-;;   示例: (str "x=" 42)  => "x=42"
-(define-syntax str
+;;   用法: (str-join part ...)
+;;   示例: (str-join "x=" 42)  => "x=42"
+(define-syntax str-join
   (syntax-rules ()
     ((_ . parts)
      (string-append . parts))))

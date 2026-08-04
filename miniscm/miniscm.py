@@ -571,7 +571,7 @@ if __name__=='__main__':
         except: pass
 
 
-    pyb = True
+    pyb = False
     import compiler
     compiler.PYB_MODE = 'pyb' if pyb else 'scm'
     if pyb:

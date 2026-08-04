@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Miniscm.Types;
 using Miniscm.Eval;
+using Miniscm.Compiler;
 using Void = Miniscm.Types.Void;
 
 namespace Miniscm.Primitives;
@@ -31,7 +32,7 @@ public static partial class PrimitiveRegistry
         _b("port?", args => IsPort(args[0], null) ? Const.TRUE : Const.FALSE);
         _b("promise?", args => args[0] is Promise ? Const.TRUE : Const.FALSE);
         _b("rational?", args => args[0] is SchemeFraction or int or long or BigInteger ? Const.TRUE : Const.FALSE);
-        _b("real?", args => args[0] is int or long or BigInteger or SchemeFraction or double or float or decimal ? Const.TRUE : Const.FALSE);
+        _b("real?", args => (args[0] is int or long or BigInteger or SchemeFraction or double or float or decimal || (args[0] is Complex rc && rc.Imaginary == 0)) ? Const.TRUE : Const.FALSE);
         _b("string?", args => args[0] is string or SchemeString ? Const.TRUE : Const.FALSE);
         _b("syntax->datum", args => args[0]);
         _b("syntax?", args => args[0] is Sym ? Const.TRUE : Const.FALSE);
@@ -112,6 +113,23 @@ public static partial class PrimitiveRegistry
         _b("string-downcase", args => new SchemeString(ToStr(args[0]).ToLowerInvariant()));
         _b("string-fill!", PStringFillBang);
         _b("string-length", PStringLength);
+        _b("string-for-each", args =>
+        {
+            var fn = args[0];
+            var s = ToStr(args[1]);
+            foreach (var rune in s.EnumerateRunes())
+                App(fn, new SchemeChar(rune.Value));
+            return Const.VOID;
+        });
+        _b("string-map", args =>
+        {
+            var fn = args[0];
+            var s = ToStr(args[1]);
+            var sb = new StringBuilder();
+            foreach (var rune in s.EnumerateRunes())
+                sb.Append(char.ConvertFromUtf32(AsChar(App(fn, new SchemeChar(rune.Value)))));
+            return new SchemeString(sb.ToString());
+        });
         _b("string-ref", PStringRef);
         _b("string-set!", PStringSetBang);
         _b("string-upcase", args => new SchemeString(ToStr(args[0]).ToUpperInvariant()));
@@ -179,6 +197,25 @@ public static partial class PrimitiveRegistry
         _b("take", PTake);
         _b("take-while", PTakeWhile);
 
+        // ── SRFI-158: Generators ──
+        _b("generator", PGenerator);
+        _b("generator?", args => args[0] is Delegate ? Const.TRUE : Const.FALSE);
+        _b("make-generator", PMakeGenerator);
+        _b("list->generator", PListGenerator);
+        _b("vector->generator", PVectorGenerator);
+        _b("string->generator", PStringGenerator);
+        _b("generator->list", PGeneratorToList);
+        _b("generator->vector", PGeneratorToVector);
+        _b("generator->string", PGeneratorToString);
+        _b("generator-map", PGeneratorMap);
+        _b("generator-filter", PGeneratorFilter);
+        _b("generator-take", PGeneratorTake);
+        _b("generator-count", PGeneratorCount);
+        _b("generator-find", PGeneratorFind);
+        _b("generator-for-each", PGeneratorForEach);
+        _b("make-iota-generator", PMakeIotaGenerator);
+        _b("make-range-generator", PMakeRangeGenerator);
+
         // ── I/O ports ──
         _b("call-with-input-file", PCallWithInputFile);
         _b("call-with-output-file", PCallWithOutputFile);
@@ -235,7 +272,59 @@ public static partial class PrimitiveRegistry
         _b("hash-table-delete!", PHashTableDeleteBang);
         _b("hash-table-ref", PHashTableRef);
         _b("hash-table-set!", PHashTableSetBang);
+        _b("hash-table?", args => args[0] is Dictionary<object, object?> ? Const.TRUE : Const.FALSE);
+        _b("hash-table-size", args => (long)((Dictionary<object, object?>)args[0]!).Count);
+        _b("hash-table-exists?", args => ((Dictionary<object, object?>)args[0]!).ContainsKey(args[1]!) ? Const.TRUE : Const.FALSE);
+        _b("hash-table-ref/default", args => ((Dictionary<object, object?>)args[0]!).TryGetValue(args[1]!, out var dv) ? dv : (args.Length > 2 ? args[2] : Const.FALSE));
+        _b("hash-table-copy", args => new Dictionary<object, object?>((Dictionary<object, object?>)args[0]!));
+        _b("hash-table-keys", args => ((Dictionary<object, object?>)args[0]!).Keys.ToList().ToCell());
+        _b("hash-table-values", args => ((Dictionary<object, object?>)args[0]!).Values.ToList().ToCell());
+        _b("hash-table->alist", args =>
+        {
+            var items = new List<object?>();
+            foreach (var kv in (Dictionary<object, object?>)args[0]!)
+                items.Add(new Cell(kv.Key, kv.Value));
+            return items.ToCell();
+        });
+        _b("alist->hash-table", args =>
+        {
+            var ht = new Dictionary<object, object?>();
+            var cur = args[0];
+            while (cur is Cell c)
+            {
+                if (c.Car is Cell pair) ht[pair.Car!] = pair.Cdr;
+                cur = c.Cdr;
+            }
+            return ht;
+        });
+        _b("hash-table-for-each", args =>
+        {
+            var fn = args[0];
+            foreach (var kv in (Dictionary<object, object?>)args[1]!)
+                JitRuntime.Invoke(fn, [kv.Key, kv.Value], Evaluator.GlobalEnv);
+            return Const.VOID;
+        });
+        _b("hash-table-map", args =>
+        {
+            var fn = args[0];
+            var items = new List<object?>();
+            foreach (var kv in (Dictionary<object, object?>)args[1]!)
+                items.Add(JitRuntime.Invoke(fn, [kv.Key, kv.Value], Evaluator.GlobalEnv));
+            return items.ToCell();
+        });
+        _b("hash-table-fold", args =>
+        {
+            var fn = args[0];
+            object? acc = args[1];
+            foreach (var kv in (Dictionary<object, object?>)args[2]!)
+                acc = JitRuntime.Invoke(fn, [acc, kv.Key, kv.Value], Evaluator.GlobalEnv);
+            return acc;
+        });
         _b("make-hash-table", args => new Dictionary<object, object?>());
+        _b("make-eq-hash-table", args => new Dictionary<object, object?>());
+        _b("make-equal-hash-table", args => new Dictionary<object, object?>());
+        _b("make-eqv-hash-table", args => new Dictionary<object, object?>());
+        _b("make-strong-hash-table", args => new Dictionary<object, object?>());
 
         // ── Time ──
         _b("current-jiffy", args => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());

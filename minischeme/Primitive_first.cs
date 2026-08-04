@@ -62,6 +62,7 @@ public static partial class PrimitiveRegistry
         var items = new List<object?>();
         object? cur = args[0];
         while (cur is Cell c) { items.Add(c.Car); cur = c.Cdr; }
+        if (cur is not Nil) throw new Exception("reverse: not a proper list");
         return CellHelper.ToCell(items.AsEnumerable().Reverse());
     }
 
@@ -89,10 +90,19 @@ public static partial class PrimitiveRegistry
     static object? PListCopy(object?[] args)
     {
         if (args[0] is Nil) return Const.NIL;
-        var items = new List<object?>();
-        object? cur = args[0];
-        while (cur is Cell c) { items.Add(c.Car); cur = c.Cdr; }
-        return items.ToCell();
+        if (args[0] is not Cell first) return args[0];
+        var head = new Cell(first.Car, Const.NIL);
+        var tail = head;
+        object? cur = first.Cdr;
+        while (cur is Cell c)
+        {
+            var n = new Cell(c.Car, Const.NIL);
+            tail.Cdr = n;
+            tail = n;
+            cur = c.Cdr;
+        }
+        if (cur is not Nil) tail.Cdr = cur;  // 保留点对尾
+        return head;
     }
 
 
@@ -195,8 +205,23 @@ public static partial class PrimitiveRegistry
     static object? PForEach(object?[] args)
     {
         var fn = args[0];
-        object? cur = args[1];
-        while (cur is Cell c) { App(fn, c.Car); cur = c.Cdr; }
+        if (args.Length == 2)
+        {
+            object? cur = args[1];
+            while (cur is Cell c) { App(fn, c.Car); cur = c.Cdr; }
+        }
+        else
+        {
+            var lists = new List<object?>[args.Length - 1];
+            for (int i = 0; i < lists.Length; i++) lists[i] = args[i + 1].Cells();
+            int minLen = lists.Min(l => l.Count);
+            for (int i = 0; i < minLen; i++)
+            {
+                var callArgs = new object?[lists.Length];
+                for (int j = 0; j < lists.Length; j++) callArgs[j] = lists[j][i];
+                App(fn, callArgs);
+            }
+        }
         return Const.VOID;
     }
 

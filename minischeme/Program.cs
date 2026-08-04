@@ -20,6 +20,11 @@ public class Program
 
         var _libs = new[] {
             "boot-min2.scm", "boot-core.scm", "boot-sugar.scm",
+            "char-boolean.scm", "numeric.scm",
+            "srfi-1-list.scm", "srfi-13-string.scm", "hof-vector.scm",
+            "number-theory.scm", "gensym-stream.scm",
+            "data-structures-ext.scm", "srfi-14-char-set.scm",
+            "generators.scm", "misc.scm", "fill-gaps.scm",
         };
         if (Directory.Exists(scmDir))
         {

@@ -713,10 +713,14 @@
            (apply boolean=? (cdr args)))))
 
 ;; ── 基础函数（已被移出 primitives.py，需 Scheme 等价实现）──
-(define (reverse lst)
-  (let loop ((l lst) (acc '()))
-    (if (null? l) acc
-        (loop (cdr l) (cons (car l) acc)))))
+;; reverse 由 C# Primitive_first / Python initenv_ext 内置提供。
+;; 此处 Scheme 定义会覆盖内置, 且其 let-loop 自引用在 minischeme JIT 下
+;; (captured=[loop] 不在 ParamIndexMap) 导致编译/解释失败, 故注释掉。
+;; 如需恢复纯 Python (pyb=False) 的 reverse, 需先修复 JIT 对 letrec 自引用捕获。
+;; (define (reverse lst)
+;;   (let loop ((l lst) (acc '()))
+;;     (if (null? l) acc
+;;         (loop (cdr l) (cons (car l) acc)))))
 
 (define (vector . args) (list->vector args))
 (define (vector->list v)

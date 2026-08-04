@@ -319,10 +319,10 @@
 (receive (a b) (tuple 10 20) (check (+ a b) 30))
 (receive (x y z) (tuple 1 2 3) (check (* x y z) 6))
 
-(display "-- str: string append\n")
-(check (str "hello" " " "world") "hello world")
-(check (str "a" "b" "c") "abc")
-(check (str "x=" 42) "x=42")
+(display "-- str-join: string append\n")
+(check (str-join "hello" " " "world") "hello world")
+(check (str-join "a" "b" "c") "abc")
+(check (str-join "x=" 42) "x=42")
 
 (display "-- enumerate: indexed iteration\n")
 (define en-acc '())

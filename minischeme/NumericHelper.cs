@@ -230,6 +230,12 @@ public static class NumericHelper
             var fa = ToFraction(a); var fb = ToFraction(b);
             var num = fa.Num * fb.Den;
             var den = fa.Den * fb.Num;
+            if (den < 0) { num = -num; den = -den; }
+            if (num % den == 0)
+            {
+                var r = num / den;
+                return r <= long.MaxValue && r >= long.MinValue ? (long)r : r;
+            }
             return new SchemeFraction(num, den);
         }
         if (w == NumType.Real) return ToDouble(a) / ToDouble(b);
@@ -299,7 +305,9 @@ public static class NumericHelper
             var fa = ToFraction(a); var fb = ToFraction(b);
             return (fa.Num * fb.Den).CompareTo(fb.Num * fa.Den);
         }
-        return ToDouble(a).CompareTo(ToDouble(b));
+        var da = ToDouble(a); var db = ToDouble(b);
+        if (double.IsNaN(da) || double.IsNaN(db)) return 1;
+        return da.CompareTo(db);
     }
 
     public static bool IsZero(object? x) => x switch
