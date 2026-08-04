@@ -394,12 +394,14 @@ def read_proc(port=None):
         s = port[1][0]; s_stripped = s.lstrip()
         if not s_stripped: return EOF
         skip = len(s) - len(s_stripped)
-        from reader import _tokenize, _parse1
+        from reader import _tokenize, Reader, parse_reader
         toks = _tokenize(s_stripped)
         if not toks: return EOF
-        expr, rem = _parse1(toks)
+        r = Reader(toks)
+        expr = parse_reader(r)
+        consumed = r.pos
         pos = skip
-        for t in toks[:len(toks)-len(rem)]:
+        for t in toks[:consumed]:
             idx = s.find(t, pos)
             if idx < 0: break
             pos = idx + len(t)
