@@ -71,7 +71,7 @@
 (define (sx-eval-body body env) (if (null? body) (void) ((lambda (last) (for-each (lambda (form) (set! last (eval form env))) body) last) (void))))
 (define (sx-let-syntax bindings body) (list (cons (quote lambda) (cons (quote ()) (append (map sx-make-macro-binding bindings) body)))))
 (define (sx-make-macro-binding binding) ((lambda (name trans) (if (if (pair? trans) (eq? (car trans) (quote syntax-rules)) #f) ((lambda (lits rules) (list (quote define-macro) (cons name (quote args)) (list (quote sx-dispatch) (quote args) (list (quote quote) lits) (list (quote quote) rules)))) (if (pair? (cdr trans)) (cadr trans) (quote ())) (cddr trans)) (list (quote define-macro) (cons name (quote args)) (list (cons (quote lambda) (cdr trans)) (list (quote cons) (list (quote quote) name) (quote args)))))) (car binding) (cadr binding)))
-(define-macro (quasiquote e) (list 'quote (qq-walk e (the-environment))))
+(define-macro (quasiquote _e) (list 'quote (qq-walk _e (the-environment))))
 (define-macro (syntax tmpl) (list 'quote (sx-expand tmpl (sx-get-bindings))))
 (define-macro (quasisyntax tmpl) (list 'quote (qs-expand tmpl)))
 (define-macro (generate-temporaries lst) (list 'sx-gen-temps lst))
