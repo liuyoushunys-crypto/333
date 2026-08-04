@@ -142,7 +142,12 @@ public static class Compiler
         while (expr is SyntaxObject so) expr = so.Expr;
         if (expr is Cell c)
         {
-            if (c.Car is Sym s && s.Name == "quasiquote") return true;
+            if (c.Car is Sym s)
+            {
+                if (s.Name == "quasiquote") return true;
+                // quote 内容视为数据 (如 (quote quasiquote) 只是符号字面量), 不触发跳过
+                if (s.Name == "quote") return false;
+            }
             return HasQuasiquote(c.Car) || HasQuasiquote(c.Cdr);
         }
         return false;

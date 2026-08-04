@@ -724,7 +724,7 @@ class AstExprCompiler:
             # 不可变原语但未注册 → env.lookup 兜底
         return ast.Call(
             func=ast.Attribute(
-                value=ast.Name(id='env', ctx=ast.Load()),
+                value=ast.Name(id='__mscm_env__', ctx=ast.Load()),
                 attr='lookup', ctx=ast.Load()
             ),
             args=[ast.Constant(value=name)],
@@ -755,7 +755,7 @@ class AstExprCompiler:
         val_ast = self.compile_expr(node.val, lexical_vars)
         return ast.Call(
             func=ast.Attribute(
-                value=ast.Name(id='env', ctx=ast.Load()),
+                value=ast.Name(id='__mscm_env__', ctx=ast.Load()),
                 attr='define', ctx=ast.Load()
             ),
             args=[
@@ -783,7 +783,7 @@ class AstExprCompiler:
         return ast.Call(
             func=ast.Name(id='__mscm_env_set_var__', ctx=ast.Load()),
             args=[
-                ast.Name(id='env', ctx=ast.Load()),
+                ast.Name(id='__mscm_env__', ctx=ast.Load()),
                 ast.Constant(value=node.name),
                 val_ast
             ],
@@ -816,7 +816,7 @@ class AstExprCompiler:
             # 构建子环境并绑定捕获的外层变量
             child_env = ast.Call(
                 func=ast.Name(id='Env', ctx=ast.Load()),
-                args=[ast.Name(id='env', ctx=ast.Load())],
+                args=[ast.Name(id='__mscm_env__', ctx=ast.Load())],
                 keywords=[]
             )
             for name in sorted(captured):
@@ -853,7 +853,7 @@ class AstExprCompiler:
         combined_vars = lexical_vars | set(cleaned_params)
         func_args = ast.arguments(
             posonlyargs=[],
-            args=[ast.arg(arg='env')] + [ast.arg(arg=p) for p in cleaned_params],
+            args=[ast.arg(arg='__mscm_env__')] + [ast.arg(arg=p) for p in cleaned_params],
             kwonlyargs=[], kw_defaults=[], defaults=[]
         )
         nested_ast_body = nested_compiler.compile_stmt_seq(
@@ -893,7 +893,7 @@ class AstExprCompiler:
                               slice=ast.Constant(value=py_func_idx), ctx=ast.Load()),
                 ast.Subscript(value=ast.Name(id='__mscm_consts__', ctx=ast.Load()),
                               slice=ast.Constant(value=params_idx), ctx=ast.Load()),
-                ast.Name(id='env', ctx=ast.Load()),
+                ast.Name(id='__mscm_env__', ctx=ast.Load()),
                 ast.Subscript(value=ast.Name(id='__mscm_consts__', ctx=ast.Load()),
                               slice=ast.Constant(value=is_simple_idx), ctx=ast.Load())
             ],
@@ -1019,7 +1019,7 @@ class AstExprCompiler:
         )
         return ast.Call(
             func=ast.Name(id='__mscm_invoke__', ctx=ast.Load()),
-            args=[proc_ast, args_list, ast.Name(id='env', ctx=ast.Load())],
+            args=[proc_ast, args_list, ast.Name(id='__mscm_env__', ctx=ast.Load())],
             keywords=[]
         )
 
@@ -1162,12 +1162,12 @@ class AstExprCompiler:
         if target is not None and callable(target) and not isinstance(target, LambdaProc):
             return [ast.Return(value=ast.Call(
                 func=ast.Name(id='__mscm_invoke__', ctx=ast.Load()),
-                args=[proc_ast, args_list, ast.Name(id='env', ctx=ast.Load())],
+                args=[proc_ast, args_list, ast.Name(id='__mscm_env__', ctx=ast.Load())],
                 keywords=[]
             ))]
         return [ast.Return(value=ast.Call(
             func=ast.Name(id='__mscm_make_tail_call__', ctx=ast.Load()),
-            args=[proc_ast, args_list, ast.Name(id='env', ctx=ast.Load())],
+            args=[proc_ast, args_list, ast.Name(id='__mscm_env__', ctx=ast.Load())],
             keywords=[]
         ))]
 
@@ -1201,7 +1201,7 @@ class AstExprCompiler:
             stmts = [ast.Expr(value=ast.Call(
                 func=ast.Name(id='__mscm_env_set_var__', ctx=ast.Load()),
                 args=[
-                    ast.Name(id='env', ctx=ast.Load()),
+                    ast.Name(id='__mscm_env__', ctx=ast.Load()),
                     ast.Constant(value=node.name),
                     val_ast
                 ],
@@ -1255,13 +1255,17 @@ def expand_via_scheme(expr, env):
 
 # quasiquote 依赖运行时环境 (unquote), 不能在 JIT 编译期预展开。
 # 若 lambda 体包含 quasiquote, 跳过 JIT 让解释器展开。
+# quote 内容视为数据 (如 (quote quasiquote) 只是符号字面量), 不触发跳过。
 def has_quasiquote(expr):
     while isinstance(expr, SyntaxObject):
         expr = expr.expr
     if isinstance(expr, Cell):
         c = expr
-        if isinstance(c.car, Sym) and c.car.name == 'quasiquote':
-            return True
+        if isinstance(c.car, Sym):
+            if c.car.name == 'quasiquote':
+                return True
+            if c.car.name == 'quote':
+                return False
         return has_quasiquote(c.car) or has_quasiquote(c.cdr)
     return False
 
@@ -1392,7 +1396,7 @@ def compile_lambda_proc(lambda_proc):
             )
             func_args = ast.arguments(
                 posonlyargs=[],
-                args=[ast.arg(arg='env')] + [ast.arg(arg=p) for p in cleaned_params],
+                args=[ast.arg(arg='__mscm_env__')] + [ast.arg(arg=p) for p in cleaned_params],
                 kwonlyargs=[], kw_defaults=[], defaults=[]
             )
             # boxed 参数初始化为 Box（引用语义，named-let/letrec 闭包 set! 可见）
