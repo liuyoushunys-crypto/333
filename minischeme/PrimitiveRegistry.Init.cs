@@ -140,7 +140,15 @@ public static partial class PrimitiveRegistry
         _b("string-ci>=?", args => string.Compare(ToStr(args[0]), ToStr(args[1]), StringComparison.OrdinalIgnoreCase) >= 0 ? Const.TRUE : Const.FALSE);
         _b("string-ci>?", args => string.Compare(ToStr(args[0]), ToStr(args[1]), StringComparison.OrdinalIgnoreCase) > 0 ? Const.TRUE : Const.FALSE);
         _b("string-contains?", PStringContainsQ);
-        _b("utf8->string", args => new SchemeString(args[0] is SchemeBytevector bv ? Encoding.UTF8.GetString(bv.Data) : ToStr(args[0])));
+        _b("utf8->string", args =>
+        {
+            byte[] data = args[0] is SchemeBytevector bv ? bv.Data : Encoding.UTF8.GetBytes(ToStr(args[0]));
+            int start = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0;
+            int end = args.Length > 2 ? NumericHelper.ToInt(args[2]) : data.Length;
+            if (start < 0) start = 0;
+            if (end > data.Length) end = data.Length;
+            return new SchemeString(Encoding.UTF8.GetString(data, start, end - start));
+        });
         _b("string-copy", PStringCopy);
         _b("string-downcase", args => new SchemeString(ToStr(args[0]).ToLowerInvariant()));
         _b("string-fill!", PStringFillBang);
@@ -280,6 +288,7 @@ public static partial class PrimitiveRegistry
 
         // ── Boxes ──
         _b("box", args => (ValueTuple<string, object?>)("box", args[0]));
+        _b("make-box", args => (ValueTuple<string, object?>)("box", args[0]));
         _b("set-box!", PSetBoxBang);
         _b("unbox", args => args[0] is ValueTuple<string, object?> t && t.Item1 == "box" ? t.Item2! : throw new Exception("not a box"));
 
@@ -496,5 +505,19 @@ public static partial class PrimitiveRegistry
             });
         }
 
+    }
+
+    // Re-register builtins that are broken by srfi-1-list.scm defines (named-let self-recursion
+    // returns VOID under C# JIT). Called after scm library loading to override scm versions.
+    public static void ReRegisterOverrides()
+    {
+        _b("take", PTake);
+        _b("drop", PDrop);
+        _b("take-while", PTakeWhile);
+        _b("drop-while", PDropWhile);
+        _b("last", args => LastPair(args[0]) is Cell c ? c.Car : Const.FALSE);
+        _b("sort", PSort);
+        _b("list-sort", PSort);
+        _b("list-stable-sort", PSort);
     }
 }

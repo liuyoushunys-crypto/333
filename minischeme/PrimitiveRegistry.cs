@@ -1485,6 +1485,36 @@ public static partial class PrimitiveRegistry
         return cur;
     }
 
+    private static object? PSort(object?[] args)
+    {
+        var less = args[0];
+        var items = args[1].Cells();
+        var copy = new List<object?>(items);
+        StableSort(copy, less);
+        return copy.ToCell();
+    }
+
+    private static void StableSort(List<object?> items, object? less)
+    {
+        for (int i = 1; i < items.Count; i++)
+        {
+            var key = items[i];
+            int j = i - 1;
+            while (j >= 0 && IsLess(less, key, items[j]))
+            {
+                items[j + 1] = items[j];
+                j--;
+            }
+            items[j + 1] = key;
+        }
+    }
+
+    private static bool IsLess(object? less, object? a, object? b)
+    {
+        var r = App(less, a, b);
+        return !ReferenceEquals(r, Const.FALSE) && r is not Nil;
+    }
+
     private static long BitsToInteger(object? lst)
     {
         long r = 0;

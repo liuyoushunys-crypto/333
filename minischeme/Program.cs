@@ -46,6 +46,8 @@ public class Program
             }
         }
 
+        PrimitiveRegistry.ReRegisterOverrides();
+
         if (args.Length > 0)
         {
             foreach (var path in args)

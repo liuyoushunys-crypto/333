@@ -1101,7 +1101,7 @@ public static class Compiler
                 if (ln.RawBody is not null && captured.Count > 0)
                 {
                     if (Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG") is not null)
-                        Console.Error.WriteLine($"CLOSURE_DOWNGRADE: params=[{string.Join(",", ln.Params)}] captured=[{string.Join(",", captured.OrderBy(x => x))}]");
+                        Console.Error.WriteLine($"CLOSURE_DOWNGRADE: params=[{string.Join(",", ln.Params)}] captured=[{string.Join(",", captured.OrderBy(x => x))}] rawbodyNull={ln.RawBody is null} rawbody={Printer.Format(ln.RawBody)}");
                     // 闭包：构建子环境绑定捕获变量，降级为运行时 LambdaProc
                     Expression childEnv = Expression.Call(typeof(Env), "MakeChild", null, EnvParam);
                     foreach (var name in captured.OrderBy(x => x))

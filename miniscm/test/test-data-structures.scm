@@ -103,7 +103,6 @@
 (check "hash-table-clear!" (procedure? hash-table-clear!) #t)
 (check "hash-table-fold" (procedure? hash-table-fold) #t)
   (check "hash-table-map" (not (not (procedure? hash-table-map))) #t)
-  (define ht-keys '(a b))
 (check "hash-table-keys" (boolean? (hash-table? ht)) #t)
 
 ;;──────────────────── List extras ────────────────────
