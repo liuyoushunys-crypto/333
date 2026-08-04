@@ -1294,6 +1294,12 @@ def compile_lambda_proc(lambda_proc):
             cleaned_params = [clean_param_name(p) for p in lambda_proc.params]
             lexical_vars = set(cleaned_params)
 
+            # 嵌套闭包（named-let/letrec 模式）JIT 编译的闭包捕获按值，
+            # 会导致 set! 后闭包内仍是旧值 → 跳过 JIT 走解释器（解释器闭包引用正确）。
+            if any(has_nested_closure(e, lexical_vars) for e in body_asts):
+                _JIT_LOG("NESTED CLOSURE SKIP: ", lambda_proc.name)
+                return None
+
             # Step 4: 常量折叠
             optimized_body_asts = [fold_constants(e) for e in body_asts]
 

@@ -249,6 +249,15 @@ public static class Evaluator
                 return r3;
             }
 
+            // CompiledLambda 直接调用（闭包 box 捕获的值可能是已编译 lambda）
+            if (proc is CompiledLambda cl)
+            {
+                var argsArr = EvalArgsToArray(curArgs, env);
+                var rcl = cl.Invoke(cl.Env, argsArr);
+                while (rcl is TailCall tccl) rcl = Evaluator.EvalCore(tccl.Expr, tccl.Env);
+                return rcl;
+            }
+
             var evaledArgs = EvalArgsToArray(curArgs, env);
 
             // Primitive functions (Func<object?[], object?>)

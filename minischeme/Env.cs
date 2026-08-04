@@ -15,7 +15,8 @@ public class Env
 
     public object? Lookup(string name)
     {
-        if (Data.TryGetValue(name, out var val)) return val;
+        if (Data.TryGetValue(name, out var val))
+            return val is BoxedCell bc ? bc.Value : val;
         if (Parent is not null) return Parent.Lookup(name);
         throw new NameError($"unbound: {name}");
     }
@@ -24,7 +25,8 @@ public class Env
 
     public object? LookupSilent(string name, object? sentinel = null)
     {
-        if (Data.TryGetValue(name, out var val)) return val;
+        if (Data.TryGetValue(name, out var val))
+            return val is BoxedCell bc ? bc.Value : val;
         if (Parent is not null) return Parent.LookupSilent(name, sentinel);
         return sentinel;
     }

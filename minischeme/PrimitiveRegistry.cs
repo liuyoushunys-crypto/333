@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -799,6 +800,8 @@ public static partial class PrimitiveRegistry
                     Console.SetOut(sw);
                 else if (t[2] is StringBuilder sb)
                     Console.SetOut(new StringWriter(sb));
+                else if (t[2] is TextWriter tw)
+                    Console.SetOut(tw);
             }
             return MakePort("output", old);
         }

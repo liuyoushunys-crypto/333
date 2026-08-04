@@ -1,5 +1,10 @@
 namespace Miniscm.Types;
 
+public sealed class BoxedCell
+{
+    public object? Value { get; set; }
+}
+
 public sealed class SyntaxObject
 {
     public object? Expr { get; }
@@ -21,9 +26,7 @@ public sealed class Promise
     public object? Val { get; set; }
     public Func<object?>? Thunk { get; }
     public Promise(Func<object?> thunk) => Thunk = thunk;
-}
-
-public sealed class TailCall
+}public sealed class TailCall
 {
     public object? Expr { get; }
     public Env Env { get; }

@@ -48,7 +48,6 @@ public class Program
             }
         }
 
-        PrimitiveRegistry.ReRegisterOverrides();
         if (pyb)
             PrimitiveRegistry.InitExt();
 

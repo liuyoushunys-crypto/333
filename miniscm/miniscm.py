@@ -211,7 +211,8 @@ def h_set(args,env):
         n=args.car.name; v=_eval(args.cdr.car,env)
         e=env
         while e:
-            if n in e.data: e.data[n]=v; return VOID
+            if n in e.data:
+                e.data[n]=v; return VOID
             e=e.parent
         env.define(n,v); return VOID
     return TailCall(Cell(SYM_SETF,Cell(args.car,Cell(args.cdr.car,NIL))),env)
@@ -589,52 +590,23 @@ if __name__=='__main__':
                 n=load_file(_BASE+'/scm/'+f)
                 sys.stderr.write(f"loaded {n} from {f}\n")
             except: pass
-        # scm 库用 named-let 实现的 take/drop/sort 等会静默失败，
-        # 对齐 minischeme ReRegisterOverrides 覆盖的原生版
-        from primitives_ext import list_take, list_take_while, list_drop_while, list_last, list_sort_fn
-        from primitives import list_drop
-        be.define('take', lambda lst, n: list_take(lst, int(n)))
-        be.define('drop', lambda lst, n: list_drop(lst, int(n)))
-        be.define('take-while', list_take_while)
-        be.define('drop-while', list_drop_while)
-        be.define('last', list_last)
-        be.define('sort', list_sort_fn)
-        be.define('list-sort', list_sort_fn)
-        be.define('list-stable-sort', list_sort_fn)
-        # 对齐 minischeme ReRegisterOverrides 扩展: vector/unfold/bytevector 等被 scm 库覆盖的原生版
-        from primitives_ext import (
-            vector_map, vector_for_each, vector_append, vector_count,
-            vector_fold, vector_fold_right, vector_concat, unfold_fn,
-            unfold_right_fn
-        )
-        be.define('vector-map', vector_map)
-        be.define('vector-for-each', vector_for_each)
-        be.define('vector-append', vector_append)
-        be.define('vector-count', vector_count)
-        be.define('vector-fold', vector_fold)
-        be.define('vector-fold-right', vector_fold_right)
-        be.define('vector-concatenate', vector_concat)
-        be.define('unfold', unfold_fn)
-        be.define('unfold-right', unfold_right_fn)
-        from primitives_ext import read_line, read_string_fn
-        be.define('read-line', read_line)
-        be.define('read-string', read_string_fn)
-        from primitives import call as _call
-        import io as _io
-        from mtypes import SchemeString as _SchemeString
-        def _with_output_to_string(thunk):
-            buf = _io.StringIO()
+
+
+        # scm 库 parameterize 版 with-output-to-string 需 display 支持端口重定向，
+        # Python 的 display 写 sys.stdout，故用原生版（sys.stdout 切换）
+        from primitives import call as _call2
+        import io as _io2
+        from mtypes import SchemeString as _SS2
+        def _wots2(thunk):
+            buf = _io2.StringIO()
             old = sys.stdout
             sys.stdout = buf
             try:
-                _call(thunk, [])
-                return _SchemeString(buf.getvalue())
+                _call2(thunk, [])
+                return _SS2(buf.getvalue())
             finally:
                 sys.stdout = old
-        be.define('with-output-to-string', _with_output_to_string)
-        from primitives_ext import mapping_fn, mapping_pred
-        be.define('mapping', mapping_fn)
-        be.define('mapping?', mapping_pred)
+        be.define('with-output-to-string', _wots2)
 
     # from initenv_py import initenv_py
     # initenv_py()

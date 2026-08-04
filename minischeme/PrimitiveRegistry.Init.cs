@@ -125,6 +125,18 @@ public static partial class PrimitiveRegistry
 
         // ── Comparisons ──
         _b("condition?", args => args[0] is SchemeException or ErrorObject ? Const.TRUE : Const.FALSE);
+        _b("condition-message", args =>
+        {
+            if (args[0] is ErrorObject eo) return eo.Message is Sym em ? em.Name : eo.Message;
+            if (args[0] is SchemeException se) return se.Val?.ToString() ?? "";
+            return ToStr(args[0]);
+        });
+        _b("condition-type", args => args[0] is ErrorObject eo2 ? eo2.Message : Const.NIL);
+        _b("condition/report-string", args =>
+        {
+            if (args[0] is ErrorObject eo3) return new SchemeString(eo3.Message is Sym em3 ? em3.Name : ToStr(eo3.Message));
+            return new SchemeString("unknown condition");
+        });
         _b("digit-value", PDigitValue);
 
         // ── Strings ──
@@ -204,12 +216,12 @@ public static partial class PrimitiveRegistry
         _b("list->vector", args => new SchemeVector(args[0].Cells()));
         _b("make-vector", PMakeVector);
         _b("vector", args => new SchemeVector(args));
-        _b("vector->list", args => AsVector(args[0]).Data.ToCell());
+        _b("vector->list", args => args[0] is SchemeBytevector bvl ? bvl.Data.Select(b => (object?)(long)b).ToCell() : AsVector(args[0]).Data.ToCell());
         _b("vector-append", PVectorAppend);
         _b("vector-copy", args => new SchemeVector(AsVector(args[0]).Data));
         _b("vector-fill!", args => { var v = AsVector(args[0]); for (int i = 0; i < v.Length; i++) v[i] = args[1]; return Const.VOID; });
-        _b("vector-length", args => AsVector(args[0]).Length);
-        _b("vector-ref", args => AsVector(args[0])[NumericHelper.ToInt(args[1])]);
+        _b("vector-length", args => args[0] is SchemeBytevector bvl2 ? bvl2.Length : AsVector(args[0]).Length);
+        _b("vector-ref", args => args[0] is SchemeBytevector bvr ? (object?)(long)bvr[NumericHelper.ToInt(args[1])] : AsVector(args[0])[NumericHelper.ToInt(args[1])]);
         _b("vector-set!", args => { AsVector(args[0])[NumericHelper.ToInt(args[1])] = args[2]; return Const.VOID; });
 
         // ── Bytevectors ──
@@ -508,44 +520,4 @@ public static partial class PrimitiveRegistry
 
     }
 
-    // Re-register builtins that are broken by srfi-1-list.scm defines (named-let self-recursion
-    // returns VOID under C# JIT). Called after scm library loading to override scm versions.
-    public static void ReRegisterOverrides()
-    {
-        _b("take", PTake);
-        _b("drop", PDrop);
-        _b("take-while", PTakeWhile);
-        _b("drop-while", PDropWhile);
-        _b("last", args => LastPair(args[0]) is Cell c ? c.Car : Const.FALSE);
-        _b("sort", PSort);
-        _b("list-sort", PSort);
-        _b("list-stable-sort", PSort);
-        // scm 库(SRFI-1 等)用 named-let/do 实现的 vector/unfold/bytevector 也可能坏，覆盖为原生版
-        _b("vector-append", VectorAppend);
-        _b("vector-map", VectorMap);
-        _b("vector-copy", VectorCopy);
-        _b("vector-for-each", VectorForEach);
-        _b("vector-fold", args => VectorFold(args, false));
-        _b("vector-fold-right", args => VectorFold(args, true));
-        _b("vector-count", args => VectorCount(args[0], args[1]));
-        _b("unfold", args => Unfold(args, false));
-        _b("unfold-right", args => Unfold(args, true));
-        _b("bytevector->string", args => new SchemeString(args[0] is SchemeBytevector bv ? Encoding.UTF8.GetString(bv.Data) : ToStr(args[0])));
-        _b("string->bytevector", args => new SchemeBytevector(Encoding.UTF8.GetBytes(ToStr(args[0]))));
-        _b("vector-concatenate", args => VectorConcat(args[0]));
-        _b("vector-reverse", VectorReverse);
-        _b("vector-empty?", args => ((SchemeVector)args[0]!).Length == 0 ? Const.TRUE : Const.FALSE);
-        _b("condition/report-string", args => new SchemeString(ReportString(args[0])));
-        _b("string-split", args => StrSplit(args));
-        _b("string-join", args => StrJoin(args));
-        // scm 库 parameterize 版 with-output-to-string 会栈溢出，覆盖为原生版
-        _b("with-output-to-string", args =>
-        {
-            var sb = new StringBuilder();
-            var oldOut = Console.Out;
-            Console.SetOut(new StringWriter(sb));
-            try { App(args[0]); return new SchemeString(sb.ToString()); }
-            finally { Console.SetOut(oldOut); }
-        });
-    }
 }

@@ -234,7 +234,11 @@ public static class Compiler
             // Step 4: Constant folding
             var foldedBody = bodyAsts.Select(FoldConstants).ToList();
             // Step 5: Compile to expression tree
-            var compiler = new AstExprCompiler(lp.Name, cleanedParams, lp.IsSimple, lexicalVars);
+            var boxedTop = CollectBoxedVars(foldedBody, lexicalVars);
+            if (Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG") is not null)
+                Console.Error.WriteLine($"TOP_BOXED: params=[{string.Join(",", cleanedParams)}] boxed=[{string.Join(",", boxedTop)}]");
+            var compiler = new AstExprCompiler(lp.Name, cleanedParams, lp.IsSimple, lexicalVars,
+                boxedTop);
             var bodyExprs = compiler.CompileStmtSeq(foldedBody, true);
             if (bodyExprs.Count == 0)
                 bodyExprs = [Expression.Goto(compiler.BreakLabel, ObjConst(Const.VOID))];
@@ -587,6 +591,42 @@ public static class Compiler
         }
         return [];
     }
+    // 收集被内层闭包捕获的当前函数参数/局部变量（这些需要 box 为引用语义，
+    // 使 letrec/named-let 的 set! 后闭包内可见新值）
+    internal static HashSet<string> CollectBoxedVars(List<AstNode> body, HashSet<string> lexicalVars)
+    {
+        var acc = new HashSet<string>();
+        foreach (var node in body)
+            ScanBoxedVars(node, lexicalVars, acc);
+        return acc;
+    }
+    internal static void ScanBoxedVars(AstNode node, HashSet<string> lexicalVars, HashSet<string> acc)
+    {
+        if (node is LambdaAst la)
+        {
+            var innerParams = la.Params.Select(CleanParamName).ToHashSet();
+            acc.UnionWith(CollectOuterRefs(la, lexicalVars, innerParams));
+            foreach (var b in la.Body)
+                ScanBoxedVars(b, lexicalVars, acc);
+        }
+        else if (node is BeginAst b)
+        {
+            foreach (var e in b.Exprs) ScanBoxedVars(e, lexicalVars, acc);
+        }
+        else if (node is IfAst i)
+        {
+            ScanBoxedVars(i.Test, lexicalVars, acc);
+            ScanBoxedVars(i.Then, lexicalVars, acc);
+            ScanBoxedVars(i.Else, lexicalVars, acc);
+        }
+        else if (node is DefineAst d) ScanBoxedVars(d.Val, lexicalVars, acc);
+        else if (node is SetBangAst s) ScanBoxedVars(s.Val, lexicalVars, acc);
+        else if (node is AppAst a)
+        {
+            ScanBoxedVars(a.Proc, lexicalVars, acc);
+            foreach (var x in a.Args) ScanBoxedVars(x, lexicalVars, acc);
+        }
+    }
     // ── Expression Tree Compiler ──
     internal class AstExprCompiler
     {
@@ -598,17 +638,26 @@ public static class Compiler
         public List<ParameterExpression> AdditionalVars { get; }
         public List<Expression> AssignStmts { get; }
         public Dictionary<string, int> ParamIndexMap { get; }
+        public HashSet<string> BoxedVars { get; }
+        public Dictionary<string, ParameterExpression> BoxVars { get; }
         public LabelTarget BreakLabel { get; }
         public LabelTarget ContinueLabel { get; }
         public ParameterExpression EnvParam { get; }
         public ParameterExpression ArgsParam { get; }
         public AstExprCompiler(string? selfName, List<string> cleanedParams,
             bool isSimple, HashSet<string> lexicalVars)
+            : this(selfName, cleanedParams, isSimple, lexicalVars, null)
+        {
+        }
+        public AstExprCompiler(string? selfName, List<string> cleanedParams,
+            bool isSimple, HashSet<string> lexicalVars, HashSet<string>? boxedVars)
         {
             SelfName = selfName;
             Params = cleanedParams;
             IsSimple = isSimple;
             LexicalVars = lexicalVars;
+            BoxedVars = boxedVars ?? [];
+            BoxVars = new Dictionary<string, ParameterExpression>();
             BreakLabel = Expression.Label(typeof(object));
             ContinueLabel = Expression.Label();
             EnvParam = Expression.Parameter(typeof(Env), "env");
@@ -619,14 +668,32 @@ public static class Compiler
             ParamIndexMap = new Dictionary<string, int>();
             for (int i = 0; i < cleanedParams.Count; i++)
             {
-                var pv = Expression.Variable(typeof(object), cleanedParams[i]);
+                var pname = cleanedParams[i];
+                var pv = Expression.Variable(typeof(object), pname);
                 ParamVars.Add(pv);
-                ParamIndexMap[cleanedParams[i]] = i;
-                AssignStmts.Add(Expression.Assign(pv,
-                    Expression.Condition(
-                        Expression.LessThan(ConstVal(i), Expression.ArrayLength(ArgsParam)),
-                        Expression.ArrayIndex(ArgsParam, ConstVal(i)),
-                        ObjConst(Const.NIL))));
+                ParamIndexMap[pname] = i;
+                if (BoxedVars.Contains(pname))
+                {
+                    var boxVar = Expression.Variable(typeof(BoxedCell), pname + "$box");
+                    BoxVars[pname] = boxVar;
+                    AdditionalVars.Add(boxVar);
+                    AssignStmts.Add(Expression.Assign(boxVar,
+                        Expression.New(typeof(BoxedCell).GetConstructor(Type.EmptyTypes)!)));
+                    AssignStmts.Add(Expression.Assign(
+                        Expression.Property(boxVar, "Value"),
+                        Expression.Condition(
+                            Expression.LessThan(ConstVal(i), Expression.ArrayLength(ArgsParam)),
+                            Expression.ArrayIndex(ArgsParam, ConstVal(i)),
+                            ObjConst(Const.NIL))));
+                }
+                else
+                {
+                    AssignStmts.Add(Expression.Assign(pv,
+                        Expression.Condition(
+                            Expression.LessThan(ConstVal(i), Expression.ArrayLength(ArgsParam)),
+                            Expression.ArrayIndex(ArgsParam, ConstVal(i)),
+                            ObjConst(Const.NIL))));
+                }
             }
         }
         // ── Compile statement sequences ──
@@ -655,6 +722,15 @@ public static class Compiler
             if (node is SetBangAst sn)
             {
                 var valExpr = CompileExpr(sn.Val);
+                if (BoxVars.TryGetValue(sn.Name, out var boxVar))
+                {
+                    var stmts = new List<Expression>
+                    {
+                        Expression.Assign(Expression.Property(boxVar, "Value"), valExpr)
+                    };
+                    if (isTail) stmts.Add(Expression.Goto(BreakLabel, ObjConst(Const.VOID)));
+                    return stmts;
+                }
                 if (ParamIndexMap.TryGetValue(sn.Name, out int si))
                 {
                     var stmts = new List<Expression>
@@ -1032,6 +1108,8 @@ public static class Compiler
             if (node is VarAst vn)
             {
                 var name = vn.Name;
+                if (BoxVars.TryGetValue(name, out var boxVar))
+                    return Expression.Property(boxVar, "Value");
                 if (ParamIndexMap.TryGetValue(name, out int idx))
                     return ParamVars[idx];
                 return Expression.Call(EnvParam, "Lookup", null, ConstVal(name));
@@ -1060,6 +1138,8 @@ public static class Compiler
             if (node is SetBangAst sn)
             {
                 var valExpr = CompileExpr(sn.Val);
+                if (BoxVars.TryGetValue(sn.Name, out var boxVar))
+                    return Expression.Assign(Expression.Property(boxVar, "Value"), valExpr);
                 if (ParamIndexMap.TryGetValue(sn.Name, out int si))
                     return Expression.Assign(ParamVars[si], valExpr);
                 return Expression.Call(typeof(JitRuntime), "EnvSetVar", null,
@@ -1076,8 +1156,15 @@ public static class Compiler
                     // 闭包：构建子环境绑定捕获变量，降级为运行时 LambdaProc
                     Expression childEnv = Expression.Call(typeof(Env), "MakeChild", null, EnvParam);
                     foreach (var name in captured.OrderBy(x => x))
+                    {
+                        Expression valExpr;
+                        if (BoxVars.TryGetValue(name, out var boxVar))
+                            valExpr = boxVar; // 捕获可变 box 引用
+                        else
+                            valExpr = ParamVars[ParamIndexMap[name]];
                         childEnv = Expression.Call(typeof(JitRuntime), "MakeClosure", null,
-                            childEnv, ConstVal(name), ParamVars[ParamIndexMap[name]]);
+                            childEnv, ConstVal(name), valExpr);
+                    }
                     return Expression.Call(typeof(JitRuntime), "MakeLambda", null,
                         ConstVal(ln.Params), ConstVal(ln.IsSimple), childEnv,
                         ConstVal(ln.RawBody ?? Const.NIL));
@@ -1085,7 +1172,11 @@ public static class Compiler
                 // 非闭包内层 lambda：递归编译为 CompiledLambda（与 Python 一致）
                 var innerCleaned = ln.Params.Select(CleanParamName).ToList();
                 var innerLexical = new HashSet<string>(innerCleaned);
-                var nestedCompiler = new AstExprCompiler(null, innerCleaned, ln.IsSimple, innerLexical);
+                var innerBoxed = CollectBoxedVars(ln.Body, innerLexical);
+                if (Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG") is not null)
+                    Console.Error.WriteLine($"NESTED_BOXED: params=[{string.Join(",", innerCleaned)}] boxed=[{string.Join(",", innerBoxed)}]");
+                var nestedCompiler = new AstExprCompiler(null, innerCleaned, ln.IsSimple, innerLexical,
+                    innerBoxed);
                 var innerBodyExprs = nestedCompiler.CompileStmtSeq(ln.Body, true);
                 if (innerBodyExprs.Count == 0)
                     innerBodyExprs = [Expression.Goto(nestedCompiler.BreakLabel, ObjConst(Const.VOID))];

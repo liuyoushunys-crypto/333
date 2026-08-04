@@ -23,7 +23,7 @@
       (vector-set! r i (vector-ref vec (- n i 1))))))
 
 (define (vector-concatenate vecs)
-  (apply vector-append (vector->list vecs)))
+  (apply vector-append vecs))
 
 ;; ============================================================
 ;; 第十三部分：续延应用（call/cc 的妙用）
