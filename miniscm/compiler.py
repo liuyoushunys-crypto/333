@@ -1210,44 +1210,6 @@ def fully_expand(expr):
         return c
     return Cell(new_car, new_cdr)
 
-# ── 嵌套 lambda 自递归检测 (C# HasSelfRecursionInNestedLambda) ──
-# let 展开产生的模式 (self-recursion inside nested lambda) 会导致栈溢出,
-# 因为每次自递归都通过解释器重建并调用内部 lambda, 增长调用栈。
-def has_self_recursion_in_nested_lambda(body, self_name):
-    for node in body:
-        if scan_nested_self_recursion(node, self_name):
-            return True
-    return False
-
-def scan_nested_self_recursion(node, self_name):
-    if isinstance(node, LambdaAst):
-        return any(contains_call_to(e, self_name) for e in node.body)
-    if isinstance(node, BeginAst):
-        return any(scan_nested_self_recursion(e, self_name) for e in node.exprs)
-    if isinstance(node, AppAst):
-        return scan_nested_self_recursion(node.proc, self_name) or any(
-            scan_nested_self_recursion(e, self_name) for e in node.args)
-    if isinstance(node, DefineAst):
-        return scan_nested_self_recursion(node.val, self_name)
-    if isinstance(node, SetBangAst):
-        return scan_nested_self_recursion(node.val, self_name)
-    if isinstance(node, IfAst):
-        return (scan_nested_self_recursion(node.test, self_name)
-                or scan_nested_self_recursion(node.then, self_name)
-                or scan_nested_self_recursion(node.else_, self_name))
-    return False
-
-def contains_call_to(node, name):
-    if isinstance(node, AppAst):
-        return isinstance(node.proc, VarAst) and node.proc.name == name
-    if isinstance(node, IfAst):
-        return (contains_call_to(node.test, name)
-                or contains_call_to(node.then, name)
-                or contains_call_to(node.else_, name))
-    if isinstance(node, BeginAst):
-        return any(contains_call_to(e, name) for e in node.exprs)
-    return False
-
 def compile_lambda_proc(lambda_proc):
     _JIT_LOG("compile_lambda_proc ENTER: ", lambda_proc.name, " params=", lambda_proc.params)
     if not should_jit(lambda_proc):
@@ -1273,6 +1235,10 @@ def compile_lambda_proc(lambda_proc):
                 os.makedirs(CACHE_DIR, exist_ok=True)
                 with open(_fail_file, "w") as f:
                     f.write("1")
+                # json 与 fail 互斥：标记失败时清除可能残留的 json 缓存
+                _json_path = os.path.splitext(_fail_file)[0] + ".json"
+                if os.path.exists(_json_path):
+                    os.remove(_json_path)
             except Exception:
                 pass
 
@@ -1283,6 +1249,8 @@ def compile_lambda_proc(lambda_proc):
             # 缓存内容: CacheEntry { Version, Hash, Params, Body } — 宏展开后的 body 表单
             body_forms = []
             cur = lambda_proc.body
+            cache_file = None
+            body_src = None
             if lambda_proc.name is not None:
                 cache_dir = CACHE_DIR
                 body_src = _pr(lambda_proc.body)
@@ -1313,18 +1281,6 @@ def compile_lambda_proc(lambda_proc):
                             return None  # 需要运行时展开; 跳过 JIT
                         body_forms.append(fully_expand(expanded))
                         cur = cur.cdr
-                    try:
-                        os.makedirs(cache_dir, exist_ok=True)
-                        entry = {
-                            "version": CACHE_VERSION,
-                            "hash": body_src,
-                            "params": lambda_proc.params,
-                            "body": [_pr(f) for f in body_forms]
-                        }
-                        with open(cache_file, "w") as f:
-                            json.dump(entry, f, ensure_ascii=False)
-                    except Exception:
-                        pass
             else:
                 while isinstance(cur, Cell):
                     expanded = expand_via_scheme(cur.car, lambda_proc.env)
@@ -1337,12 +1293,6 @@ def compile_lambda_proc(lambda_proc):
             body_asts = [to_ast(f) for f in body_forms]
             cleaned_params = [clean_param_name(p) for p in lambda_proc.params]
             lexical_vars = set(cleaned_params)
-
-            # Step 3b: 嵌套 lambda 自递归检测 (let 展开模式, 与 C# 一致)
-            if lambda_proc.name is not None and has_self_recursion_in_nested_lambda(body_asts, lambda_proc.name):
-                _JIT_LOG("NESTED SELF-RECURSION BLOCKED: ", lambda_proc.name)
-                _mark_failed()
-                return None
 
             # Step 4: 常量折叠
             optimized_body_asts = [fold_constants(e) for e in body_asts]
@@ -1382,6 +1332,25 @@ def compile_lambda_proc(lambda_proc):
             g = _make_jit_globals(compiler_inst.constants)
             exec(code, g)
             py_func = g['compiled_body']
+
+            # 成功编译后才写 json 缓存，与 .fail 互斥（失败只写 .fail，绝不并存）
+            if cache_file is not None:
+                try:
+                    os.makedirs(CACHE_DIR, exist_ok=True)
+                    entry = {
+                        "version": CACHE_VERSION,
+                        "hash": body_src,
+                        "params": lambda_proc.params,
+                        "body": [_pr(f) for f in body_forms]
+                    }
+                    with open(cache_file, "w") as f:
+                        json.dump(entry, f, ensure_ascii=False)
+                    # json 与 fail 互斥：成功时清除可能残留的 fail 标记
+                    _fail_path = os.path.splitext(cache_file)[0] + ".fail"
+                    if os.path.exists(_fail_path):
+                        os.remove(_fail_path)
+                except Exception:
+                    pass
 
             return CompiledLambda(
                 py_func, lambda_proc.params, lambda_proc.env, lambda_proc.is_simple
