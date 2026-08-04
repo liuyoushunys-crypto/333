@@ -240,7 +240,7 @@ public static partial class PrimitiveRegistry
 
         // ── SRFI-158: Generators ──
         _b("generator", PGenerator);
-        _b("generator?", args => args[0] is Delegate ? Const.TRUE : Const.FALSE);
+        _b("generator?", args => args[0] is Delegate or LambdaProc or CompiledLambda ? Const.TRUE : Const.FALSE);
         _b("make-generator", PMakeGenerator);
         _b("list->generator", PListGenerator);
         _b("vector->generator", PVectorGenerator);
