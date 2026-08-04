@@ -457,9 +457,14 @@ public static partial class PrimitiveRegistry
     private static object? StreamNext(object? s)
     {
         if (s is not Cell c) return Const.NIL;
+        if (c.Cdr is Promise) return ForcePromiseEval(c.Cdr);
         if (c.Cdr is Func<object?[], object?> f) return f([]);
-        if (c.Cdr is Promise p) return ForcePromise(p);
         return c.Cdr;
+    }
+
+    private static object? ForcePromiseEval(object? prom)
+    {
+        return Evaluator.Eval(new Cell(Sym.Intern("force"), new Cell(prom, Const.NIL)), Evaluator.GlobalEnv);
     }
 
     private static object? ForcePromise(Promise p)

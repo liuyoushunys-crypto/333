@@ -170,6 +170,9 @@ public static class Compiler
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(failFile)!);
                     File.WriteAllText(failFile, "1");
+                    // json 与 fail 互斥：标记失败时清除可能残留的 json 缓存
+                    var jsonPath = Path.ChangeExtension(failFile, ".json");
+                    if (File.Exists(jsonPath)) File.Delete(jsonPath);
                 }
                 catch { }
             }
@@ -179,12 +182,13 @@ public static class Compiler
             // Step 1: Macro-expand body (with cache)
             var bodyForms = new List<object?>();
             var cur = lp.Body;
+            string? cacheFile = null;
             if (lp.Name is not null)
             {
                 var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
                 var bodySrc = Printer.Format(lp.Body);
                 // 用内容 hash 命名缓存文件, 避免同名函数(不同内容)互相覆盖
-                var cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + "_" + BodyHash(bodySrc) + ".json");
+                cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + "_" + BodyHash(bodySrc) + ".json");
                 if (File.Exists(cacheFile))
                 {
                     try
@@ -212,20 +216,6 @@ public static class Compiler
                     bodyForms.Add(FullyExpand(expanded));
                     cur = c.Cdr;
                 }
-                try
-                {
-                    Directory.CreateDirectory(cacheDir);
-                    var entry = new CacheEntry
-                    {
-                        Version = CacheVersion,
-                        Hash = bodySrc,
-                        Params = lp.Params,
-                        Body = bodyForms.Select(f => Printer.Format(f)).ToList()
-                    };
-                    var json = JsonSerializer.Serialize(entry, new JsonSerializerOptions { WriteIndented = true });
-                    File.WriteAllText(cacheFile, json);
-                }
-                catch { }
             }
             else
             {
@@ -241,15 +231,6 @@ public static class Compiler
             var bodyAsts = bodyForms.Select(ToAst).ToList();
             var cleanedParams = lp.Params.Select(CleanParamName).ToList();
             var lexicalVars = new HashSet<string>(cleanedParams);
-            // Step 3b: Check for self-recursion inside nested lambdas
-            // This pattern (created by `let` expansion) causes stack overflow
-            // because each self-recursion re-creates and re-invokes the inner lambda
-            // through the interpreter, growing the C# call stack.
-            if (lp.Name is not null && HasSelfRecursionInNestedLambda(bodyAsts, lp.Name))
-            {
-                MarkFailed();
-                return null;
-            }
             // Step 4: Constant folding
             var foldedBody = bodyAsts.Select(FoldConstants).ToList();
             // Step 5: Compile to expression tree
@@ -272,6 +253,29 @@ public static class Compiler
             var lambda = Expression.Lambda<Func<Env, object?[], object?>>(
                 lambdaBody, compiler.EnvParam, compiler.ArgsParam);
             var func = lambda.Compile();
+            // 成功编译后才写 json 缓存，与 .fail 互斥（失败只写 .fail，绝不并存）
+            if (cacheFile is not null)
+            {
+                try
+                {
+                    var cacheDir = Path.GetDirectoryName(cacheFile)!;
+                    Directory.CreateDirectory(cacheDir);
+                    var bodySrc = Printer.Format(lp.Body);
+                    var entry = new CacheEntry
+                    {
+                        Version = CacheVersion,
+                        Hash = bodySrc,
+                        Params = lp.Params,
+                        Body = bodyForms.Select(f => Printer.Format(f)).ToList()
+                    };
+                    var json = JsonSerializer.Serialize(entry, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(cacheFile, json);
+                    // json 与 fail 互斥：成功时清除可能残留的 fail 标记
+                    var failPath = Path.ChangeExtension(cacheFile, ".fail");
+                    if (File.Exists(failPath)) File.Delete(failPath);
+                }
+                catch { }
+            }
             return new CompiledLambda(func, lp.Params, lp.ClosureEnv, lp.IsSimple);
         }
         catch (Exception ex)
@@ -582,39 +586,6 @@ public static class Compiler
             return acc;
         }
         return [];
-    }
-    static bool HasSelfRecursionInNestedLambda(List<AstNode> body, string selfName)
-    {
-        foreach (var node in body)
-            if (ScanNestedSelfRecursion(node, selfName))
-                return true;
-        return false;
-    }
-    static bool ScanNestedSelfRecursion(AstNode node, string selfName)
-    {
-        if (node is LambdaAst la)
-            return la.Body.Any(e => ContainsCallTo(e, selfName));
-        if (node is BeginAst bn)
-            return bn.Exprs.Any(e => ScanNestedSelfRecursion(e, selfName));
-        if (node is AppAst an)
-            return ScanNestedSelfRecursion(an.Proc, selfName) || an.Args.Any(e => ScanNestedSelfRecursion(e, selfName));
-        if (node is DefineAst dn)
-            return ScanNestedSelfRecursion(dn.Val, selfName);
-        if (node is SetBangAst sn)
-            return ScanNestedSelfRecursion(sn.Val, selfName);
-        if (node is IfAst ifn)
-            return ScanNestedSelfRecursion(ifn.Test, selfName) || ScanNestedSelfRecursion(ifn.Then, selfName) || ScanNestedSelfRecursion(ifn.Else, selfName);
-        return false;
-    }
-    static bool ContainsCallTo(AstNode node, string name)
-    {
-        return node switch
-        {
-            AppAst an => an.Proc is VarAst vn && vn.Name == name,
-            IfAst ifn => ContainsCallTo(ifn.Test, name) || ContainsCallTo(ifn.Then, name) || ContainsCallTo(ifn.Else, name),
-            BeginAst bn => bn.Exprs.Any(e => ContainsCallTo(e, name)),
-            _ => false
-        };
     }
     // ── Expression Tree Compiler ──
     internal class AstExprCompiler
