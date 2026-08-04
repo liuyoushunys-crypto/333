@@ -337,6 +337,92 @@ def _sx_expand_call(expr, env=None):
                 return expanded
     return FALSE
 
+# mbody 编译缓存: {id(macro_tuple): compiled}
+# 第一优先级: 原生 syntax-rules 编译器 (native_syntax.py) — 展开时零解释器。
+# 第二优先级: mbody 编译成带 args 参数的 LambdaProc。
+# 失败都回退解释器。调用前设置 _CURRENT_MACRO_DEF_ENV/_CURRENT_EXPAND_ENV 等价。
+_MBODY_COMPILE_CACHE = {}
+
+def _extract_syntax_rules(proc):
+    """从宏元组提取 (lits, rules)。结构必须是 sx-make-macro-binding 生成的
+    ((sx-macro-expand 'args '((sx-dispatch args 'lits 'rules))) args (sx-expand-env))。
+    返回 (lits, rules) 或 None(非 syntax-rules 结构)。"""
+    try:
+        mbody = proc[2]
+        form = mbody.car
+        if not (isinstance(form, Cell) and isinstance(form.car, Sym)
+                and form.car.name == 'sx-macro-expand'):
+            return None
+        body_list = form.cdr.cdr.car.cdr.car
+        dispatch = body_list.car
+        if not (isinstance(dispatch, Cell) and isinstance(dispatch.car, Sym)
+                and dispatch.car.name == 'sx-dispatch'):
+            return None
+        lits = dispatch.cdr.cdr.car.cdr.car
+        rules = dispatch.cdr.cdr.cdr.car.cdr.car
+        return (lits, rules)
+    except Exception:
+        return None
+
+def _compile_mbody(proc):
+    """编译宏体。优先原生 syntax-rules 编译器, 其次 LambdaProc 编译。
+    返回编译对象(原生 callable 或 LambdaProc)或 None → 解释器回退。
+    原生 callable 带 __native_syntax__ 标记。
+    """
+    if not (isinstance(proc, tuple) and len(proc) >= 5 and proc[0] == 'macro'):
+        return None
+    defEnv = proc[3]
+    if not isinstance(defEnv, Env):
+        return None
+    # 1) 原生 syntax-rules 编译器
+    try:
+        from native_syntax import compile_syntax_rules
+        sr = _extract_syntax_rules(proc)
+        if sr is not None:
+            lits, rules = sr
+            native = compile_syntax_rules(lits, rules, defEnv)
+            if native is not None:
+                native.__native_syntax__ = True
+                return native
+    except Exception:
+        pass
+    # 2) mbody LambdaProc 编译
+    from compiler import LambdaProc, compile_lambda_proc
+    mbody = proc[2]
+    lp = LambdaProc(['args'], mbody, defEnv, True, name='__macro_mbody__')
+    try:
+        cv = compile_lambda_proc(lp)
+    except Exception:
+        cv = None
+    if cv is None:
+        return None
+    lp.compiled_version = cv
+    return lp
+
+def _expand_macro_compiled(compiled_lp, args, env, defEnv):
+    """用编译版宏体展开。调用前设置宏全局状态(与解释器路径等价)。
+    返回展开结果或 None(需回退解释器)。原生 callable 直接调用(无 TailCall)。"""
+    global _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV
+    savedDefEnv = _CURRENT_MACRO_DEF_ENV
+    _CURRENT_MACRO_DEF_ENV = defEnv
+    _CURRENT_EXPAND_ENV = env
+    try:
+        if getattr(compiled_lp, '__native_syntax__', False):
+            return compiled_lp(args if args is not None else NIL)
+        from compiler import __mscm_eval_tail_call__
+        from mtypes import TailCall, NIL as _NIL
+        args_val = args if args is not None else _NIL
+        r = compiled_lp(args_val)
+        while isinstance(r, TailCall):
+            r = __mscm_eval_tail_call__(r)
+        if isinstance(r, SyntaxObject):
+            r = r.expr
+        return r
+    except Exception:
+        return None
+    finally:
+        _CURRENT_MACRO_DEF_ENV = savedDefEnv
+
 def expand_macro(proc, args, env):
     global _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV
     from miniscm import eval_seq, _eval
@@ -346,6 +432,19 @@ def expand_macro(proc, args, env):
         return None
     defEnv = proc[3]
     mbody = proc[2]
+
+    # 编译缓存路径: 宏体已编译则直接调用, 失败自动回退解释器
+    key = id(proc)
+    try:
+        if key not in _MBODY_COMPILE_CACHE:
+            _MBODY_COMPILE_CACHE[key] = _compile_mbody(proc)
+        compiled_lp = _MBODY_COMPILE_CACHE[key]
+        if compiled_lp is not None:
+            result = _expand_macro_compiled(compiled_lp, args, env, defEnv)
+            if result is not None:
+                return resolve_hygiene_markers(result, defEnv)
+    except Exception:
+        pass
 
     nenv = Env(env)
     if isinstance(proc[1], Sym):

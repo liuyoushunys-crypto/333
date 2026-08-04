@@ -298,6 +298,65 @@ public static class Evaluator
 
     // 展开 "macro" 元组: 绑定模式变量 (rest 符号 args) 后求值宏体。
     // 宏体为 (sx-macro-expand ...), 真正的模式解构与宏体求值在 Scheme 端完成。
+    // 第一优先级: 原生 syntax-rules 编译器 (NativeSyntax) — 展开时零解释器。
+    // 失败自动回退 Scheme 引擎。
+    internal static readonly System.Collections.Concurrent.ConcurrentDictionary<object, object?> MacroCompileCache = new();
+
+    static object? UnwrapSyntax(object? e)
+    {
+        while (e is SyntaxObject so) e = so.Expr;
+        return e;
+    }
+
+    // 从宏元组提取 (lits, rules)。结构必须是 sx-make-macro-binding 生成的
+    // ((sx-macro-expand 'args '((sx-dispatch args 'lits 'rules))) args (sx-expand-env))。
+    static (object? Lits, object? Rules)? ExtractSyntaxRules(object? proc)
+    {
+        try
+        {
+            if (proc is not System.Runtime.CompilerServices.ITuple it || it.Length < 5) return null;
+            var mbody = UnwrapSyntax(it[2]);
+            if (mbody is not Cell mb || UnwrapSyntax(mb.Car) is not Cell form) return null;
+            if (UnwrapSyntax(form.Car) is not Sym formSym || formSym.Name != "sx-macro-expand") return null;
+            if (form.Cdr is not Cell f1 || f1.Cdr is not Cell f2) return null;
+            if (f2.Car is not Cell bodyListCell) return null;
+            var bodyList = UnwrapSyntax(bodyListCell.Cdr);
+            if (bodyList is not Cell bl || UnwrapSyntax(bl.Car) is not Cell blc || UnwrapSyntax(blc.Car) is not Cell dispatch) return null;
+            if (UnwrapSyntax(dispatch.Car) is not Sym ds || ds.Name != "sx-dispatch") return null;
+            if (dispatch.Cdr is not Cell d1 || d1.Cdr is not Cell d2) return null;
+            // dispatch = (sx-dispatch args (quote lits) (quote rules))
+            // d1 = (args (quote lits) (quote rules)); d1.Cdr = ((quote lits) (quote rules))
+            // d2 = ((quote lits) (quote rules)); lits = d2.Car.Cdr.Car
+            var lits = d2.Car is Cell lc && UnwrapSyntax(lc.Car) is Sym lq && lq.Name == "quote" && lc.Cdr is Cell ld2 ? ld2.Car : null;
+            if (d2.Cdr is not Cell d3) return null;
+            // d3 = ((quote rules)); rules = d3.Car.Cdr.Car
+            var rules = d3.Car is Cell rc3 && UnwrapSyntax(rc3.Car) is Sym rq && rq.Name == "quote" && rc3.Cdr is Cell rd3 ? rd3.Car : null;
+            if (lits is not null && rules is not null)
+                return (lits, rules);
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    static Func<object?, object?>? CompileMacroNative(object? proc)
+    {
+        try
+        {
+            if (proc is not System.Runtime.CompilerServices.ITuple it || it.Length < 5) return null;
+            if (it[3] is not Env defEnv) return null;
+            var sr = ExtractSyntaxRules(proc);
+            if (sr is null) return null;
+            return Miniscm.Compiler.NativeSyntax.CompileSyntaxRules(sr.Value.Lits, sr.Value.Rules, defEnv);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     internal static object? ExpandMacro(object? proc, object? args, Env env)
     {
         if (proc is not System.Runtime.CompilerServices.ITuple it
@@ -305,6 +364,25 @@ public static class Evaluator
             return null;
         if (it[3] is not Env defEnv)
             return null;
+
+        // 原生 syntax-rules 编译器缓存路径 (与 miniscm expand_macro 的 __native_syntax__ 等价)
+        try
+        {
+            if (!MacroCompileCache.TryGetValue(proc, out var nativeCached))
+            {
+                nativeCached = CompileMacroNative(proc);
+                MacroCompileCache[proc] = nativeCached;
+            }
+            if (nativeCached is Func<object?, object?> nativeFn)
+            {
+                var nativeResult = nativeFn(args ?? Const.NIL);
+                return ResolveHygieneMarkers(nativeResult, defEnv);
+            }
+        }
+        catch
+        {
+            // 原生编译/展开失败 → 回退 Scheme 引擎
+        }
 
         var mbody = it[2];
         var nenv = new Env(env);
