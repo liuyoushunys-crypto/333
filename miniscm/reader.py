@@ -140,8 +140,8 @@ def _atom(tok):
     if tok=='#f': return FALSE
     # 字符字面量：##\a, #\space 等命名字符
     if tok.startswith('#'):
-        # 字符串形式的字符（带引号）：##\"a\"
-        if len(tok)>2 and tok[2]=='"': return ('char',tok[3:-1])
+        # 字符串形式的字符（带引号）：#"a"（# 后紧跟引号）
+        if len(tok)>1 and tok[1]=='"': return ('char',tok[2:-1])
         # 命名字符对照表：space/newline/tab/return/null/nul/alarm/backspace/escape/delete
         m={'space':' ','newline':'\n','tab':'\t','return':'\r','null':'\0','nul':'\0','alarm':'\a','backspace':'\b','escape':'\x1b','delete':'\x7f'}
         ch=tok[2:]; return ('char',m.get(ch,ch[0] if len(ch)==1 else ch))

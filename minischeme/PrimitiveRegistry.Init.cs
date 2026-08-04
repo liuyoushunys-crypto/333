@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -537,5 +538,14 @@ public static partial class PrimitiveRegistry
         _b("condition/report-string", args => new SchemeString(ReportString(args[0])));
         _b("string-split", args => StrSplit(args));
         _b("string-join", args => StrJoin(args));
+        // scm 库 parameterize 版 with-output-to-string 会栈溢出，覆盖为原生版
+        _b("with-output-to-string", args =>
+        {
+            var sb = new StringBuilder();
+            var oldOut = Console.Out;
+            Console.SetOut(new StringWriter(sb));
+            try { App(args[0]); return new SchemeString(sb.ToString()); }
+            finally { Console.SetOut(oldOut); }
+        });
     }
 }

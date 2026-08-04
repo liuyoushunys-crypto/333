@@ -601,6 +601,40 @@ if __name__=='__main__':
         be.define('sort', list_sort_fn)
         be.define('list-sort', list_sort_fn)
         be.define('list-stable-sort', list_sort_fn)
+        # 对齐 minischeme ReRegisterOverrides 扩展: vector/unfold/bytevector 等被 scm 库覆盖的原生版
+        from primitives_ext import (
+            vector_map, vector_for_each, vector_append, vector_count,
+            vector_fold, vector_fold_right, vector_concat, unfold_fn,
+            unfold_right_fn
+        )
+        be.define('vector-map', vector_map)
+        be.define('vector-for-each', vector_for_each)
+        be.define('vector-append', vector_append)
+        be.define('vector-count', vector_count)
+        be.define('vector-fold', vector_fold)
+        be.define('vector-fold-right', vector_fold_right)
+        be.define('vector-concatenate', vector_concat)
+        be.define('unfold', unfold_fn)
+        be.define('unfold-right', unfold_right_fn)
+        from primitives_ext import read_line, read_string_fn
+        be.define('read-line', read_line)
+        be.define('read-string', read_string_fn)
+        from primitives import call as _call
+        import io as _io
+        from mtypes import SchemeString as _SchemeString
+        def _with_output_to_string(thunk):
+            buf = _io.StringIO()
+            old = sys.stdout
+            sys.stdout = buf
+            try:
+                _call(thunk, [])
+                return _SchemeString(buf.getvalue())
+            finally:
+                sys.stdout = old
+        be.define('with-output-to-string', _with_output_to_string)
+        from primitives_ext import mapping_fn, mapping_pred
+        be.define('mapping', mapping_fn)
+        be.define('mapping?', mapping_pred)
 
     # from initenv_py import initenv_py
     # initenv_py()
