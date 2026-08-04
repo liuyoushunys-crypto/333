@@ -10,6 +10,14 @@ from fractions import Fraction
 # 1. 符号池（Symbol Interning）与常量定义
 # ═══════════════════════════════════════════════════════════════
 
+# Box: 闭包捕获的可变引用单元（set! 后闭包内可见新值，支持 named-let JIT 编译）
+class Box:
+    __slots__ = ('value',)
+    def __init__(self, value=None):
+        self.value = value
+    def __repr__(self):
+        return f'<box {self.value!r}>'
+
 class Sym:
     """
     Scheme 符号类型（Symbol）。
@@ -420,17 +428,21 @@ class Env:
         name = k.name if isinstance(k, Sym) else k
         data = self.data
         if name in data:
-            return data[name]
+            v = data[name]
+            return v.value if isinstance(v, Box) else v
 
         parent = self.parent
         if parent is be:
-            try: return be.data[name]
+            try:
+                v = be.data[name]
+                return v.value if isinstance(v, Box) else v
             except KeyError: pass
 
         e = parent
         while e is not None:
             if name in e.data:
-                return e.data[name]
+                v = e.data[name]
+                return v.value if isinstance(v, Box) else v
             e = e.parent
         raise NameError(f"unbound: {k}")
 
@@ -445,18 +457,19 @@ class Env:
         name = k.name if isinstance(k, Sym) else k
         val = self.data.get(name, sentinel)
         if val is not sentinel:
-            return val
+            return val.value if isinstance(val, Box) else val
 
         e = self.parent
         if e is None:
             return sentinel
         if e is be:
-            return be.data.get(name, sentinel)
+            val = be.data.get(name, sentinel)
+            return val.value if isinstance(val, Box) else val
 
         while e is not None:
             val = e.data.get(name, sentinel)
             if val is not sentinel:
-                return val
+                return val.value if isinstance(val, Box) else val
             e = e.parent
         return sentinel
 

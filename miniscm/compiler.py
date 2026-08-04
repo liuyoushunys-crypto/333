@@ -42,7 +42,7 @@ from mtypes import (
     Sym, Cell, Env, NIL, VOID, FALSE, TRUE, _bind_params, _sn, TailCall, be,
     SchemeVector, SchemeChar, SchemeString, SchemeBytevector, _cells, _cell_len,
     SYM_QUOTE, SYM_IF, SYM_LAMBDA, SYM_BEGIN, SYM_DEFINE, SYM_SETBANG, _lst,
-    SyntaxObject, _pr
+    SyntaxObject, _pr, Box
 )
 from primitives import vec_set_elem
 
@@ -501,6 +501,36 @@ def collect_outer_refs(node, outer_vars, inner_params):
         return acc
     return set()
 
+def collect_boxed_vars(body, lexical_vars):
+    """收集被内层闭包捕获的当前函数参数/局部变量（需 Box 引用语义，
+    使 named-let/letrec 的 set! 后闭包内可见新值）。"""
+    acc = set()
+    for node in body:
+        _scan_boxed(node, lexical_vars, acc)
+    return acc
+
+def _scan_boxed(node, lexical_vars, acc):
+    if isinstance(node, LambdaAst):
+        inner_params = {clean_param_name(p) for p in node.params}
+        acc |= collect_outer_refs(node, lexical_vars, inner_params)
+        for b in node.body:
+            _scan_boxed(b, lexical_vars, acc)
+    elif isinstance(node, BeginAst):
+        for e in node.exprs:
+            _scan_boxed(e, lexical_vars, acc)
+    elif isinstance(node, IfAst):
+        _scan_boxed(node.test, lexical_vars, acc)
+        _scan_boxed(node.then, lexical_vars, acc)
+        _scan_boxed(node.else_, lexical_vars, acc)
+    elif isinstance(node, DefineAst):
+        _scan_boxed(node.val, lexical_vars, acc)
+    elif isinstance(node, SetBangAst):
+        _scan_boxed(node.val, lexical_vars, acc)
+    elif isinstance(node, AppAst):
+        _scan_boxed(node.proc, lexical_vars, acc)
+        for a in node.args:
+            _scan_boxed(a, lexical_vars, acc)
+
 # ═══════════════════════════════════════════════════════════════
 # CompiledLambda — 复盘20：预计算 _n_regular
 # ═══════════════════════════════════════════════════════════════
@@ -653,6 +683,7 @@ def _make_jit_globals(constants):
         '__mscm_make_tail_call__': __mscm_make_tail_call__,
         '__mscm_resolve_ic__': __mscm_resolve_ic__,
         '_lst': _lst,
+        'Box': Box,
     }
 
 # ═══════════════════════════════════════════════════════════════
@@ -660,11 +691,12 @@ def _make_jit_globals(constants):
 # ═══════════════════════════════════════════════════════════════
 
 class AstExprCompiler:
-    def __init__(self, self_name=None, params=None, is_simple=True):
+    def __init__(self, self_name=None, params=None, is_simple=True, boxed_vars=None):
         self.constants = []
         self.self_name = self_name
         self.params = params or []
         self.is_simple = is_simple
+        self.boxed_vars = boxed_vars or set()
 
     def register_constant(self, val):
         self.constants.append(val)
@@ -673,6 +705,11 @@ class AstExprCompiler:
     # ── 复盘1：消除 _compile_VarAst 中的死代码 ──
     def _compile_VarAst(self, node, lexical_vars):
         name = node.name
+        if name in self.boxed_vars:
+            return ast.Attribute(
+                value=ast.Name(id=name, ctx=ast.Load()),
+                attr='value', ctx=ast.Load()
+            )
         if name in lexical_vars:
             return ast.Name(id=name, ctx=ast.Load())
         if name in _IMMUTABLE_PRIMITIVES:
@@ -729,6 +766,14 @@ class AstExprCompiler:
         )
 
     def _compile_SetBangAst(self, node, lexical_vars):
+        if node.name in self.boxed_vars:
+            return ast.NamedExpr(
+                target=ast.Attribute(
+                    value=ast.Name(id=node.name, ctx=ast.Load()),
+                    attr='value', ctx=ast.Store()
+                ),
+                value=self.compile_expr(node.val, lexical_vars)
+            )
         if node.name in lexical_vars:
             return ast.NamedExpr(
                 target=ast.Name(id=node.name, ctx=ast.Store()),
@@ -775,12 +820,17 @@ class AstExprCompiler:
                 keywords=[]
             )
             for name in sorted(captured):
+                if name in self.boxed_vars:
+                    # boxed 捕获：传 Box 引用（参数已 Box 化），set! 后闭包可见新值
+                    value_ast = ast.Name(id=name, ctx=ast.Load())
+                else:
+                    value_ast = ast.Name(id=name, ctx=ast.Load())
                 child_env = ast.Call(
                     func=ast.Attribute(
                         value=ast.Name(id='__mscm_closure_set__', ctx=ast.Load()),
                         attr='__call__', ctx=ast.Load()
                     ),
-                    args=[child_env, ast.Constant(value=name), ast.Name(id=name, ctx=ast.Load())],
+                    args=[child_env, ast.Constant(value=name), value_ast],
                     keywords=[]
                 )
             return ast.Call(
@@ -797,8 +847,9 @@ class AstExprCompiler:
                 ],
                 keywords=[]
             )
-        nested_compiler = AstExprCompiler()
         cleaned_params = [clean_param_name(p) for p in node.params]
+        nested_boxed = self.boxed_vars | collect_boxed_vars(node.body, set(cleaned_params))
+        nested_compiler = AstExprCompiler(boxed_vars=nested_boxed)
         combined_vars = lexical_vars | set(cleaned_params)
         func_args = ast.arguments(
             posonlyargs=[],
@@ -810,9 +861,21 @@ class AstExprCompiler:
         )
         if not nested_ast_body:
             nested_ast_body = [ast.Return(value=ast.Name(id='VOID', ctx=ast.Load()))]
+        # boxed 参数初始化为 Box（引用语义）
+        box_init = []
+        for p in cleaned_params:
+            if p in nested_boxed:
+                box_init.append(ast.Assign(
+                    targets=[ast.Name(id=p, ctx=ast.Store())],
+                    value=ast.Call(
+                        func=ast.Name(id='Box', ctx=ast.Load()),
+                        args=[ast.Name(id=p, ctx=ast.Load())],
+                        keywords=[]
+                    )
+                ))
         func_def = ast.FunctionDef(
             name='nested_lambda', args=func_args,
-            body=nested_ast_body, decorator_list=[]
+            body=box_init + nested_ast_body, decorator_list=[]
         )
         mod = ast.Module(body=[func_def], type_ignores=[])
         ast.fix_missing_locations(mod)
@@ -1121,7 +1184,15 @@ class AstExprCompiler:
 
     def _stmt_SetBangAst(self, node, lexical_vars, is_tail):
         val_ast = self.compile_expr(node.val, lexical_vars)
-        if node.name in lexical_vars:
+        if node.name in self.boxed_vars:
+            stmts = [ast.Assign(
+                targets=[ast.Attribute(
+                    value=ast.Name(id=node.name, ctx=ast.Load()),
+                    attr='value', ctx=ast.Store()
+                )],
+                value=val_ast
+            )]
+        elif node.name in lexical_vars:
             stmts = [ast.Assign(
                 targets=[ast.Name(id=node.name, ctx=ast.Store())],
                 value=val_ast
@@ -1294,11 +1365,8 @@ def compile_lambda_proc(lambda_proc):
             cleaned_params = [clean_param_name(p) for p in lambda_proc.params]
             lexical_vars = set(cleaned_params)
 
-            # 嵌套闭包（named-let/letrec 模式）JIT 编译的闭包捕获按值，
-            # 会导致 set! 后闭包内仍是旧值 → 跳过 JIT 走解释器（解释器闭包引用正确）。
-            if any(has_nested_closure(e, lexical_vars) for e in body_asts):
-                _JIT_LOG("NESTED CLOSURE SKIP: ", lambda_proc.name)
-                return None
+            # 嵌套闭包（named-let/letrec）：boxed 捕获编译为引用语义（见 _compile_*Ast）
+            boxed_vars = collect_boxed_vars(body_asts, lexical_vars)
 
             # Step 4: 常量折叠
             optimized_body_asts = [fold_constants(e) for e in body_asts]
@@ -1306,7 +1374,8 @@ def compile_lambda_proc(lambda_proc):
             compiler_inst = AstExprCompiler(
                 self_name=lambda_proc.name,
                 params=lambda_proc.params,
-                is_simple=lambda_proc.is_simple
+                is_simple=lambda_proc.is_simple,
+                boxed_vars=boxed_vars
             )
 
             # Step 5: 编译 AST → Python AST
@@ -1326,9 +1395,21 @@ def compile_lambda_proc(lambda_proc):
                 args=[ast.arg(arg='env')] + [ast.arg(arg=p) for p in cleaned_params],
                 kwonlyargs=[], kw_defaults=[], defaults=[]
             )
+            # boxed 参数初始化为 Box（引用语义，named-let/letrec 闭包 set! 可见）
+            box_init = []
+            for p in cleaned_params:
+                if p in compiler_inst.boxed_vars:
+                    box_init.append(ast.Assign(
+                        targets=[ast.Name(id=p, ctx=ast.Store())],
+                        value=ast.Call(
+                            func=ast.Name(id='Box', ctx=ast.Load()),
+                            args=[ast.Name(id=p, ctx=ast.Load())],
+                            keywords=[]
+                        )
+                    ))
             func_def = ast.FunctionDef(
                 name='compiled_body', args=func_args,
-                body=[loop_def], decorator_list=[]
+                body=box_init + [loop_def], decorator_list=[]
             )
             mod = ast.Module(body=[func_def], type_ignores=[])
             ast.fix_missing_locations(mod)
