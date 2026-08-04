@@ -55,6 +55,31 @@ def make_coroutine_generator(proc):
     return gen
 
 
+def _reduce_bit_or(args):
+    r = 0
+    for a in args: r |= int(a)
+    return r
+
+def _sys_exit(code):
+    raise SystemExit(code)
+
+def _redirect_in(stream):
+    sys.stdin = stream
+
+def _redirect_out(stream):
+    sys.stdout = stream
+
+def _with_file(path, thunk, mode, redirect):
+    old = sys.stdin if mode == 'r' else sys.stdout
+    with open(str(path), mode) as f:
+        redirect(f)
+        try:
+            r = call(thunk, [])
+        finally:
+            if mode == 'r': sys.stdin = old
+            else: sys.stdout = old
+    return r
+
 def initenv():
     builtin('pi', math.pi)
     builtin('*', mul)
@@ -363,6 +388,25 @@ def initenv():
     # alist2ht: 关联列表转 hash-table
     builtin('alist->hash-table', alist2ht)
     builtin('hash-table-for-each', lambda f, ht: [f(k, v) for k, v in ht.items()] and VOID)
+
+    # ── 对齐 minischeme Init() 补齐 (Python scm 模式缺失) ──
+    builtin('make-box', box)
+    builtin('-1+', lambda x: x - 1)
+    builtin('1+', lambda x: x + 1)
+    builtin('bit-or', lambda *a: _reduce_bit_or(a))
+    builtin('constantly', lambda x: (lambda *_: x))
+    builtin('current-error-port', lambda: ('str-port', []))
+    builtin('error-object-irritants', lambda e: e.irritants if isinstance(e, ErrorObject) else NIL)
+    builtin('exit', lambda *a: (_sys_exit(int(a[0]) if a else 0)) or VOID)
+    builtin('hash-table-contains?', lambda ht, k: TRUE if k in ht else FALSE)
+    builtin('hash-table-count', lambda ht: len(ht))
+    builtin('string-contains?', lambda s, sub: TRUE if str(sub) in str(s) else FALSE)
+    builtin('bytevector-copy', lambda bv: SchemeBytevector(list(bv.data)) if hasattr(bv, 'data') else SchemeBytevector(list(bv)))
+    builtin('bytevector->u8-list', lambda bv: _lst([int(b) for b in (bv.data if hasattr(bv, 'data') else bv)]))
+    builtin('u8-list->bytevector', lambda lst: SchemeBytevector([int(x) for x in _cells(lst)]))
+    builtin('with-input-from-file', lambda path, thunk: _with_file(path, thunk, 'r', _redirect_in))
+    builtin('with-output-to-file', lambda path, thunk: _with_file(path, thunk, 'w', _redirect_out))
+
 
 
     # sx-def-env: 返回当前宏定义环境或全局 (C#: CurrentMacroDefEnv ?? GlobalEnv)

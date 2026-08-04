@@ -574,9 +574,10 @@ if __name__=='__main__':
     pyb = False
     import compiler
     compiler.PYB_MODE = 'pyb' if pyb else 'scm'
+    from initenv_ext import initenv_ext
+    initenv_ext()
     if pyb:
-        from initenv_ext import initenv_ext
-        initenv_ext()
+        pass
     else:
         _libs = ['char-boolean.scm','numeric.scm',
                 'srfi-1-list.scm','srfi-13-string.scm','hof-vector.scm',
@@ -588,6 +589,18 @@ if __name__=='__main__':
                 n=load_file(_BASE+'/scm/'+f)
                 sys.stderr.write(f"loaded {n} from {f}\n")
             except: pass
+        # scm 库用 named-let 实现的 take/drop/sort 等会静默失败，
+        # 对齐 minischeme ReRegisterOverrides 覆盖的原生版
+        from primitives_ext import list_take, list_take_while, list_drop_while, list_last, list_sort_fn
+        from primitives import list_drop
+        be.define('take', lambda lst, n: list_take(lst, int(n)))
+        be.define('drop', lambda lst, n: list_drop(lst, int(n)))
+        be.define('take-while', list_take_while)
+        be.define('drop-while', list_drop_while)
+        be.define('last', list_last)
+        be.define('sort', list_sort_fn)
+        be.define('list-sort', list_sort_fn)
+        be.define('list-stable-sort', list_sort_fn)
 
     # from initenv_py import initenv_py
     # initenv_py()
