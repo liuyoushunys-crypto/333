@@ -44,10 +44,40 @@ public static partial class PrimitiveRegistry
         // ── Pairs and lists ──
         _b("assoc", args => Assoc(args[0], args[1], false));
         _b("assv", args => Assoc(args[0], args[1], false));
+        _b("break-list", args => BreakList(args[0], args[1]));
+        _b("caddr", args => ((Cell)args[0]!).Cdr is Cell c1 ? c1.Cdr is Cell c1a ? c1a.Car : Const.NIL : Const.NIL);
+        _b("cadddr", args => ((Cell)args[0]!).Cdr is Cell c2 && c2.Cdr is Cell c3 ? c3.Cdr is Cell c3a ? c3a.Car : Const.NIL : Const.NIL);
+        _b("last", args => LastPair(args[0]) is Cell c ? c.Car : Const.FALSE);
         _b("list-set!", PListSetBang);
         _b("make-list", PMakeList);
         _b("member", PMember);
         _b("memv", PMemv);
+        _b("pair-fold", args =>
+        {
+            object? acc = args[1];
+            var cur = args[2];
+            while (cur is Cell c) { acc = App(args[0], cur, acc); cur = c.Cdr; }
+            return acc;
+        });
+        _b("pair-fold-right", args =>
+        {
+            var pairs = new List<object?>();
+            var cur = args[2];
+            while (cur is Cell c) { pairs.Add(cur); cur = c.Cdr; }
+            object? acc = args[1];
+            for (int i = pairs.Count - 1; i >= 0; i--)
+                acc = App(args[0], pairs[i], acc);
+            return acc;
+        });
+        _b("remove", args => args[1].Cells().Where(x => ReferenceEquals(App(args[0], x), Const.FALSE)).ToCell());
+        _b("split-at", args =>
+        {
+            var first = new List<object?>();
+            var cur = args[0];
+            int n = NumericHelper.ToInt(args[1]);
+            while (cur is Cell c && n-- > 0) { first.Add(c.Car); cur = c.Cdr; }
+            return new Cell(first.ToCell(), new Cell(cur, Const.NIL));
+        });
 
         // ── Arithmetic ──
         _b("*", args => args.Aggregate((object?)1L, (acc, x) => NumericHelper.Mul(acc!, x))!);
@@ -79,6 +109,7 @@ public static partial class PrimitiveRegistry
         _b("negative?", args => NumericHelper.Compare(args[0], 0L) < 0 ? Const.TRUE : Const.FALSE);
         _b("numerator", PNumerator);
         _b("odd?", POddQ);
+        Evaluator.GlobalEnv.Define("pi", Math.PI);
         _b("positive?", args => NumericHelper.Compare(args[0], 0L) > 0 ? Const.TRUE : Const.FALSE);
         _b("quotient", args => NumericHelper.Quotient(args[0], args[1]));
         _b("rationalize", PRationalize);
@@ -92,7 +123,6 @@ public static partial class PrimitiveRegistry
         _b("zero?", args => NumericHelper.IsZero(args[0]) ? Const.TRUE : Const.FALSE);
 
         // ── Comparisons ──
-        _b("condition-message", args => args[0] is ErrorObject eo ? eo.Message : args[0] is SchemeException se ? se.Val?.ToString() ?? "" : "");
         _b("condition?", args => args[0] is SchemeException or ErrorObject ? Const.TRUE : Const.FALSE);
         _b("digit-value", PDigitValue);
 
@@ -102,6 +132,7 @@ public static partial class PrimitiveRegistry
         _b("string", args => new SchemeString(args.Select(AsChar)));
         _b("string->list", PStringList);
         _b("string->symbol", args => Sym.Intern(ToStr(args[0])));
+        _b("string->utf8", args => new SchemeBytevector(Encoding.UTF8.GetBytes(ToStr(args[0]))));
         _b("string-append", args => new SchemeString(string.Concat(args.Select(ToStr))));
         _b("string-ci<=?", args => string.Compare(ToStr(args[0]), ToStr(args[1]), StringComparison.OrdinalIgnoreCase) <= 0 ? Const.TRUE : Const.FALSE);
         _b("string-ci<?", args => string.Compare(ToStr(args[0]), ToStr(args[1]), StringComparison.OrdinalIgnoreCase) < 0 ? Const.TRUE : Const.FALSE);
@@ -109,6 +140,7 @@ public static partial class PrimitiveRegistry
         _b("string-ci>=?", args => string.Compare(ToStr(args[0]), ToStr(args[1]), StringComparison.OrdinalIgnoreCase) >= 0 ? Const.TRUE : Const.FALSE);
         _b("string-ci>?", args => string.Compare(ToStr(args[0]), ToStr(args[1]), StringComparison.OrdinalIgnoreCase) > 0 ? Const.TRUE : Const.FALSE);
         _b("string-contains?", PStringContainsQ);
+        _b("utf8->string", args => new SchemeString(args[0] is SchemeBytevector bv ? Encoding.UTF8.GetString(bv.Data) : ToStr(args[0])));
         _b("string-copy", PStringCopy);
         _b("string-downcase", args => new SchemeString(ToStr(args[0]).ToLowerInvariant()));
         _b("string-fill!", PStringFillBang);
@@ -146,6 +178,7 @@ public static partial class PrimitiveRegistry
         _b("char-alphabetic?", PCharAlphabeticQ);
         _b("char-ci=?", PCharCiEq);
         _b("char-downcase", args => new SchemeChar(Rune.ToLowerInvariant(new Rune(AsChar(args[0]))).Value));
+        _b("char-foldcase", args => new SchemeChar(Rune.ToLowerInvariant(new Rune(AsChar(args[0]))).Value));
         _b("char-lower-case?", PCharLowerCaseQ);
         _b("char-numeric?", PCharNumericQ);
         _b("char-upcase", args => new SchemeChar(Rune.ToUpperInvariant(new Rune(AsChar(args[0]))).Value));
@@ -332,17 +365,51 @@ public static partial class PrimitiveRegistry
         _b("jiffies-per-second", args => 1000L);
         _b("jiffies-per-second", args => (long)1000000);
 
+        // ── Ports and files ──
+        _b("binary-port?", args => args[0] is ITuple it && it.Length > 1 && it[0] is string bs && (bs == "bin-file-port" || bs == "bin-str-port") ? Const.TRUE : Const.FALSE);
+        _b("close-port", args =>
+        {
+            if (args[0] is ITuple it && it.Length > 2 && it[0] is "port" && it[2] is IDisposable d) d.Dispose();
+            return Const.VOID;
+        });
+        _b("delete-file", args => { File.Delete(ToStr(args[0])); return Const.VOID; });
+        _b("file-exists?", args => File.Exists(ToStr(args[0])) ? Const.TRUE : Const.FALSE);
+        _b("open-input-file", args => MakePort("input", new StreamReader(ToStr(args[0]))));
+        _b("open-output-file", args => MakePort("output", new StreamWriter(ToStr(args[0]))));
+        _b("port-open?", args => IsPort(args[0], null) ? Const.TRUE : Const.FALSE);
+        _b("rename-file", args => { File.Move(ToStr(args[0]), ToStr(args[1])); return Const.VOID; });
+
+        // ── Conditions ──
+        _b("make-compound-condition", args => new ErrorObject(Sym.Intern("compound"), args.Length > 0 ? args.ToList().ToCell() : Const.NIL));
+
         // ── Misc ──
+        _b("alist-copy", AlistCopy);
         _b("complement", PComplement);
         _b("constantly", PConstantly);
         _b("defined?", PDefinedQ);
+        _b("environment?", args => args[0] is Env ? Const.TRUE : Const.FALSE);
+        _b("features", args => new Cell(Sym.Intern("r7rs"), new Cell(Sym.Intern("miniscm"), Const.NIL)));
         _b("flip", PFlip);
+        _b("format", PFormat);
+        _b("gensym", args => Sym.Intern($"g{++_gensymCtr}"));
+        _b("gensym2", args => Sym.Intern($"__g{++_gensymCtr}"));
+        _b("helper", args => Const.VOID);
+        _b("identifier?", args => args[0] is Sym or SyntaxObject ? Const.TRUE : Const.FALSE);
         _b("identity", args => args[0]);
+        _b("make-coroutine-generator", args => MakeCoroutineGenerator(args[0]));
+        _b("make-parameter", args => MakeParameter(args[0], args.Length > 1 ? args[1] : null));
         _b("make-promise", args => new Promise(() => args.Length > 0 ? args[0] : Const.VOID));
+        _b("make-weak-box", args => new Cell(Sym.Intern("weak"), args.Length > 0 ? args[0] : Const.NIL));
+        _b("sink", args => Const.VOID);
         _b("sum", args => args.Select(Convert.ToInt64).Sum());
+        _b("weak-box?", args => args[0] is Cell wc && wc.Car is Sym ws && ws.Name == "weak" ? Const.TRUE : Const.FALSE);
+        _b("weak-box-ref", args => args[0] is Cell wc && wc.Cdr is Cell wd ? wd.Car : Const.NIL);
+        _b("weak-box-set!", args => { if (args[0] is Cell wc) wc.Cdr = new Cell(args[1], Const.NIL); return Const.VOID; });
 
         // ── Bitwise ──
         _b("arithmetic-shift", PArithmeticShift);
+        _b("bits->integer", args => BitsToInteger(args[0]));
+        _b("bits->list", args => IntegerToBitsList(NumericHelper.ToInt(args[0]), args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0));
         _b("bit-and", args => args.Aggregate(-1L, (a, b) => a & NumericHelper.ToLong(b)));
         _b("bit-count", PBitCount);
         _b("bit-field", PBitField);
@@ -369,8 +436,19 @@ public static partial class PrimitiveRegistry
         _b("bitwise-rotate-bit-field", PBitwiseRotateBitField);
         _b("bitwise-shift", PBitwiseShift);
         _b("bitwise-xor", args => args.Aggregate(0L, (a, b) => a ^ NumericHelper.ToLong(b)));
+        _b("booleans->integer", args =>
+        {
+            long r = 0;
+            for (int i = 0; i < args.Length; i++)
+                if (ReferenceEquals(args[i], Const.TRUE)) r |= 1L << i;
+            return r;
+        });
         _b("copy-bit", PCopyBit);
         _b("first-set-bit", PFirstSetBit);
+        _b("integer->bits", args => IntegerToBitsList(NumericHelper.ToInt(args[0]), args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0));
+        _b("integer->list", args => IntegerToBitsList(NumericHelper.ToInt(args[0]), 0));
+        _b("list->bits", args => BitsToInteger(args[0]));
+        _b("list->integer", args => BitsToInteger(args[0]));
         _b("integer-length", PIntegerLength);
         _b("logbit?", args => (NumericHelper.ToLong(args[0]) >> NumericHelper.ToInt(args[1]) & 1) != 0 ? Const.TRUE : Const.FALSE);
         _b("logtest", args => (NumericHelper.ToLong(args[0]) & NumericHelper.ToLong(args[1])) != 0 ? Const.TRUE : Const.FALSE);

@@ -1439,6 +1439,172 @@ public static partial class PrimitiveRegistry
     }
     // ── Internal helpers ──
 
+    private static int _gensymCtr;
+
+    private static object? AlistCopy(object?[] args)
+    {
+        object? result = Const.NIL;
+        foreach (var p in args[0].Cells())
+        {
+            if (p is Cell pc && pc.Cdr is Cell pc2 && pc2.Cdr is Nil)
+                result = new Cell(new Cell(pc.Car, new Cell(pc2.Car, Const.NIL)), result);
+            else if (p is Cell pc3)
+                result = new Cell(new Cell(pc3.Car, pc3.Cdr), result);
+            else
+                result = new Cell(p, result);
+        }
+        object? prev = Const.NIL;
+        var cur = result;
+        while (cur is Cell cc)
+        {
+            var nxt = cc.Cdr;
+            cc.Cdr = prev;
+            prev = cur;
+            cur = nxt;
+        }
+        return prev;
+    }
+
+    private static object? BreakList(object? pred, object? lst)
+    {
+        var yes = new List<object?>();
+        var cur = lst;
+        while (cur is Cell c)
+        {
+            if (ReferenceEquals(App(pred, c.Car), Const.TRUE)) break;
+            yes.Add(c.Car);
+            cur = c.Cdr;
+        }
+        return new Cell(yes.ToCell(), new Cell(cur, Const.NIL));
+    }
+
+    private static object? LastPair(object? lst)
+    {
+        var cur = lst;
+        while (cur is Cell c && c.Cdr is Cell) cur = c.Cdr;
+        return cur;
+    }
+
+    private static long BitsToInteger(object? lst)
+    {
+        long r = 0;
+        int bit = 0;
+        foreach (var v in lst.Cells())
+        {
+            if (ReferenceEquals(v, Const.TRUE) || (v is Sym vs && vs.Name == "1") ||
+                (v is long l && l == 1) || (v is int iv && iv == 1) ||
+                (v is BigInteger bi && bi == BigInteger.One))
+                r |= 1L << bit;
+            bit++;
+        }
+        return r;
+    }
+
+    private static object? IntegerToBitsList(long n, int k)
+    {
+        var bits = new List<object?>();
+        long temp = Math.Abs(n);
+        while (temp != 0) { bits.Add(temp & 1); temp >>= 1; }
+        if (bits.Count == 0) bits.Add(0L);
+        while (bits.Count < k) bits.Add(0L);
+        return bits.ToCell();
+    }
+
+    private static object? PFormat(object?[] args)
+    {
+        if (args.Length >= 2 && args[0] is ITuple it && it.Length > 2 && it[0] is "port" && it[1] is "output" && it[2] is StringBuilder sb)
+        {
+            sb.Append(FormatScheme(args[1], args[2..]));
+            return Const.VOID;
+        }
+        return new SchemeString(FormatScheme(args[0], args[1..]));
+    }
+
+    private static string FormatScheme(object? fmt, object?[] args)
+    {
+        var parts = new StringBuilder();
+        var f = ToStr(fmt);
+        int i = 0, ai = 0;
+        while (i < f.Length)
+        {
+            if (f[i] == '~' && i + 1 < f.Length)
+            {
+                char c = f[i + 1];
+                if (c == 'a')
+                {
+                    parts.Append(args[ai] is string or SchemeString ? ToStr(args[ai]) : Printer.Format(args[ai]));
+                    ai++; i += 2;
+                }
+                else if (c == 's')
+                {
+                    parts.Append(Printer.Format(args[ai]));
+                    ai++; i += 2;
+                }
+                else if (c == 'd')
+                {
+                    if (ai >= args.Length) throw new SchemeException("format: not enough arguments");
+                    parts.Append(NumericHelper.ToLong(args[ai]));
+                    ai++; i += 2;
+                }
+                else if (c == '%') { parts.Append('\n'); i += 2; }
+                else if (c == '~') { parts.Append('~'); i += 2; }
+                else { parts.Append(f[i]); i += 2; }
+            }
+            else { parts.Append(f[i]); i++; }
+        }
+        return parts.ToString();
+    }
+
+    private static Func<object?[], object?> MakeParameter(object? init, object? converter)
+    {
+        object? box = converter is not null ? App(converter, init) : init;
+        return args =>
+        {
+            if (args.Length == 0) return box;
+            if (args.Length == 1)
+            {
+                box = converter is not null ? App(converter, args[0]) : args[0];
+                return Const.VOID;
+            }
+            throw new SchemeException("make-parameter: too many arguments");
+        };
+    }
+
+    private static Func<object?[], object?> MakeCoroutineGenerator(object? proc)
+    {
+        var vals = new System.Collections.Concurrent.ConcurrentQueue<object?>();
+        var done = new ManualResetEventSlim(false);
+        var resume = new ManualResetEventSlim(false);
+        bool started = false;
+        Func<object?[], object?> yield = v =>
+        {
+            vals.Enqueue(v.Length > 0 ? v[0] : Const.VOID);
+            resume.Reset();
+            while (!resume.Wait(50) && !done.IsSet) { }
+            return Const.VOID;
+        };
+        void Run()
+        {
+            try { App(proc, yield); }
+            finally { vals.Enqueue(Const.EOF); done.Set(); }
+        }
+        var t = new Thread(Run) { IsBackground = true };
+        t.Start();
+        return _ =>
+        {
+            if (done.IsSet && vals.IsEmpty) return Const.EOF;
+            if (!started) { started = true; resume.Set(); }
+            object? v = Const.EOF;
+            while (!vals.TryDequeue(out v))
+            {
+                if (done.IsSet && vals.IsEmpty) return Const.EOF;
+                Thread.Sleep(5);
+            }
+            resume.Set();
+            return v;
+        };
+    }
+
     private static object? App(object? proc, params object?[] args)
     {
         if (proc is Func<object?[], object?> fn) return fn(args);
