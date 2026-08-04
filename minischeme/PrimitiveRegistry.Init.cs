@@ -519,5 +519,23 @@ public static partial class PrimitiveRegistry
         _b("sort", PSort);
         _b("list-sort", PSort);
         _b("list-stable-sort", PSort);
+        // scm 库(SRFI-1 等)用 named-let/do 实现的 vector/unfold/bytevector 也可能坏，覆盖为原生版
+        _b("vector-append", VectorAppend);
+        _b("vector-map", VectorMap);
+        _b("vector-copy", VectorCopy);
+        _b("vector-for-each", VectorForEach);
+        _b("vector-fold", args => VectorFold(args, false));
+        _b("vector-fold-right", args => VectorFold(args, true));
+        _b("vector-count", args => VectorCount(args[0], args[1]));
+        _b("unfold", args => Unfold(args, false));
+        _b("unfold-right", args => Unfold(args, true));
+        _b("bytevector->string", args => new SchemeString(args[0] is SchemeBytevector bv ? Encoding.UTF8.GetString(bv.Data) : ToStr(args[0])));
+        _b("string->bytevector", args => new SchemeBytevector(Encoding.UTF8.GetBytes(ToStr(args[0]))));
+        _b("vector-concatenate", args => VectorConcat(args[0]));
+        _b("vector-reverse", VectorReverse);
+        _b("vector-empty?", args => ((SchemeVector)args[0]!).Length == 0 ? Const.TRUE : Const.FALSE);
+        _b("condition/report-string", args => new SchemeString(ReportString(args[0])));
+        _b("string-split", args => StrSplit(args));
+        _b("string-join", args => StrJoin(args));
     }
 }

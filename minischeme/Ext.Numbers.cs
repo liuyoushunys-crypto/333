@@ -72,7 +72,7 @@ public static partial class PrimitiveRegistry
         _b("ceiling->exact", args => args[0] is double dc ? (object?)(long)Math.Ceiling(dc) : args[0] is SchemeFraction fr2 ? (object?)(long)Math.Ceiling((double)fr2.Num / (double)fr2.Den) : args[0]);
         _b("round->exact", args => args[0] is double dr ? (object?)(long)Math.Round(dr) : args[0] is SchemeFraction fr3 ? (object?)(long)Math.Round((double)fr3.Num / (double)fr3.Den) : args[0]);
         _b("truncate->exact", args => args[0] is double dt ? (object?)(long)dt : args[0] is SchemeFraction fr4 ? (object?)(long)(fr4.Num / fr4.Den) : args[0]);
-        _b("exact", args => args[0]);
+        _b("exact", args => args[0] is double de && de == Math.Floor(de) ? (object?)(long)de : args[0]);
         _b("inexact", args => NumericHelper.ToDouble(args[0]));
         return Const.VOID;
     }
@@ -372,14 +372,14 @@ public static partial class PrimitiveRegistry
 
     private static object? FibPair(long n)
     {
-        if (n <= 0) return new Cell(0L, new Cell(1L, Const.NIL));
+        if (n <= 0) return new Cell(0L, 1L);
         var pair = FibPair(n / 2);
         long a = NumericHelper.ToLong(((Cell)pair).Car);
         long b = NumericHelper.ToLong(((Cell)pair).Cdr);
         long c = a * (b * 2 - a);
         long d = a * a + b * b;
-        if (n % 2 == 0) return new Cell(c, new Cell(d, Const.NIL));
-        return new Cell(d, new Cell(c + d, Const.NIL));
+        if (n % 2 == 0) return new Cell(c, d);
+        return new Cell(d, c + d);
     }
 
     private static bool IsPrime(long n)

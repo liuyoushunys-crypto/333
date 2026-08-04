@@ -222,8 +222,8 @@ public static partial class PrimitiveRegistry
             }
             else
             {
-                var r = Gcd(acc is int ? (long)(int)acc : (long)acc!, NumericHelper.ToBigInt(x));
-                acc = r <= long.MaxValue ? (long)r : r;
+                var r = Gcd(NumericHelper.ToBigInt(acc), NumericHelper.ToBigInt(x));
+                acc = r <= long.MaxValue && r >= long.MinValue ? (object?)(long)r : r;
             }
         }
         return acc!;
@@ -683,6 +683,7 @@ public static partial class PrimitiveRegistry
     static object? PReadString(object?[] args)
     {
         var n = NumericHelper.ToInt(args[0]);
+        if (n <= 0) return new SchemeString("");
         if (args.Length > 1 && args[1] is System.Runtime.CompilerServices.ITuple port && port.Length >= 3 && port[0] is "port" && port[1] is "input")
         {
             if (port[2] is StreamReader sr) { var buf = new char[n]; var read = sr.ReadBlock(buf, 0, n); return read > 0 ? new string(buf, 0, read) : Const.EOF; }
@@ -928,7 +929,9 @@ public static partial class PrimitiveRegistry
     {
         var ht = (Dictionary<object, object?>)args[0]!;
         var key = args[1] ?? throw new Exception("hash-table-ref: null key");
-        return ht.TryGetValue(key, out var v) ? v : throw new Exception("key not found");
+        return ht.TryGetValue(key, out var v) ? v
+            : args.Length > 2 ? args[2]
+            : Const.FALSE; // 对齐 Python: 无默认值时缺失返回 #f (bimap 等依赖)
     }
 
     static object? PHashTableSetBang(object?[] args)
