@@ -308,7 +308,7 @@ public static class Compiler
                 }
                 catch { }
             }
-            return new CompiledLambda(func, lp.Params, lp.ClosureEnv, lp.IsSimple, lambda);
+            return new CompiledLambda(func, lp.Params, lp.ClosureEnv, lp.IsSimple);
         }
         catch (Exception ex)
         {

@@ -1,4 +1,3 @@
-using System.Linq.Expressions;
 using Miniscm.Types;
 
 namespace Miniscm.Compiler;
@@ -10,16 +9,14 @@ public sealed class CompiledLambda
     public Env Env { get; }
     public bool IsSimple { get; }
     public int NRegular { get; }
-    public LambdaExpression? DebugExpr { get; }
 
-    public CompiledLambda(Func<Env, object?[], object?> pyFunc, List<string> @params, Env env, bool isSimple, LambdaExpression? debugExpr = null)
+    public CompiledLambda(Func<Env, object?[], object?> pyFunc, List<string> @params, Env env, bool isSimple)
     {
         PyFunc = pyFunc;
         Params = @params;
         Env = env;
         IsSimple = isSimple;
         NRegular = isSimple ? @params.Count : @params.Count - 1;
-        DebugExpr = debugExpr;
     }
 
     public object? Invoke(Env env, object?[] args)
