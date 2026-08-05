@@ -45,7 +45,7 @@ CORE_TESTS = [
 KNOWN_FAILS = {
 }
 
-def run_test(path, timeout=180):
+def run_test(path, timeout=20):
     """运行单个测试文件, 返回 (pass, fail, errors)。"""
     full = path if os.path.isabs(path) else os.path.join(BASE, path)
     if not os.path.exists(full):

@@ -40,8 +40,8 @@
 (hash-table-set! ht 'a 1)
 (hash-table-set! ht 'b 2)
 (check "hash-table-ref/default" (hash-table-ref/default ht 'c 0) 0)
-(check "hash-table-keys" (hash-table-size ht) 2)
 (check "hash-table-values" (hash-table-size ht) 2)
+(check "hash-table-keys" (hash-table-size ht) 2)
 
 ;;──────────────────── Boxes (SRFI-111) ────────────────────
 (define bx (box 5))

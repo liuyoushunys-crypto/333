@@ -22,6 +22,34 @@
 (display "\n=== boot-core.scm 全面测试 ===\n\n")
 
 ;; ════════════════════════════════════════════════════════════════
+;; 16. Integration: macros compose
+;; ════════════════════════════════════════════════════════════════
+
+(display "\n-- 宏组合测试\n")
+
+(test-equal "do + let + cond" 10
+  (do ((i 0 (+ i 1)) (acc 0 (let ((x i)) (+ acc x))))
+      ((= i 5) acc)))
+
+(test-equal "guard + do" 'done
+  (guard (e (else 'error))
+    (do ((i 0 (+ i 1))) ((= i 3) 'done))))
+
+(test-equal "case + let" 'yes
+  (let ((x 2))
+    (case x ((1) 'no) ((2) 'yes) (else 'maybe))))
+
+(define-record-type tree (make-tree val left right) tree?
+  (val val)
+  (left left)
+  (right right))
+
+(define t (make-tree 5 (make-tree 3 '() '()) (make-tree 8 '() '())))
+(test-equal "tree val" 5 (val t))
+(test-equal "tree left val" 3 (val (left t)))
+(test-equal "tree right val" 8 (val (right t)))
+
+;; ════════════════════════════════════════════════════════════════
 ;; 1. let / let* / letrec
 ;; ════════════════════════════════════════════════════════════════
 
@@ -480,33 +508,6 @@
 (test-equal "void? of bool" #f (void? #f))
 (test-equal "void? sentinel" #t (void? (void)))
 
-;; ════════════════════════════════════════════════════════════════
-;; 16. Integration: macros compose
-;; ════════════════════════════════════════════════════════════════
-
-(display "\n-- 宏组合测试\n")
-
-(test-equal "do + let + cond" 10
-  (do ((i 0 (+ i 1)) (acc 0 (let ((x i)) (+ acc x))))
-      ((= i 5) acc)))
-
-(test-equal "guard + do" 'done
-  (guard (e (else 'error))
-    (do ((i 0 (+ i 1))) ((= i 3) 'done))))
-
-(test-equal "case + let" 'yes
-  (let ((x 2))
-    (case x ((1) 'no) ((2) 'yes) (else 'maybe))))
-
-(define-record-type tree (make-tree val left right) tree?
-  (val val)
-  (left left)
-  (right right))
-
-(define t (make-tree 5 (make-tree 3 '() '()) (make-tree 8 '() '())))
-(test-equal "tree val" 5 (val t))
-(test-equal "tree left val" 3 (val (left t)))
-(test-equal "tree right val" 8 (val (right t)))
 
 ;; ════════════════════════════════════════════════════════════════
 ;; 17. Edge cases

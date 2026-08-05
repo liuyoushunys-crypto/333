@@ -1,4 +1,3 @@
-;; test-lang-kt.scm — isolated tests for lang-kt.scm DSL
 (define (t label actual expected)
   (if (equal? actual expected)
       (begin (display "[PASS] ") (display label) (newline))
