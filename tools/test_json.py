@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import sys
-sys.path.insert(0, '/miniscm')
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'miniscm'))
 from mtypes import *
 from primitives import initenv
 initenv()

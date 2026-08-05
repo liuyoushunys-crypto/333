@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Find tests that only run with pyb=True (use primitives_ext.py functions)"""
-import re, glob
+import os, re, glob
 
-with open('test/test-ext-accuracy.scm') as f:
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+with open(os.path.join(ROOT, 'test/test-ext-accuracy.scm')) as f:
     content = f.read()
 
 checks = re.findall(r'\(check "([^"]+)"', content)
 print(f'Total check forms: {len(checks)}')
 
 # Core builtins from primitives.py
-with open('primitives.py') as f:
+with open(os.path.join(ROOT, 'miniscm/primitives.py')) as f:
     py = f.read()
 core = set()
 for m in re.finditer(r"builtin\s*\(\s*'([^']+)'\s*,", py):
@@ -24,7 +26,7 @@ for m in re.finditer(r"builtin\s*\(\s*'([^']+)'\s*,", ext_content):
 
 # Scheme lib
 scheme = set()
-for fn in sorted(glob.glob('scm/*.scm')):
+for fn in sorted(glob.glob(os.path.join(ROOT, 'miniscm/scm/*.scm'))):
     with open(fn) as f:
         scm = f.read()
     for m in re.finditer(r'\(define\s+\(([a-z][a-z0-9?<=!*/>-]+)', scm):

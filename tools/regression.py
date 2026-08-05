@@ -8,7 +8,8 @@
 """
 import subprocess, sys, os, re, glob
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+BASE = os.path.join(ROOT, 'miniscm')
 PY = os.path.join(BASE, 'miniscm.py')
 
 # 默认核心回归测试集 (pyb=True)
@@ -52,7 +53,7 @@ def run_test(path, timeout=20):
         return 0, 0, [f'FILE NOT FOUND: {path}']
     try:
         r = subprocess.run([sys.executable, PY, full],
-                           capture_output=True, text=True, timeout=timeout)
+                           capture_output=True, text=True, timeout=timeout, cwd=BASE)
         out = r.stdout
     except subprocess.TimeoutExpired:
         return 0, 0, ['TIMEOUT']
