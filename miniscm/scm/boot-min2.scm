@@ -3,7 +3,7 @@
 (define (void? x) (eq? x void-sentinel))
 (define nil '())
 (define (my-macro-expand expr env) (my-macro-expand-helper expr env))
-(define (my-macro-expand-helper expr env) (if (pair? expr) (if (eq? (car expr) 'quote) expr (if (eq? (car expr) 'quasiquote) expr ((lambda (expanded) (if (eq? expanded #f) (cons (my-macro-expand (car expr) env) (my-macro-expand (cdr expr) env)) (my-macro-expand-helper expanded env))) (sx-expand-call expr env)))) expr)) 
+(define (my-macro-expand-helper expr env) (if (pair? expr) (if (eq? (car expr) 'quote) expr (if (eq? (car expr) 'quasiquote) expr ((lambda (expanded) (if (eq? expanded #f) (cons (my-macro-expand (car expr) env) (my-macro-expand (cdr expr) env)) (if (equal? expanded expr) expr (my-macro-expand-helper expanded env)))) (sx-expand-call expr env)))) expr)) 
 (define (my-bind-pattern pattern args) (if (symbol? pattern) (begin (if (eq? pattern (quote _)) (quote ()) (list (cons pattern args)))) (if (not (pair? pattern)) (begin (quote ())) (if (null? pattern) (begin (quote ())) (begin (append (my-bind-elem (car pattern) (car args)) (my-bind-pattern (cdr pattern) (cdr args))))))))
 (define (my-bind-elem elem arg) (if (eq? elem (quote _)) (begin (quote ())) (if (symbol? elem) (begin (list (cons elem arg))) (if (if (pair? elem) (if (symbol? (car elem)) (null? (cdr elem)) #f) #f) (begin (list (cons (car elem) arg))) (if (pair? elem) (begin (my-bind-pattern elem arg)) (begin (quote ())))))))
 (define (sx-macro-expand pattern body args callenv) ((lambda (bindings) ((lambda (app-form) (begin (eval app-form callenv))) (cons (cons (quote lambda) (cons (map (lambda (b) (car b)) bindings) body)) (map (lambda (b) (list (quote quote) (cdr b))) bindings)))) (my-bind-pattern pattern args)))

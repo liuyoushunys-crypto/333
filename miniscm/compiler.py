@@ -546,23 +546,23 @@ class CompiledLambda:
 
     def __call__(self, *args):
         if self.is_simple:
-            return self.py_func(self.env, *args)
+            return self.py_func(Env(self.env), *args)
         from mtypes import _lst
         n = self._n_regular
         regular_args = list(args[:n])
         rest_args = _lst(args[n:])
-        return self.py_func(self.env, *(regular_args + [rest_args]))
+        return self.py_func(Env(self.env), *(regular_args + [rest_args]))
 
 # ── 复盘18：提取统一调用路径供 __mscm_invoke__ 和 LambdaProc 复用 ──
 def _invoke_compiled(cv, args_val):
     """CompiledLambda 统一调用路径"""
     if cv.is_simple:
-        return cv.py_func(cv.env, *args_val)
+        return cv.py_func(Env(cv.env), *args_val)
     from mtypes import _lst
     n = cv._n_regular
     regular_args = list(args_val[:n])
     rest_args = _lst(args_val[n:])
-    return cv.py_func(cv.env, *(regular_args + [rest_args]))
+    return cv.py_func(Env(cv.env), *(regular_args + [rest_args]))
 
 # ═══════════════════════════════════════════════════════════════
 # 运行时支撑函数

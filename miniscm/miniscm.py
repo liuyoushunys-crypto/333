@@ -193,8 +193,14 @@ def h_define(args,env):
             has_rest = True
         # 传递定义变量名给 LambdaProc
         env.data[name] = LambdaProc(params, args.cdr, env, not has_rest, name=name)
-    else: 
-        env.define(str(pat), _eval(args.cdr.car, env))
+    else:
+        name = str(pat)
+        val = _eval(args.cdr.car, env)
+        # (define name (lambda ...)) 形式同样传递名字, 使宏展开生成的
+        # 函数(define-syntax/syntax-rules 展开产物)也能 JIT 编译缓存
+        if isinstance(val, LambdaProc) and val.name is None:
+            val.name = name
+        env.define(name, val)
     # 注意：define 的返回值在 R5RS 中通常是未指定的；这里返回被定义符号
     return Sym(str(pat))
 
@@ -287,10 +293,10 @@ def _eval_compiled_lambda(cv, _cur, env):
     """执行已编译的 LambdaProc。"""
     evaled_args = eval_args_to_array(_cur, env)
     if cv.is_simple:
-        return cv.py_func(cv.env, *evaled_args)
+        return cv.py_func(Env(cv.env), *evaled_args)
     from mtypes import _lst
     n_reg = len(cv.params) - 1
-    return cv.py_func(cv.env, *evaled_args[:n_reg], _lst(evaled_args[n_reg:]))
+    return cv.py_func(Env(cv.env), *evaled_args[:n_reg], _lst(evaled_args[n_reg:]))
 
 def _eval_tuple_lambda(proc_val, _cur, env):
     """执行老的 tuple lambda 格式。"""

@@ -658,42 +658,40 @@ def stream_ref_fn(s, n):
     return NIL
 
 
+def _stream_advance(v):
+    if isinstance(v, Promise):
+        return do_force(v)
+    return v
+
+
 def stream_map_fn(f, s):
-    def gen():
-        cur = s
-        while isinstance(cur, Cell):
-            yield f(cur.car)
-            cur = _stream_next(cur)
-    it = gen()
-    try:
-        first = next(it)
-    except StopIteration:
-        return NIL
-    result = Cell(first, NIL)
-    cur = result
-    for val in it:
-        cur.cdr = Cell(val, NIL)
-        cur = cur.cdr
-    return result
+    cur = s
+    def _step():
+        nonlocal cur
+        if cur is NIL or not isinstance(cur, Cell):
+            return NIL
+        mapped = f(cur.car)
+        nxt = _stream_advance(cur.cdr)
+        out = Cell(mapped, Promise(_step))
+        cur = nxt
+        return out
+    return _step()
 
 
 def stream_filter_fn(pred, s):
-    def gen():
-        cur = s
-        while isinstance(cur, Cell):
-            if pred(cur.car) is TRUE: yield cur.car
-            cur = _stream_next(cur)
-    it = gen()
-    try:
-        first = next(it)
-    except StopIteration:
-        return NIL
-    result = Cell(first, NIL)
-    cur = result
-    for val in it:
-        cur.cdr = Cell(val, NIL)
-        cur = cur.cdr
-    return result
+    cur = s
+    def _step():
+        nonlocal cur
+        while True:
+            if cur is NIL or not isinstance(cur, Cell):
+                return NIL
+            if pred(cur.car) is TRUE:
+                nxt = _stream_advance(cur.cdr)
+                out = Cell(cur.car, Promise(_step))
+                cur = nxt
+                return out
+            cur = _stream_advance(cur.cdr)
+    return _step()
 
 
 def stream_take_fn(s, n):

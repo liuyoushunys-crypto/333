@@ -101,7 +101,11 @@ public static class Evaluator
         }
         var name2 = a.Car.AsString();
         if (a.Cdr is Cell valCell)
-            env.Data[name2] = Eval(valCell.Car, env);
+        {
+            var val = Eval(valCell.Car, env);
+            if (val is LambdaProc lp && lp.Name is null) lp.Name = name2;
+            env.Data[name2] = val;
+        }
         return Sym.Intern(name2);
     }
 
