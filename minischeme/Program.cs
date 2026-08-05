@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Miniscm.Types;
 using Miniscm.Eval;
 using Miniscm.Primitives;
@@ -119,6 +120,48 @@ public class Program
                 continue;
             }
 
+            if (line.StartsWith(",dis"))
+            {
+                var rest = line[",dis".Length..].Trim();
+                if (rest.Length == 0)
+                {
+                    Console.WriteLine("usage: ,dis <name>");
+                    continue;
+                }
+                try
+                {
+                    if (Evaluator.GlobalEnv.Data.TryGetValue(rest, out var val))
+                    {
+                        if (val is LambdaProc lp)
+                        {
+                            if (lp.CompiledVersion is CompiledLambda cv)
+                            {
+                                if (cv.DebugExpr is not null)
+                                {
+                                    Console.WriteLine(IlAsm.Disassemble(cv.PyFunc.Method, cv.DebugExpr));
+                                }
+                                else
+                                    Console.WriteLine($"{rest}: compiled without debug expr");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"{rest}: not JIT-compiled (interpreter mode)");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"{rest}: {val?.GetType().Name} — not a user procedure");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"unbound: {rest}");
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"error: {ex}"); }
+                continue;
+            }
+
             try
             {
                 var exprs = Parser.ReadAll(line);
@@ -132,5 +175,25 @@ public class Program
             }
             catch { }
         }
+    }
+}
+
+class ExprTreePrinter : ExpressionVisitor
+{
+    int _depth;
+    public static void Print(LambdaExpression e)
+    {
+        Console.WriteLine($"lambda {e}");
+        var p = new ExprTreePrinter { _depth = 1 };
+        p.Visit(e.Body);
+    }
+    public override Expression? Visit(Expression? node)
+    {
+        if (node is null) return node;
+        Console.WriteLine($"{new string(' ', _depth * 2)}{node.NodeType}: {node}");
+        _depth++;
+        var result = base.Visit(node);
+        _depth--;
+        return result;
     }
 }

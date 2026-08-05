@@ -542,6 +542,29 @@ def repl():
                 except Exception as e:
                     print(f"error: {e}")
                 continue
+            if source.strip().startswith(',dis'):
+                rest = source.strip()[len(',dis'):].strip()
+                if not rest:
+                    print("usage: ,dis <name>")
+                    continue
+                try:
+                    import dis as _py_dis
+                    val = be.lookup_silent(rest, _UNBOUND)
+                    if val is _UNBOUND:
+                        print(f"unbound: {rest}")
+                        continue
+                    if isinstance(val, LambdaProc):
+                        cv = val.compiled_version
+                        if cv is None:
+                            print(f"{rest}: not JIT-compiled (interpreter mode)")
+                            continue
+                        fn = getattr(cv, 'py_func', cv)
+                        _py_dis.dis(fn)
+                    else:
+                        print(f"{rest}: {type(val).__name__} — not a user procedure")
+                except Exception as e:
+                    print(f"error: {e}")
+                continue
             try:
                 for expr in read_all(source):
                     if expr is EOF: continue
