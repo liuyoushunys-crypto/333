@@ -1,1 +1,0 @@
-../../miniscm/scm/boot-min2.scm

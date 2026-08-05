@@ -1,1 +1,0 @@
-../../miniscm/scm/srfi-1-list.scm

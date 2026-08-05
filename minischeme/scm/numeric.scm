@@ -1,1 +1,0 @@
-../../miniscm/scm/numeric.scm

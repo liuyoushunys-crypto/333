@@ -1,1 +1,0 @@
-../../miniscm/scm/srfi-13-string.scm

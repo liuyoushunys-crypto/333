@@ -1,1 +1,0 @@
-../../miniscm/scm/srfi-14-char-set.scm
