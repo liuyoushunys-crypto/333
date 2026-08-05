@@ -122,17 +122,42 @@ public static class Compiler
         return sb.ToString();
     }
 
-    // 内容 hash: 用 body 源码的 SHA256 前 16 位, 保证不同内容不同文件, 同名不覆盖
-    static string BodyHash(string bodySrc)
+    // 结构哈希 (FNV-1a 64-bit): 直接遍历 Cell/Sym 树, 不生成整树字符串,
+    // 原子节点用 Printer.Format 单值打印 (与 Python body_hash_obj 的 _pr 一致, 共享 .mscm_cache)。
+    static string BodyHashStruct(object? body)
     {
-        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(bodySrc));
-        return Convert.ToHexString(bytes)[..16];
+        ulong h = 0xCBF29CE484222325UL;
+        void Mix(byte b) => h = (h ^ b) * 0x100000001B3UL;
+        void Walk(object? x)
+        {
+            while (x is Cell c)
+            {
+                Mix(0xFE);
+                Walk(c.Car);
+                x = c.Cdr;
+            }
+            if (x is Nil) Mix(0xFD);
+            else if (x is Sym s)
+            {
+                Mix(0xFC);
+                foreach (var b in System.Text.Encoding.UTF8.GetBytes(s.Name)) Mix(b);
+                Mix(0);
+            }
+            else
+            {
+                Mix(0xFB);
+                foreach (var b in System.Text.Encoding.UTF8.GetBytes(Printer.Format(x))) Mix(b);
+                Mix(0);
+            }
+        }
+        Walk(body);
+        return h.ToString("X16");
     }
 
     // Bump to invalidate cached expansions whose semantics changed
     // (e.g. quasiquote was previously expanded at compile time with a
     // wrong env, producing stale literals).
-    const int CacheVersion = 4;
+    const int CacheVersion = 5;
 
     // quasiquote depends on the runtime env (unquote), so it cannot be
     // pre-expanded at JIT compile time. If a lambda body contains one,
@@ -163,7 +188,7 @@ public static class Compiler
         if (lp.Name is not null)
         {
             var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
-            var failName = SafeFileName(lp.Name) + "_" + BodyHash(Printer.Format(lp.Body)) + ".fail";
+            var failName = SafeFileName(lp.Name) + "_" + BodyHashStruct(lp.Body) + ".fail";
             failFile = Path.Combine(cacheDir, failName);
             if (File.Exists(failFile)) return null;
         }
@@ -191,16 +216,15 @@ public static class Compiler
             if (lp.Name is not null)
             {
                 var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
-                var bodySrc = Printer.Format(lp.Body);
-                // 用内容 hash 命名缓存文件, 避免同名函数(不同内容)互相覆盖
-                cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + "_" + BodyHash(bodySrc) + ".json");
+                // 用结构 hash 命名缓存文件, 避免同名函数(不同内容)互相覆盖
+                cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + "_" + BodyHashStruct(lp.Body) + ".json");
                 if (File.Exists(cacheFile))
                 {
                     try
                     {
                         var json = File.ReadAllText(cacheFile);
                         var entry = JsonSerializer.Deserialize<CacheEntry>(json);
-                        if (entry?.Version == CacheVersion && entry.Hash == bodySrc
+                        if (entry?.Version == CacheVersion && entry.Hash == BodyHashStruct(lp.Body)
                             && entry.Params is not null && entry.Params.SequenceEqual(lp.Params)
                             && entry.Body is not null)
                         {
@@ -269,11 +293,10 @@ public static class Compiler
                 {
                     var cacheDir = Path.GetDirectoryName(cacheFile)!;
                     Directory.CreateDirectory(cacheDir);
-                    var bodySrc = Printer.Format(lp.Body);
                     var entry = new CacheEntry
                     {
                         Version = CacheVersion,
-                        Hash = bodySrc,
+                        Hash = BodyHashStruct(lp.Body),
                         Params = lp.Params,
                         Body = bodyForms.Select(f => Printer.Format(f)).ToList()
                     };

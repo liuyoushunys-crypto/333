@@ -29,12 +29,11 @@
 import ast
 import os
 import sys
-import hashlib
 import json
 from contextlib import contextmanager
 from fractions import Fraction
 
-CACHE_VERSION = 5  # 缓存格式版本，更改缓存格式时递增
+CACHE_VERSION = 6  # 缓存格式版本，更改缓存格式时递增
 
 PYB_MODE = 'scm'
 
@@ -1300,7 +1299,7 @@ def compile_lambda_proc(lambda_proc):
     if lambda_proc.name is not None:
         _fail_file = os.path.join(CACHE_DIR,
             safe_file_name(lambda_proc.name) + "_" +
-            body_hash_src(_pr(lambda_proc.body)) + ".fail")
+            body_hash_obj(lambda_proc.body) + ".fail")
         if os.path.exists(_fail_file):
             return None
 
@@ -1325,18 +1324,17 @@ def compile_lambda_proc(lambda_proc):
             body_forms = []
             cur = lambda_proc.body
             cache_file = None
-            body_src = None
             if lambda_proc.name is not None:
                 cache_dir = CACHE_DIR
-                body_src = _pr(lambda_proc.body)
                 cache_file = os.path.join(cache_dir,
-                    safe_file_name(lambda_proc.name) + "_" + body_hash_src(body_src) + ".json")
+                    safe_file_name(lambda_proc.name) + "_" +
+                    body_hash_obj(lambda_proc.body) + ".json")
                 if os.path.exists(cache_file):
                     try:
                         with open(cache_file) as f:
                             entry = json.load(f)
                         if (entry.get("version") == CACHE_VERSION
-                                and entry.get("hash") == body_src
+                                and entry.get("hash") == body_hash_obj(lambda_proc.body)
                                 and entry.get("params") == lambda_proc.params
                                 and entry.get("body") is not None):
                             from reader import read
@@ -1430,7 +1428,7 @@ def compile_lambda_proc(lambda_proc):
                     os.makedirs(CACHE_DIR, exist_ok=True)
                     entry = {
                         "version": CACHE_VERSION,
-                        "hash": body_src,
+                        "hash": body_hash_obj(lambda_proc.body),
                         "params": lambda_proc.params,
                         "body": [_pr(f) for f in body_forms]
                     }
@@ -1469,9 +1467,34 @@ def safe_file_name(name):
             sb.append(ch)
     return "".join(sb)
 
-# 与 C# Compiler.BodyHash 一致 — 用 body 源码 hash 命名缓存文件 (大写 hex, 与 C# ToHexString 一致)
-def body_hash_src(body_src):
-    return hashlib.sha256(body_src.encode('utf-8')).hexdigest()[:16].upper()
+# 与 C# Compiler.BodyHashStruct 一致 — 结构哈希 (FNV-1a 64-bit):
+# 直接遍历 Cell/Sym 树, 不生成整树字符串, 原子节点用 _pr 单值打印
+# (与 C# Printer.Format 输出一致, 现有共享缓存已验证等价)。
+# 返回 16 位大写 hex, 与 C# ToString("X16") 一致。
+def body_hash_obj(body):
+    h = 0xCBF29CE484222325
+    def mix(b):
+        nonlocal h
+        h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    def walk(x):
+        while isinstance(x, Cell):
+            mix(0xFE)
+            walk(x.car)
+            x = x.cdr
+        if x is NIL:
+            mix(0xFD)
+        elif isinstance(x, Sym):
+            mix(0xFC)
+            for b in x.name.encode('utf-8'):
+                mix(b)
+            mix(0)
+        else:
+            mix(0xFB)
+            for b in _pr(x).encode('utf-8'):
+                mix(b)
+            mix(0)
+    walk(body)
+    return f"{h:016X}"
 
 class LambdaProc:
     __slots__ = ('name', 'params', 'body', 'env', 'is_simple',
