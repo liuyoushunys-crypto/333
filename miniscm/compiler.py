@@ -148,7 +148,9 @@ else:
     def _JIT_LOG(*a):
         pass
 
-CACHE_DIR = "./.mscm_cache"
+# 缓存目录为 CWD 上一级 (与 minischeme Compiler.CacheDir 一致)。
+# 不再用 ./ 相对路径或 symlink (rm -rf .mscm_cache* 会误删 symlink)。
+CACHE_DIR = os.path.abspath(os.path.join(os.getcwd(), '../.mscm_cache'))
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 # ═══════════════════════════════════════════════════════════════
@@ -1244,13 +1246,12 @@ class AstExprCompiler:
 # 复盘11：MSCM_JIT_DEBUG 下打印异常 traceback
 # ═══════════════════════════════════════════════════════════════
 
-# 宏展开委托给 Scheme 端 my-macro-expand (与 minischeme Compiler.ExpandViaScheme 一致)
-# expr 是代码, 需 quote 防止被 Eval 求值
+# 宏展开直接调用原生实现 minref.my_macro_expand (boot-min2.scm 的 Python 移植,
+# 与 minischeme Compiler.ExpandViaScheme → MinRef.MyMacroExpand 一致)。
+# boot-min2.scm 精简后 Scheme 端已无 my-macro-expand, 不能再经解释器委托。
 def expand_via_scheme(expr, env):
-    quoted = Cell(SYM_QUOTE, Cell(expr, NIL))
-    call = Cell(Sym('my-macro-expand'), Cell(quoted, Cell(env, NIL)))
-    from miniscm import _eval
-    return _eval(call, env)
+    from minref import my_macro_expand
+    return my_macro_expand(expr, env)
 
 # quasiquote 依赖运行时环境 (unquote), 不能在 JIT 编译期预展开。
 # 若 lambda 体包含 quasiquote, 跳过 JIT 让解释器展开。

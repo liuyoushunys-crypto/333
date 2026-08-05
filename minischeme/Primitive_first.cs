@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Miniscm.Types;
 using Miniscm.Eval;
+using Miniscm.Compiler;
 using Void = Miniscm.Types.Void;
 
 namespace Miniscm.Primitives;
@@ -297,7 +298,6 @@ public static partial class PrimitiveRegistry
         }
         throw new Exception("sx-defmacro: expected (sx-defmacro name pattern body [env])");
     }
-
 
     static object? PSxDefinedQ(object?[] args)
     {

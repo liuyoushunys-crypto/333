@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Miniscm.Types;
 using Miniscm.Eval;
+using Miniscm.Compiler;
 using Void = Miniscm.Types.Void;
 
 namespace Miniscm.Primitives;
@@ -61,6 +62,17 @@ public static partial class PrimitiveRegistry
         _b("sx-defined?", PSxDefinedQ);
         _b("sx-defmacro", PSxDefmacro);
         _b("sx-expand-env", args => Evaluator.CurrentExpandEnv ?? Evaluator.GlobalEnv);
+        _b("sx-macro-expand", args => MinRef.SxMacroExpand(args[0], args[1], args[2], (Env)args[3]));
+        _b("qq-walk", args => MinRef.QqWalk(args[0], (Env)args[1]));
+        _b("sx-expand", args => NativeSyntax.SxExpand(args[0], MinRef.SxGetBindings(), MinRef.SxMutatedVars, MinRef.SxDefEnv()));
+        _b("sx-get-bindings", args => MinRef.SxGetBindings());
+        _b("sx-gen-temps", args => MinRef.SxGenTemps(args[0]));
+        _b("sx-syntax-case", args => MinRef.SxSyntaxCase(args[0], args[1], args[2]));
+        _b("sx-with-syntax", args => MinRef.SxWithSyntax(args[0], args[1]));
+        _b("sx-let-syntax", args => MinRef.SxLetSyntax(args[0], args[1]));
+        _b("sx-make-macro-binding", args => MinRef.SxMakeMacroBinding(args[0]));
+        _b("qs-expand", args => MinRef.QsExpand(args[0]));
+        _b("sx-dispatch", args => MinRef.SxDispatch(args[0], args[1], args[2]));
         _b("sx-expand-call", args =>
         {
             if (args.Length >= 1 && args[0] is Cell call)

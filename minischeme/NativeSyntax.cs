@@ -12,10 +12,10 @@ public static class NativeSyntax
     static readonly Sym SX_HYGIENE = Sym.Intern("sx-hygiene");
     static readonly Sym SETBANG = Sym.Intern("set!");
 
-    static bool IsProcedure(object? v) =>
+    internal static bool IsProcedure(object? v) =>
         v is Delegate or LambdaProc or CompiledLambda or System.Runtime.CompilerServices.ITuple;
 
-    static bool SchemeEqual(object? a, object? b)
+    internal static bool SchemeEqual(object? a, object? b)
     {
         if (ReferenceEquals(a, b)) return true;
         if (a is Nil || b is Nil) return a is Nil && b is Nil;
@@ -25,7 +25,7 @@ public static class NativeSyntax
         return Equals(a, b);
     }
 
-    static int Length(object? cell)
+    internal static int Length(object? cell)
     {
         int n = 0;
         var cur = cell;
@@ -33,14 +33,14 @@ public static class NativeSyntax
         return n;
     }
 
-    static object? ListRef(object? cell, int i)
+    internal static object? ListRef(object? cell, int i)
     {
         var cur = cell;
         for (int k = 0; k < i; k++) cur = ((Cell)cur!).Cdr;
         return ((Cell)cur!).Car;
     }
 
-    static bool Memq(Sym x, List<object?> lst)
+    internal static bool Memq(Sym x, List<object?> lst)
     {
         foreach (var it in lst)
             if (it is Sym s && s == x) return true;
@@ -49,7 +49,7 @@ public static class NativeSyntax
 
     // ── 模式匹配 (sx-match 等价) ─────────────────────────────
 
-    static List<(Sym, object?)>? SxMatch(object? pat, object? inp, List<object?> lits)
+    internal static List<(Sym, object?)>? SxMatch(object? pat, object? inp, List<object?> lits)
     {
         if (pat is Nil) return inp is Nil ? [] : null;
         if (pat is Sym ps) return SxMatchSym(ps, inp, lits);
@@ -59,7 +59,7 @@ public static class NativeSyntax
         return SxMatchPair(pc, inp, lits);
     }
 
-    static List<(Sym, object?)>? SxMatchSym(Sym pat, object? inp, List<object?> lits)
+    internal static List<(Sym, object?)>? SxMatchSym(Sym pat, object? inp, List<object?> lits)
     {
         if (pat == UND) return [];
         if (Memq(pat, lits))
@@ -67,7 +67,7 @@ public static class NativeSyntax
         return [(pat, inp)];
     }
 
-    static List<(Sym, object?)>? SxMatchPair(Cell pat, object? inp, List<object?> lits)
+    internal static List<(Sym, object?)>? SxMatchPair(Cell pat, object? inp, List<object?> lits)
     {
         if (inp is not Cell inCell) return null;
         var b1 = SxMatch(pat.Car, inCell.Car, lits);
@@ -79,13 +79,13 @@ public static class NativeSyntax
         return result;
     }
 
-    static List<(Sym, object?)>? SxMatchEllipsis(object? prefix, object? restPat, object? inp, List<object?> lits)
+    internal static List<(Sym, object?)>? SxMatchEllipsis(object? prefix, object? restPat, object? inp, List<object?> lits)
     {
         var res = SxMatchEllipsisLoop(prefix, restPat, inp, lits, []);
         return SxMatchEllipsisFinish(prefix, restPat, res, lits);
     }
 
-    static (object? Remaining, List<List<(Sym, object?)>> Groups) SxMatchEllipsisLoop(
+    internal static (object? Remaining, List<List<(Sym, object?)>> Groups) SxMatchEllipsisLoop(
         object? prefix, object? restPat, object? inp, List<object?> lits, List<List<(Sym, object?)>> groups)
     {
         if (inp is not Cell inCell) return (inp, groups);
@@ -101,7 +101,7 @@ public static class NativeSyntax
         return (inp, groups);
     }
 
-    static List<(Sym, object?)>? SxMatchEllipsisFinish(object? prefix, object? restPat,
+    internal static List<(Sym, object?)>? SxMatchEllipsisFinish(object? prefix, object? restPat,
         (object? Remaining, List<List<(Sym, object?)>> Groups) res, List<object?> lits)
     {
         var evars = SxPatternVars(prefix);
@@ -111,7 +111,7 @@ public static class NativeSyntax
         return rb is not null ? SxAccumEllipsis(evars, res.Groups, rb) : null;
     }
 
-    static List<Sym> SxPatternVars(object? pat)
+    internal static List<Sym> SxPatternVars(object? pat)
     {
         var stack = new Stack<object?>();
         stack.Push(pat);
@@ -132,7 +132,7 @@ public static class NativeSyntax
         return acc;
     }
 
-    static List<(Sym, object?)> SxAccumEllipsis(List<Sym> vars,
+    internal static List<(Sym, object?)> SxAccumEllipsis(List<Sym> vars,
         List<List<(Sym, object?)>> groups, List<(Sym, object?)> baseBindings)
     {
         if (vars.Count == 0) return baseBindings;
@@ -152,7 +152,7 @@ public static class NativeSyntax
 
     // ── 模板展开 (sx-expand 等价) ─────────────────────────────
 
-    static object? SxExpand(object? tmpl, List<(Sym, object?)> bindings,
+    internal static object? SxExpand(object? tmpl, List<(Sym, object?)> bindings,
         List<Sym> mutated, Env defEnv)
     {
         if (tmpl is Sym ts) return SxExpandSym(ts, bindings, mutated, defEnv);
@@ -162,12 +162,12 @@ public static class NativeSyntax
         return SxExpandPair(tc, bindings, mutated, defEnv);
     }
 
-    static object? SxExpandPair(Cell tmpl, List<(Sym, object?)> bindings,
+    internal static object? SxExpandPair(Cell tmpl, List<(Sym, object?)> bindings,
         List<Sym> mutated, Env defEnv) =>
         new Cell(SxExpand(tmpl.Car, bindings, mutated, defEnv),
             SxExpand(tmpl.Cdr, bindings, mutated, defEnv));
 
-    static object? SxExpandSym(Sym tmpl, List<(Sym, object?)> bindings,
+    internal static object? SxExpandSym(Sym tmpl, List<(Sym, object?)> bindings,
         List<Sym> mutated, Env defEnv)
     {
         var p = bindings.FindIndex(b => b.Item1 == tmpl);
@@ -181,7 +181,7 @@ public static class NativeSyntax
         return tmpl;
     }
 
-    static object? SxExpandEllipsis(object? sub, object? rest, List<(Sym, object?)> bindings,
+    internal static object? SxExpandEllipsis(object? sub, object? rest, List<(Sym, object?)> bindings,
         List<Sym> mutated, Env defEnv)
     {
         var evars = SxEllipsisVars(sub, bindings);
@@ -198,7 +198,7 @@ public static class NativeSyntax
         return SxRepeat(sub, rest, bindings, evars, cnt, mutated, defEnv);
     }
 
-    static List<Sym> SxEllipsisVars(object? sub, List<(Sym, object?)> bindings)
+    internal static List<Sym> SxEllipsisVars(object? sub, List<(Sym, object?)> bindings)
     {
         var out_ = new List<Sym>();
         foreach (var v in SxPatternVars(sub))
@@ -210,14 +210,14 @@ public static class NativeSyntax
         return out_;
     }
 
-    static int SxFindListCount(List<(Sym, object?)> bindings)
+    internal static int SxFindListCount(List<(Sym, object?)> bindings)
     {
         foreach (var (_, val) in bindings)
             if (val is Cell) return Length(val);
         return 0;
     }
 
-    static object? SxRepeat(object? sub, object? rest, List<(Sym, object?)> bindings,
+    internal static object? SxRepeat(object? sub, object? rest, List<(Sym, object?)> bindings,
         List<Sym> evars, int cnt, List<Sym> mutated, Env defEnv)
     {
         object? res = SxExpand(rest, bindings, mutated, defEnv);
@@ -236,7 +236,7 @@ public static class NativeSyntax
         return res;
     }
 
-    static List<(Sym, object?)> SxSubBindings(List<Sym> evars, List<(Sym, object?)> bindings, int i)
+    internal static List<(Sym, object?)> SxSubBindings(List<Sym> evars, List<(Sym, object?)> bindings, int i)
     {
         var out_ = new List<(Sym, object?)>();
         foreach (var v in evars)
@@ -251,7 +251,7 @@ public static class NativeSyntax
 
     // ── set! 变异收集 (sx-collect-set-targets 等价) ─────────────
 
-    static List<Sym> SxCollectSetTargets(object? tmpl, List<Sym> acc)
+    internal static List<Sym> SxCollectSetTargets(object? tmpl, List<Sym> acc)
     {
         if (tmpl is not Cell c) return acc;
         if (c.Car is Sym s && s == SETBANG)

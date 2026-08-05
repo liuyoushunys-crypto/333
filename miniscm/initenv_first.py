@@ -76,3 +76,27 @@ def initenv_first():
     builtin('sx-defined?', _sx_defined)
     builtin('sx-defmacro', _sx_defmacro)
     builtin('sx-expand-call', _sx_expand_call)
+
+    # ── 原生宏引擎桥接 (minref.py — boot-min2.scm 精简后宏体调用的原语) ──
+    # 宏元组执行链: (sx-macro-expand 'pat 'body args (sx-expand-env)) →
+    #   minref.sx_macro_expand → eval 宏体 → min-* 原语 → minref/native_syntax。
+    # 非 syntax-rules 宏 (define-macro/quasiquote/syntax-case 等) 全部经由本组原语。
+    from minref import (sx_macro_expand, qq_walk, sx_expand, sx_get_bindings,
+                        sx_gen_temps, sx_syntax_case, sx_with_syntax,
+                        sx_let_syntax, sx_make_macro_binding, qs_expand,
+                        sx_dispatch, sx_def_env, _sx_mutated_vars)
+
+    def _min_sx_expand(tmpl, bindings):
+        return sx_expand(tmpl, bindings, _sx_mutated_vars, sx_def_env())
+
+    builtin('sx-macro-expand', sx_macro_expand)
+    builtin('qq-walk', qq_walk)
+    builtin('sx-expand', _min_sx_expand)
+    builtin('sx-get-bindings', sx_get_bindings)
+    builtin('sx-gen-temps', sx_gen_temps)
+    builtin('sx-syntax-case', sx_syntax_case)
+    builtin('sx-with-syntax', sx_with_syntax)
+    builtin('sx-let-syntax', sx_let_syntax)
+    builtin('sx-make-macro-binding', sx_make_macro_binding)
+    builtin('qs-expand', qs_expand)
+    builtin('sx-dispatch', sx_dispatch)

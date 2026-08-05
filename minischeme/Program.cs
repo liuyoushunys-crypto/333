@@ -2,6 +2,7 @@ using Miniscm.Types;
 using Miniscm.Eval;
 using Miniscm.Primitives;
 using Miniscm.Reader;
+using Miniscm.Compiler;
 using Void = Miniscm.Types.Void;
 
 namespace Miniscm;
@@ -96,6 +97,27 @@ public class Program
 
             if (line == ",quit" || line == "(exit)")
                 break;
+
+            if (line.StartsWith(",expand"))
+            {
+                var rest = line[",expand".Length..].Trim();
+                if (rest.Length == 0)
+                {
+                    Console.WriteLine("usage: ,expand <expr>");
+                    continue;
+                }
+                try
+                {
+                    var exprs = Parser.ReadAll(rest);
+                    foreach (var expr in exprs)
+                    {
+                        if (expr is Eof) continue;
+                        Console.WriteLine(Printer.Format(MinRef.Expand(expr, Evaluator.GlobalEnv)));
+                    }
+                }
+                catch { }
+                continue;
+            }
 
             try
             {

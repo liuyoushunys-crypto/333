@@ -529,6 +529,19 @@ def repl():
                 print(); break
             if not source.strip(): continue
             if source.strip() in (',quit','(exit)'): break
+            if source.strip().startswith(',expand'):
+                rest = source.strip()[len(',expand'):].strip()
+                if not rest:
+                    print("usage: ,expand <expr>")
+                    continue
+                try:
+                    from minref import expand
+                    for expr in read_all(rest):
+                        if expr is EOF: continue
+                        print(_pr(expand(expr, be)))
+                except Exception as e:
+                    print(f"error: {e}")
+                continue
             try:
                 for expr in read_all(source):
                     if expr is EOF: continue

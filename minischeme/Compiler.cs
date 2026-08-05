@@ -17,6 +17,10 @@ class CacheEntry
 }
 public static class Compiler
 {
+    // 缓存目录固定为仓库根 /333/.mscm_cache (与 miniscm 共享)。
+    // 不再用 CWD 相对路径或 symlink (rm -rf .mscm_cache* 会误删 symlink)。
+    static readonly string CacheDir =
+        Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "../.mscm_cache"));
     static readonly HashSet<string> SkipJitNames =
     [
         "flip",
@@ -99,15 +103,11 @@ public static class Compiler
         if (SkipJitNames.Contains(name)) return false;
         return true;
     }
-    // 宏展开委托给 Scheme 端 my-macro-expand (对应 C# MacroExpand 的移植)
-    // expr 是代码, 需 quote 防止被 Eval 求值
+    // 宏展开直接调用原生实现 MinRef.MyMacroExpand (boot-min2.scm 的 C# 移植,
+    // 与 miniscm Compiler.expand_via_scheme → minref.my_macro_expand 一致)。
+    // boot-min2.scm 精简后 Scheme 端已无 my-macro-expand, 不能再经解释器委托。
     static object? ExpandViaScheme(object? expr, Env env)
-    {
-        var quoted = new Cell(Sym.QUOTE, new Cell(expr, Const.NIL));
-        var call = new Cell(Sym.Intern("my-macro-expand"),
-            new Cell(quoted, new Cell(env, Const.NIL)));
-        return Evaluator.Eval(call, env);
-    }
+        => MinRef.Expand(expr, env);
     static string SafeFileName(string name)
     {
         var sb = new StringBuilder();
@@ -187,7 +187,7 @@ public static class Compiler
         string? failFile = null;
         if (lp.Name is not null)
         {
-            var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
+            var cacheDir = CacheDir;
             var failName = SafeFileName(lp.Name) + "_" + BodyHashStruct(lp.Body) + ".fail";
             failFile = Path.Combine(cacheDir, failName);
             if (File.Exists(failFile)) return null;
@@ -215,7 +215,7 @@ public static class Compiler
             string? cacheFile = null;
             if (lp.Name is not null)
             {
-                var cacheDir = Path.Combine(Directory.GetCurrentDirectory(), ".mscm_cache");
+                var cacheDir = CacheDir;
                 // 用结构 hash 命名缓存文件, 避免同名函数(不同内容)互相覆盖
                 cacheFile = Path.Combine(cacheDir, SafeFileName(lp.Name) + "_" + BodyHashStruct(lp.Body) + ".json");
                 if (File.Exists(cacheFile))
