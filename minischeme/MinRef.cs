@@ -57,10 +57,16 @@ public static class MinRef
     // ── 桥接原语 ──────────────────────────────────────────────────────────
 
     static object? Eval(object? expr, Env env)                  // (eval expr env)
-        => Evaluator.Eval(expr, env);
+    {
+        if (System.Environment.GetEnvironmentVariable("SX_TRACE") == "1")
+            System.Console.Error.WriteLine($"[QQE] eval={SxPrint(expr)}");
+        return Evaluator.Eval(expr, env);
+    }
 
     static object? SxExpandCall(object? expr, Env env)          // (sx-expand-call expr env)
     {
+        if (System.Environment.GetEnvironmentVariable("SX_TRACE") == "1")
+            System.Console.Error.WriteLine($"[SXC] call={SxPrint(expr)}");
         if (expr is Cell call && call.Car is Sym ops)
         {
             var proc = env.LookupSilent(ops.Name, null);
@@ -100,12 +106,30 @@ internal static Env SxDefEnv()                                       // (sx-def-
         if (expr is not Cell e) return expr;
         if (e.Car is Sym cs && cs == SYM_QUOTE) return expr;    // (eq? (car expr) 'quote)
         if (e.Car is Sym cs2 && cs2 == SYM_QUASIQUOTE) return expr;
+        // lambda 特型: 参数列表是绑定结构, 不能当调用展开 (如 (lambda () identity)
+        // 的 body 符号 identity 不能变成 (identity) 宏调用); body 逐表达式展开。
+        if (e.Car is Sym cs3 && cs3 == SYM_LAMBDA && !SxDefined(cs3, env))
+        {
+            var formals = e.Cdr is Cell fc ? fc.Car : Const.NIL;
+            var body = e.Cdr is Cell fc2 ? fc2.Cdr : Const.NIL;
+            return new Cell(e.Car, new Cell(formals, ExpandBody(body, env)));
+        }
         var expanded = SxExpandCall(expr, env);
         if (expanded is Sym fsym && fsym == Const.FALSE)                            // (eq? expanded #f)
-            return new Cell(MyMacroExpand(e.Car, env), MyMacroExpand(e.Cdr, env));
+            return new Cell(MyMacroExpand(e.Car, env), ExpandList(e.Cdr, env));
         if (NativeSyntax.SchemeEqual(expanded, expr)) return expr;   // 恒等展开, 停止
         return MyMacroExpandHelper(expanded, env);
     }
+
+    // cdr 是数据列表 (参数/body), 逐元素展开: 符号元素保持原样,
+    // 不会像形式展开那样把 (pair? cond) 的参数 cond 误当成 (cond) 宏调用。
+    static object? ExpandList(object? lst, Env env)
+    {
+        if (lst is Cell lc) return new Cell(MyMacroExpand(lc.Car, env), ExpandList(lc.Cdr, env));
+        return lst;
+    }
+
+    static object? ExpandBody(object? body, Env env) => ExpandList(body, env);
 
     // ── 模式绑定 (my-definemacro 机制) ────────────────────────────────────
 
@@ -145,7 +169,18 @@ internal static object? SxMacroExpand(object? pattern, object? body, object? arg
         }
         var appForm = new Cell(new Cell(SYM_LAMBDA, new Cell(pars.ToCell(), body)),
                                quotedVals.ToCell());
-        return Evaluator.Eval(appForm, callEnv);                // (eval app-form callenv)
+        try { var r = Evaluator.Eval(appForm, callEnv); if (System.Environment.GetEnvironmentVariable("SX_TRACE") == "1") System.Console.Error.WriteLine($"[SXR] expand-> {SxPrint(r)}"); return r; }                // (eval app-form callenv)
+        catch (Exception e)
+        {
+            if (System.Environment.GetEnvironmentVariable("SX_TRACE") == "1")
+            {
+                Console.Error.WriteLine($"[SXE] eval failed: {e.Message}");
+                Console.Error.WriteLine($"  pattern={SxPrint(pattern)}");
+                Console.Error.WriteLine($"  args={SxPrint(args)}");
+                Console.Error.WriteLine($"  appForm={SxPrint(appForm)}");
+            }
+            throw;
+        }
     }
 
     // 10-11 忽略: define-macro 机制 (my-definemacro 及 define-macro 语法注册)
@@ -317,10 +352,27 @@ internal static List<Sym> SxMutatedVars = [];                        // 41: (def
 
     // ── syntax-rules 入口 ─────────────────────────────────────────────────
 
+internal static string SxPrint(object? v)
+    {
+        if (v is null || v == Const.NIL) return "()";
+        if (v is Sym s) return s.Name;
+        if (v is Cell c)
+        {
+            var parts = new List<string>();
+            object? cur = c;
+            while (cur is Cell cc) { parts.Add(SxPrint(cc.Car)); cur = cc.Cdr; }
+            if (cur is not null && cur != Const.NIL) parts.Add(". " + SxPrint(cur));
+            return "(" + string.Join(" ", parts) + ")";
+        }
+        return v.ToString() ?? "?";
+    }
+
 internal static object? SxDispatch(object? args, object? lits, object? rules)  // 54
     {
         var litsList = IterCells(lits);
         var cur = rules;
+        var _dbg = System.Environment.GetEnvironmentVariable("SX_TRACE");
+        if (_dbg == "1") System.Console.Error.WriteLine($"[SX] dispatch args={SxPrint(args)} rules={(rules is Cell rc0 ? SxPrint(rc0.Car) : "()")}");
         while (cur is Cell rc)                                  // (if (null? rules) error ...) → 迭代
         {
             var rule = rc.Car;
@@ -328,6 +380,7 @@ internal static object? SxDispatch(object? args, object? lits, object? rules)  /
             var tmpl = SxRuleTmpl(rule);                        // (sx-rule-tmpl rule)
             var patArgs = pat is Cell pc ? pc.Cdr : Const.NIL;  // (if (pair? pat) (cdr pat) '())
             var b = NativeSyntax.SxMatch(patArgs, args, litsList);     // (sx-match pat-args args lits)
+            if (_dbg == "1") System.Console.Error.WriteLine($"[SX]   rule match={b is not null} patArgs={SxPrint(patArgs)}");
             if (b is not null)
             {
                 var oldMut = SxMutatedVars;                     // 还原 let: old-mut

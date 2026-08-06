@@ -18,10 +18,24 @@ public static partial class PrimitiveRegistry
         var b = args[1];
         if (ReferenceEquals(a, b)) return Const.TRUE;
         if (a is null || b is null) return Const.FALSE;
+        // 数值：跨类型同值（如 int 1 vs long 1）也 #t，但 exact/inexact 混合必须 #f
+        if (a is int or long or BigInteger or SchemeFraction or double or float or Complex
+            && b is int or long or BigInteger or SchemeFraction or double or float or Complex)
+        {
+            if (a is Complex || b is Complex)
+            {
+                if (a.GetType() != b.GetType()) return Const.FALSE;
+                return a.Equals(b) ? Const.TRUE : Const.FALSE;
+            }
+            var ta = NumericHelper.Classify(a);
+            var tb = NumericHelper.Classify(b);
+            var exactA = ta <= NumericHelper.NumType.Fraction;
+            var exactB = tb <= NumericHelper.NumType.Fraction;
+            if (exactA != exactB) return Const.FALSE;
+            return NumericHelper.Compare(a, b) == 0 ? Const.TRUE : Const.FALSE;
+        }
         if (a.GetType() == b.GetType())
         {
-            if (a is int or long or BigInteger or SchemeFraction or double or Complex)
-                return a.Equals(b) ? Const.TRUE : Const.FALSE;
             if (a is string s) return s == (string)b ? Const.TRUE : Const.FALSE;
             if (a is SchemeChar sc) return sc.Codepoint == ((SchemeChar)b).Codepoint ? Const.TRUE : Const.FALSE;
         }

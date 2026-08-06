@@ -1644,6 +1644,7 @@ public static partial class PrimitiveRegistry
     private static object? App(object? proc, params object?[] args)
     {
         if (proc is Func<object?[], object?> fn) return fn(args);
+        if (proc is Miniscm.Compiler.CompiledLambda cl) return cl.Invoke(cl.Env, args);
         if (proc is LambdaProc lp)
         {
             var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
@@ -1724,7 +1725,7 @@ public static partial class PrimitiveRegistry
         return Const.FALSE;
     }
 
-    private static object? CarFn(object? p) => p is Cell c ? c.Car : throw new Exception("pair required");
+    private static object? CarFn(object? p) => p is Cell c ? c.Car : throw new Exception($"pair required: car of {Miniscm.Compiler.MinRef.SxPrint(p)}");
     private static object? CdrFn(object? p) => p is Cell c ? c.Cdr : throw new Exception("pair required");
 
     private static string ToStr(object? x) => x switch

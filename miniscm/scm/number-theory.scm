@@ -11,7 +11,7 @@
 
 (define (scheme-lcm . args)
   (if (null? args) 1
-      (let loop ((acc 1) (nums args))
+      (let loop ((acc (abs (car args))) (nums (cdr args)))
         (if (null? nums) acc
             (let ((a acc) (b (abs (car nums))))
               (if (or (= a 0) (= b 0)) 0

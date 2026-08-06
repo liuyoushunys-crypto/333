@@ -315,7 +315,7 @@ public static class Compiler
             MarkFailed();
             var dbg = Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG");
             if (dbg is not null)
-                Console.Error.WriteLine($"JIT compile error for {lp.Name}: {ex}");
+                Console.Error.WriteLine($"JIT compile error for {lp.Name}: {ex}\n{ex.StackTrace}");
             return null;
         }
     }
@@ -658,6 +658,10 @@ public static class Compiler
     // ── Expression Tree Compiler ──
     internal class AstExprCompiler
     {
+        // 内联辅助方法参数统一装箱到 object（字面量/常量折叠产物的类型可能是 int/long）
+        internal static Expression Obj(Expression e) =>
+            e.Type == typeof(object) ? e : Expression.Convert(e, typeof(object));
+
         public string? SelfName { get; }
         public List<string> Params { get; }
         public bool IsSimple { get; }
@@ -769,7 +773,7 @@ public static class Compiler
                     return stmts;
                 }
                 var call = Expression.Call(typeof(JitRuntime), "EnvSetVar", null,
-                    EnvParam, ConstVal(sn.Name), valExpr);
+                    EnvParam, ConstVal(sn.Name), Obj(valExpr));
                 if (isTail) return [Expression.Goto(BreakLabel, call)];
                 return [call];
             }
@@ -872,8 +876,7 @@ public static class Compiler
             "cdaar", "cdadr", "cddar", "cdddr",
         ];
         // ── Try inline operation ──
-        Expression? TryInlineOp(AppAst node)
-        {
+        Expression? TryInlineOp(AppAst node)        {
             if (node.Proc is not VarAst vn || LexicalVars.Contains(vn.Name))
                 return null;
             var op = vn.Name;
@@ -971,8 +974,8 @@ public static class Compiler
             {
                 if (op == "eq?")
                 {
-                    var left = CompileExpr(node.Args[0]);
-                    var right = CompileExpr(node.Args[1]);
+                    var left = Obj(CompileExpr(node.Args[0]));
+                    var right = Obj(CompileExpr(node.Args[1]));
                     return Expression.Condition(
                         Expression.OrElse(
                             Expression.ReferenceEqual(left, right),
@@ -1018,103 +1021,103 @@ public static class Compiler
                         "modulo" => "Modulo",
                         _ => "Quotient",
                     };
-                    return Expression.Call(typeof(NumericHelper), helper, null, a, b);
+                    return Expression.Call(typeof(NumericHelper), helper, null, Obj(a), Obj(b));
                 }
                 if (op == "append")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Append2", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Append2", null, Obj(a), Obj(b));
                 }
                 if (op == "string-append")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "StringAppend2", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "StringAppend2", null, Obj(a), Obj(b));
                 }
                 if (op == "string-ref")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "StringRef", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "StringRef", null, Obj(a), Obj(b));
                 }
                 if (op == "vector-ref")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "VectorRef", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "VectorRef", null, Obj(a), Obj(b));
                 }
                 if (op == "list-tail")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "ListTail", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "ListTail", null, Obj(a), Obj(b));
                 }
                 if (op == "list-ref")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "ListRef", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "ListRef", null, Obj(a), Obj(b));
                 }
                 if (op == "memq")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Memq", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Memq", null, Obj(a), Obj(b));
                 }
                 if (op == "assq")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Assq", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Assq", null, Obj(a), Obj(b));
                 }
                 if (op == "eqv?")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Eqv", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Eqv", null, Obj(a), Obj(b));
                 }
                 if (op == "equal?")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Equal2", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Equal2", null, Obj(a), Obj(b));
                 }
                 if (op == "member")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Member", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Member", null, Obj(a), Obj(b));
                 }
                 if (op == "assoc")
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Assoc", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Assoc", null, Obj(a), Obj(b));
                 }
                 if (op == "map" && nArgs == 2)
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Map1", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Map1", null, Obj(a), Obj(b));
                 }
                 if (op == "filter" && nArgs == 2)
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Filter1", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "Filter1", null, Obj(a), Obj(b));
                 }
                 if (op == "for-each" && nArgs == 2)
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "ForEach1", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "ForEach1", null, Obj(a), Obj(b));
                 }
                 if (op == "apply" && nArgs == 2)
                 {
                     var a = CompileExpr(node.Args[0]);
                     var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "ApplyList", null, a, b);
+                    return Expression.Call(typeof(JitRuntime), "ApplyList", null, Obj(a), Obj(b));
                 }
             }
             return null;
@@ -1161,7 +1164,7 @@ public static class Compiler
             {
                 var valExpr = CompileExpr(dn.Val);
                 // define returns the name symbol (or void)
-                return Expression.Call(EnvParam, "Define", null, ConstVal(dn.Name), valExpr);
+                return Expression.Call(EnvParam, "Define", null, ConstVal(dn.Name), Obj(valExpr));
             }
             if (node is SetBangAst sn)
             {
@@ -1171,7 +1174,7 @@ public static class Compiler
                 if (ParamIndexMap.TryGetValue(sn.Name, out int si))
                     return Expression.Assign(ParamVars[si], valExpr);
                 return Expression.Call(typeof(JitRuntime), "EnvSetVar", null,
-                    EnvParam, ConstVal(sn.Name), valExpr);
+                    EnvParam, ConstVal(sn.Name), Obj(valExpr));
             }
             if (node is LambdaAst ln)
             {
@@ -1191,7 +1194,7 @@ public static class Compiler
                         else
                             valExpr = ParamVars[ParamIndexMap[name]];
                         childEnv = Expression.Call(typeof(JitRuntime), "MakeClosure", null,
-                            childEnv, ConstVal(name), valExpr);
+                            childEnv, ConstVal(name), Obj(valExpr));
                     }
                     return Expression.Call(typeof(JitRuntime), "MakeLambda", null,
                         ConstVal(ln.Params), ConstVal(ln.IsSimple), childEnv,

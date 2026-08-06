@@ -235,8 +235,8 @@ def lcm2(a,b):
     return abs(int(a)*int(b))//gcd2(a,b)
 def lcm(*a):
     if not a: return 1
-    r=1
-    for x in a: r=lcm2(r,x)
+    r=a[0]
+    for x in a[1:]: r=lcm2(r,x)
     return r
 def load(path):
     from miniscm import load_file

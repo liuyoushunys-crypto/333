@@ -22,8 +22,9 @@ scm/           — Scheme bootstrap library (15 files): boot-core, boot-sugar, s
 ```
 
 宏系统与 minischeme (C#) 完全对齐: Python 端无宏引擎 (macro.py 已删除),
-define-macro/define-syntax/quasiquote/syntax-rules 全部由 Scheme 端 (my-definemacro2.scm +
-boot-min2.scm) 自举实现。Python 仅保留桥接原语 (sx-defmacro/sx-expand-call/sx-def-env/
+define-macro/define-syntax/quasiquote/syntax-rules 全部由 Scheme 端 boot-min2.scm
+自举实现 (my-definemacro2.scm 功能已内嵌, 无需加载)。Python 仅保留桥接原语
+(sx-defmacro/sx-expand-call/sx-def-env/
 sx-expand-env/the-environment), 宏展开通过 `_expand_macro` (等价 C# Evaluator.ExpandMacro)
 处理 ("macro", pattern, body, env, true) 元组。
 
@@ -133,8 +134,8 @@ mscm> (+ 1 2)
 mscm> ,quit   # or (exit)
 ```
 
-Auto-loads the 4 core library files on startup, matching minischeme (`Program.cs`):
-`my-definemacro2.scm`, `boot-min2.scm`, `boot-core.scm`, `boot-sugar.scm`.
+Auto-loads the 3 core library files on startup, matching minischeme (`Program.cs`):
+`boot-min2.scm`, `boot-core.scm`, `boot-sugar.scm`.
 The macro system (define-macro/define-syntax/syntax-rules/quasiquote) is fully
 self-hosted in Scheme — Python has no macro engine.
 

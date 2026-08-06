@@ -1351,8 +1351,7 @@ def compile_lambda_proc(lambda_proc):
                     while isinstance(cur, Cell):
                         expanded = expand_via_scheme(cur.car, lambda_proc.env)
                         if has_quasiquote(expanded):
-                            _mark_failed()
-                            return None  # 需要运行时展开; 跳过 JIT
+                            return None  # 需要运行时展开; 跳过 JIT (与 C# 一致, 不写 fail 标记)
                         body_forms.append(fully_expand(expanded))
                         cur = cur.cdr
             else:

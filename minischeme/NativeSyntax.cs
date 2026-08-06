@@ -291,9 +291,12 @@ public static class NativeSyntax
 
         return args =>
         {
+            var _dbg = System.Environment.GetEnvironmentVariable("SX_TRACE");
+            if (_dbg == "1") System.Console.Error.WriteLine($"[SX-N] dispatch args={MinRef.SxPrint(args)}");
             foreach (var (patArgs, tmpl, mutated) in ruleList)
             {
                 var b = SxMatch(patArgs, args, litsList);
+                if (_dbg == "1") System.Console.Error.WriteLine($"[SX-N]   rule match={b is not null} patArgs={MinRef.SxPrint(patArgs)}");
                 if (b is not null)
                     return SxExpand(tmpl, b, mutated, defEnv);
             }

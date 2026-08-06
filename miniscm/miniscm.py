@@ -605,7 +605,7 @@ if __name__=='__main__':
     # 全功能引导: 核心宏引擎 + 扩展库。
     # define-macro/define-syntax/quasiquote/syntax-rules 由 Scheme 端实现,
     # Python 侧仅保留桥接原语 (sx-defmacro/sx-expand-call 等)。
-    # _libs = ['my-definemacro2.scm','boot-min2.scm','boot-core.scm','boot-sugar.scm']
+    # my-definemacro2.scm 功能已内嵌至 boot-min2.scm, 无需加载。
     _libs = ['boot-min2.scm','boot-core.scm','boot-sugar.scm']
     for f in _libs:
         try:
@@ -614,7 +614,7 @@ if __name__=='__main__':
         except: pass
 
 
-    pyb = False
+    pyb = True
     import compiler
     compiler.PYB_MODE = 'pyb' if pyb else 'scm'
     from initenv_ext import initenv_ext
