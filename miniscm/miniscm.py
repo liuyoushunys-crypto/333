@@ -619,12 +619,6 @@ if __name__=='__main__':
     pyb = os.environ.get("MSCM_PYB", "1") == "1"
     import compiler
     compiler.PYB_MODE = 'pyb' if pyb else 'scm'
-
-    if not pyb:
-        # pyb=False 时禁用 JIT：Scheme 实现的函数在 JIT 编译下
-        # __mscm_make_tail_call__ 会错误估值已估值参数
-        compiler.USE_JIT = False
-    sys.stderr.write(f"[pyb={pyb} USE_JIT={compiler.USE_JIT}\n")
     from initenv_ext import initenv_ext
     initenv_ext()
     if pyb:
