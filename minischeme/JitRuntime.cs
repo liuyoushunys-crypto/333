@@ -21,42 +21,85 @@ public static class JitRuntime
 
     public static object? Invoke(object? procVal, object?[] argsVal, Env env)
     {
-        if (procVal is Func<object?[], object?> fn)
-            return fn(argsVal);
-        if (procVal is CompiledLambda cv)
+        while (true)
         {
-            var r = cv.Invoke(cv.Env, argsVal);
-            while (r is TailCall tcr) r = EvalTailCall(tcr);
-            return r;
-        }
-        if (procVal is LambdaProc lp)
-        {
-            if (lp.CompiledVersion is CompiledLambda cl)
+            if (procVal is Func<object?[], object?> fn)
+                return fn(argsVal);
+            if (procVal is CompiledLambda cv)
             {
-                var r = cl.Invoke(lp.ClosureEnv, argsVal);
-                while (r is TailCall tcr) r = EvalTailCall(tcr);
-                return r;
+                var r = cv.Invoke(cv.Env, argsVal);
+                if (r is not TailCall tc) return r;
+                if (!TryUnpackTailCall(tc, out var u))
+                    return Evaluator.EvalCore(tc.Expr, tc.Env);
+                (procVal, argsVal, env) = u;
+                continue;
             }
-            var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
-            Evaluator.BindParams(lp.Params, argsVal, nenv);
-            var r2 = Evaluator.SeqTailCall(lp.Body, nenv);
-            while (r2 is TailCall tcr2) r2 = Evaluator.EvalCore(tcr2.Expr, tcr2.Env);
-            return r2;
-        }
-        if (procVal is Delegate d)
-            return d.DynamicInvoke(argsVal);
-        if (procVal is System.Runtime.CompilerServices.ITuple it && it.Length >= 2 && it[0] is string t0)
-        {
-            if (t0 == "lambda" && it.Length >= 5 && it[1] is List<string> lamParams && it[3] is Env le)
+            if (procVal is LambdaProc lp)
             {
-                var nenv = new Env(le, lamParams.Count);
-                Evaluator.BindParams(lamParams, argsVal, nenv);
-                var r = Evaluator.SeqTailCall(it[2], nenv);
-                while (r is TailCall tcr) r = Evaluator.EvalCore(tcr.Expr, tcr.Env);
-                return r;
+                Evaluator.EnsureCompiled(lp);
+                if (lp.CompiledVersion is CompiledLambda cl)
+                {
+                    var r = cl.Invoke(lp.ClosureEnv, argsVal);
+                    if (r is not TailCall tc) return r;
+                    if (!TryUnpackTailCall(tc, out var u))
+                        return Evaluator.EvalCore(tc.Expr, tc.Env);
+                    (procVal, argsVal, env) = u;
+                    continue;
+                }
+                var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
+                Evaluator.BindParams(lp.Params, argsVal, nenv);
+                var r2 = Evaluator.SeqTailCall(lp.Body, nenv);
+                if (r2 is not TailCall tc2) return r2;
+                if (!TryUnpackTailCall(tc2, out var u2))
+                    return Evaluator.EvalCore(tc2.Expr, tc2.Env);
+                (procVal, argsVal, env) = u2;
+                continue;
             }
+            if (procVal is Delegate d)
+                return d.DynamicInvoke(argsVal);
+            if (procVal is System.Runtime.CompilerServices.ITuple it && it.Length >= 2 && it[0] is string t0)
+            {
+                if (t0 == "lambda" && it.Length >= 5 && it[1] is List<string> lamParams && it[3] is Env le)
+                {
+                    var nenv = new Env(le, lamParams.Count);
+                    Evaluator.BindParams(lamParams, argsVal, nenv);
+                    var r = Evaluator.SeqTailCall(it[2], nenv);
+                    if (r is not TailCall tc) return r;
+                    if (!TryUnpackTailCall(tc, out var u))
+                        return Evaluator.EvalCore(tc.Expr, tc.Env);
+                    (procVal, argsVal, env) = u;
+                    continue;
+                }
+            }
+            throw new Exception($"not callable: {Printer.Format(procVal)}");
         }
-        throw new Exception($"not callable: {Printer.Format(procVal)}");
+    }
+
+    // 仅解包 JIT MakeTailCall 产生的 (proc (quote v1) (quote v2) ...) 尾调用。
+    // JIT 的 proc 是运行时函数对象、参数是已求值值（quote 包装）；
+    // 解释器 SeqTailCall/HIf/HCond 的尾调用携带未求值 AST（proc 为
+    // Sym/Cell/字面量），必须交回 EvalCore 求值，不能按值解包。
+    static bool TryUnpackTailCall(TailCall tc, out (object?, object?[], Env) u)
+    {
+        u = default;
+        if (tc.Expr is not Cell ec) return false;
+        var proc = ec.Car;
+        if (proc is not (CompiledLambda or LambdaProc or System.Runtime.CompilerServices.ITuple or Delegate
+            or Func<object?[], object?>))
+            return false;
+        var args = new List<object?>();
+        var cur = ec.Cdr;
+        while (cur is Cell ac)
+        {
+            var arg = ac.Car;
+            // MakeTailCall wraps each arg in (quote v)
+            if (arg is Cell qc && qc.Car is Sym qs && qs.Name == "quote")
+                arg = qc.Cdr is Cell qarg ? qarg.Car : arg;
+            args.Add(arg);
+            cur = ac.Cdr;
+        }
+        u = (proc, args.ToArray(), tc.Env);
+        return true;
     }
 
     public static object? EnvSetVar(Env env, string name, object? val)
@@ -74,27 +117,6 @@ public static class JitRuntime
     // Unwrap a TailCall produced by JIT MakeTailCall: (proc 'v1 'v2 ...).
     // Applies proc to the (already-evaluated, quoted) args directly, avoiding
     // re-entry into the full interpreter.
-    internal static object? EvalTailCall(TailCall tc)
-    {
-        var expr = tc.Expr;
-        if (expr is not Cell ec) return Evaluator.EvalCore(expr, tc.Env);
-        var proc = ec.Car;
-        var args = new List<object?>();
-        var cur = ec.Cdr;
-        while (cur is Cell ac)
-        {
-            var arg = ac.Car;
-            // MakeTailCall wraps each arg in (quote v)
-            if (arg is Cell qc && qc.Car is Sym qs && qs.Name == "quote")
-                arg = qc.Cdr is Cell qarg ? qarg.Car : arg;
-            args.Add(arg);
-            cur = ac.Cdr;
-        }
-        var r = Invoke(proc, args.ToArray(), tc.Env);
-        while (r is TailCall tcr) r = EvalTailCall(tcr);
-        return r;
-    }
-
     public static TailCall MakeTailCall(object? proc, object?[] argsList, Env env)
     {
         object? argCells = Const.NIL;

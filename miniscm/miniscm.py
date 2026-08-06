@@ -39,7 +39,7 @@ from mtypes import (
 #   _bind_params — 绑定 lambda 参数到新环境
 
 from reader import read_all
-from compiler import LambdaProc
+from compiler import LambdaProc, CompiledLambda
 
 # ═══════════════════════════════════════════════════════════════
 # 1. 特殊核心形式处理器（Special Forms Dispatcher）
@@ -289,15 +289,6 @@ def _ensure_jit_compiled(proc_lp):
     except Exception:
         proc_lp._jit_failed = True
 
-def _eval_compiled_lambda(cv, _cur, env):
-    """执行已编译的 LambdaProc。"""
-    evaled_args = eval_args_to_array(_cur, env)
-    if cv.is_simple:
-        return cv.py_func(Env(cv.env), *evaled_args)
-    from mtypes import _lst
-    n_reg = len(cv.params) - 1
-    return cv.py_func(Env(cv.env), *evaled_args[:n_reg], _lst(evaled_args[n_reg:]))
-
 def _eval_tuple_lambda(proc_val, _cur, env):
     """执行老的 tuple lambda 格式。"""
     _, params, body, penv, is_simple = proc_val
@@ -371,10 +362,12 @@ def _eval(expr, env):
             if proc.compiled_version is None:
                 _ensure_jit_compiled(proc)
             if proc.compiled_version is not None:
-                r = _eval_compiled_lambda(proc.compiled_version, _cur, env)
-                if isinstance(r, TailCall):
-                    expr, env = r.expr, r.env
-                    continue
+                # 迭代 trampoline（C# `return JitRuntime.Invoke(cv, ...)` 等价）：
+                # 编译体的 JIT TailCall 在循环内解包，不重入本循环对
+                # (quote 深值) 重新求值（否则 strip_syntax 递归爆栈）。
+                from compiler import __mscm_invoke__ as _mscm_invoke
+                evaled = eval_args_to_array(_cur, env)
+                r = _mscm_invoke(proc.compiled_version, evaled, env)
                 if r is True: r = TRUE
                 elif r is False: r = FALSE
                 return r
@@ -390,7 +383,16 @@ def _eval(expr, env):
 
         evaled_args = eval_args_to_array(_cur, env)
 
-        # B1d: 普通 callable (与 C# Func/Delegate 分支一致)
+        # B1d: CompiledLambda 直接调用（闭包 box 捕获的值可能是已编译 lambda；
+        # 与 C# `JitRuntime.Invoke(cl, ...)` 分支一致，避免 TailCall 重入本循环）。
+        if isinstance(proc, CompiledLambda):
+            from compiler import __mscm_invoke__ as _mscm_invoke
+            r = _mscm_invoke(proc, evaled_args, proc.env)
+            if r is True: r = TRUE
+            elif r is False: r = FALSE
+            return r
+
+        # B1d2: 普通 callable (与 C# Func/Delegate 分支一致)
         if callable(proc):
             r = proc(*evaled_args)
             if isinstance(r, TailCall):
@@ -614,9 +616,15 @@ if __name__=='__main__':
         except: pass
 
 
-    pyb = True
+    pyb = os.environ.get("MSCM_PYB", "1") == "1"
     import compiler
     compiler.PYB_MODE = 'pyb' if pyb else 'scm'
+
+    if not pyb:
+        # pyb=False 时禁用 JIT：Scheme 实现的函数在 JIT 编译下
+        # __mscm_make_tail_call__ 会错误估值已估值参数
+        compiler.USE_JIT = False
+    sys.stderr.write(f"[pyb={pyb} USE_JIT={compiler.USE_JIT}\n")
     from initenv_ext import initenv_ext
     initenv_ext()
     if pyb:

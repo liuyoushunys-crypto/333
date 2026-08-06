@@ -790,7 +790,7 @@ public static class Compiler
                     if (inl is not null)
                         return [Expression.Goto(BreakLabel, Expression.Convert(inl, typeof(object)))];
                     // Cross-function tail call (not immutable primitive, not local)
-                    if (SelfName is not null && !JitRuntime.ImmutablePrimitives.Contains(pv.Name))
+                    if (!JitRuntime.ImmutablePrimitives.Contains(pv.Name))
                     {
                         var procExpr = CompileExpr(app.Proc);
                         var argsExprs = app.Args.Select(a => Expression.Convert(CompileExpr(a), typeof(object))).ToList();
@@ -800,14 +800,28 @@ public static class Compiler
                                 procExpr, argsArray, EnvParam))];
                     }
                 }
-                // Regular call
-                    return [Expression.Goto(BreakLabel, Expression.Convert(CompileAppCall(app), typeof(object)))];
+                // Regular call (lexical/local function or immutable primitive):
+                // trampoline 化, 避免嵌套 JIT 帧的深尾递归。
+                var procExpr2 = CompileExpr(app.Proc);
+                var argsExprs2 = app.Args.Select(a => Expression.Convert(CompileExpr(a), typeof(object))).ToList();
+                var argsArray2 = Expression.NewArrayInit(typeof(object), argsExprs2);
+                return [Expression.Goto(BreakLabel,
+                    Expression.Call(typeof(JitRuntime), "MakeTailCall", null,
+                        procExpr2, argsArray2, EnvParam))];
             }
             if (isTail)
             {
                 if (node is AppAst app2)
                 {
-                    return [Expression.Goto(BreakLabel, Expression.Convert(CompileAppCall(app2), typeof(object)))];
+                    // proc 非简单变量（如 (let ...) 展开的内联 lambda 应用）也走
+                    // trampoline：否则嵌套 lambda 内尾调用返回的 TailCall 需层层
+                    // Invoke 解包 → 每次迭代 +1 栈帧，深尾递归爆栈。
+                    var procExpr = CompileExpr(app2.Proc);
+                    var argsExprs = app2.Args.Select(a => Expression.Convert(CompileExpr(a), typeof(object))).ToList();
+                    var argsArray = Expression.NewArrayInit(typeof(object), argsExprs);
+                    return [Expression.Goto(BreakLabel,
+                        Expression.Call(typeof(JitRuntime), "MakeTailCall", null,
+                            procExpr, argsArray, EnvParam))];
                 }
                 return [Expression.Goto(BreakLabel, Expression.Convert(CompileExpr(node), typeof(object)))];
             }

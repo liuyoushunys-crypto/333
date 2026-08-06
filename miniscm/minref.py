@@ -5,7 +5,8 @@
 # ============================================================================
 
 from mtypes import (Sym, Cell, NIL, VOID, FALSE, SchemeVector,
-                    SchemeException as SchemeError, _UNBOUND)
+                    SchemeException as SchemeError, _UNBOUND,
+                    _cells, _cell_len)
 
 # syntax-rules 模式匹配 / 模板展开 / set! 变异收集 与 native_syntax.py 完全重叠,
 # 以 native_syntax.py 为单一事实源, 本模块不再重复实现。

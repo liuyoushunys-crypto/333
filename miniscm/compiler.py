@@ -569,15 +569,18 @@ def _invoke_compiled(cv, args_val):
 # 运行时支撑函数
 # ═══════════════════════════════════════════════════════════════
 
-# Unwrap a TailCall produced by JIT MakeTailCall: (proc 'v1 'v2 ...).
-# Applies proc to the (already-evaluated, quoted) args directly, avoiding
-# re-entry into the full interpreter. (C# JitRuntime.EvalTailCall 等价)
-def __mscm_eval_tail_call__(tc):
+# 仅解包 JIT MakeTailCall 产生的 (proc (quote v1) (quote v2) ...) 尾调用。
+# JIT 的 proc 是运行时函数对象、参数是已求值值（quote 包装）；解释器
+# SeqTailCall/HIf/HCond 的尾调用携带未求值 AST（proc 为 Sym/Cell/字面量），
+# 必须交回 _eval 求值，不能按值解包。
+# （C# JitRuntime.TryUnpackTailCall 等价；返回 None 表示需交回解释器）
+def __mscm_try_unpack_tail_call__(tc):
     expr = tc.expr
     if not isinstance(expr, Cell):
-        from miniscm import _eval as _eval_fn
-        return _eval_fn(expr, tc.env)
+        return None
     proc = expr.car
+    if not (callable(proc) or (isinstance(proc, tuple) and len(proc) >= 2 and proc[0] == 'lambda')):
+        return None
     args = []
     cur = expr.cdr
     while isinstance(cur, Cell):
@@ -588,49 +591,62 @@ def __mscm_eval_tail_call__(tc):
                 arg = arg.cdr.car
         args.append(arg)
         cur = cur.cdr
-    r = __mscm_invoke__(proc, args, tc.env)
-    while isinstance(r, TailCall):
-        r = __mscm_eval_tail_call__(r)
-    return r
+    return proc, args, tc.env
 
 def __mscm_invoke__(proc_val, args_val, env):
-    global _IS_COMPILING
-    if isinstance(proc_val, LambdaProc):
-        if proc_val.compiled_version is not None:
-            r = _invoke_compiled(proc_val.compiled_version, args_val)
-            while isinstance(r, TailCall):
-                r = __mscm_eval_tail_call__(r)
-            return r
-        old_flag = _IS_COMPILING
-        _IS_COMPILING = False
-        try:
-            r = proc_val(*args_val)
-            while isinstance(r, TailCall):
-                r = __mscm_eval_tail_call__(r)
-            return r
-        finally:
-            _IS_COMPILING = old_flag
-    if isinstance(proc_val, CompiledLambda):
-        r = _invoke_compiled(proc_val, args_val)
-        while isinstance(r, TailCall):
-            r = __mscm_eval_tail_call__(r)
-        return r
-    if callable(proc_val):
-        r = proc_val(*args_val)
-        while isinstance(r, TailCall):
-            r = __mscm_eval_tail_call__(r)
-        return r
-    if isinstance(proc_val, tuple) and proc_val[0] == 'lambda':
-        from miniscm import eval_seq
-        _, params, body, penv, is_simple = proc_val
-        nenv = Env(penv)
-        _bind_params(params, args_val, nenv)
-        r = eval_seq(body, nenv)
-        while isinstance(r, TailCall):
+    """统一调用路径：迭代 trampoline（C# JitRuntime.Invoke 等价）。
+
+    JIT 尾调用 (MakeTailCall) 产生的 (proc (quote v1) ...) 在循环内解包，
+    不重入解释器对 quote 深值做 strip_syntax（否则深尾递归逐层 +1 栈帧爆栈）；
+    解释器 SeqTailCall/HIf 的 AST 尾调用交回 _eval 求值（_eval 内部循环消化）。
+    """
+    while True:
+        if isinstance(proc_val, LambdaProc):
+            from miniscm import _ensure_jit_compiled
+            _ensure_jit_compiled(proc_val)
+            if proc_val.compiled_version is not None:
+                r = _invoke_compiled(proc_val.compiled_version, args_val)
+            else:
+                # 与 C# `BindParams + SeqTailCall` 分支一致
+                from miniscm import eval_seq
+                nenv = Env(proc_val.env)
+                _bind_params(proc_val.params, args_val, nenv)
+                r = eval_seq(proc_val.body, nenv)
+            if not isinstance(r, TailCall):
+                return r
+            u = __mscm_try_unpack_tail_call__(r)
+            if u is not None:
+                proc_val, args_val, env = u
+                continue
             from miniscm import _eval as _eval_fn
-            r = _eval_fn(r.expr, r.env)
-        return r
-    raise TypeError(f"not callable: {proc_val}")
+            return _eval_fn(r.expr, r.env)
+        if isinstance(proc_val, CompiledLambda):
+            r = _invoke_compiled(proc_val, args_val)
+            if not isinstance(r, TailCall):
+                return r
+            u = __mscm_try_unpack_tail_call__(r)
+            if u is not None:
+                proc_val, args_val, env = u
+                continue
+            from miniscm import _eval as _eval_fn
+            return _eval_fn(r.expr, r.env)
+        if callable(proc_val):
+            return proc_val(*args_val)
+        if isinstance(proc_val, tuple) and proc_val[0] == 'lambda':
+            from miniscm import eval_seq
+            _, params, body, penv, is_simple = proc_val
+            nenv = Env(penv)
+            _bind_params(params, args_val, nenv)
+            r = eval_seq(body, nenv)
+            if not isinstance(r, TailCall):
+                return r
+            u = __mscm_try_unpack_tail_call__(r)
+            if u is not None:
+                proc_val, args_val, env = u
+                continue
+            from miniscm import _eval as _eval_fn
+            return _eval_fn(r.expr, r.env)
+        raise TypeError(f"not callable: {proc_val}")
 
 def __mscm_env_set_var__(env, name, val):
     cur = env
@@ -874,9 +890,16 @@ class AstExprCompiler:
                         keywords=[]
                     )
                 ))
+        # trampoline 循环（C# Expression.Loop 等价）：自递归/交叉尾调用
+        # 在此循环内迭代，避免嵌套 lambda 深尾递归逐层 +1 栈帧爆栈
+        nested_loop = ast.While(
+            test=ast.Constant(value=True),
+            body=nested_ast_body,
+            orelse=[]
+        )
         func_def = ast.FunctionDef(
             name='nested_lambda', args=func_args,
-            body=box_init + nested_ast_body, decorator_list=[]
+            body=box_init + [nested_loop], decorator_list=[]
         )
         mod = ast.Module(body=[func_def], type_ignores=[])
         ast.fix_missing_locations(mod)
@@ -1226,6 +1249,20 @@ class AstExprCompiler:
                     return self._stmt_self_tail_call(node, lexical_vars)
                 if self._is_cross_tail_target(node, lexical_vars):
                     return self._stmt_cross_tail_call(node, lexical_vars)
+            # 兜底 trampoline（C# `isTail && AppAst` 分支等价）：词法局部函数、
+            # 嵌套 lambda 应用等一律 MakeTailCall 值返回，由 __mscm_invoke__
+            # 循环解包，避免深尾递归逐层 +1 栈帧（无名字的嵌套 lambda 无法
+            # 走自递归优化，必须靠此路径保底）。
+            proc_ast = self.compile_expr(node.proc, lexical_vars)
+            args_list = ast.List(
+                elts=[self.compile_expr(a, lexical_vars) for a in node.args],
+                ctx=ast.Load()
+            )
+            return [ast.Return(value=ast.Call(
+                func=ast.Name(id='__mscm_make_tail_call__', ctx=ast.Load()),
+                args=[proc_ast, args_list, ast.Name(id='__mscm_env__', ctx=ast.Load())],
+                keywords=[]
+            ))]
         expr = self.compile_expr(node, lexical_vars)
         if is_tail:
             return [ast.Return(value=expr)]
@@ -1538,10 +1575,9 @@ class LambdaProc:
 
             if self.compiled_version is not None:
                 try:
-                    r = _invoke_compiled(self.compiled_version, args)
-                    while isinstance(r, TailCall):
-                        r = __mscm_eval_tail_call__(r)
-                    return r
+                    # 迭代 trampoline（C# JitRuntime.Invoke 等价），避免
+                    # 深 JIT 尾递归经递归解包逐层 +1 栈帧爆栈。
+                    return __mscm_invoke__(self, args, self.env)
                 except Exception:
                     if os.environ.get('MSCM_JIT_DEBUG'):
                         import traceback

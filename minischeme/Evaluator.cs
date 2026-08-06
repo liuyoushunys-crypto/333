@@ -14,6 +14,29 @@ public static class Evaluator
     // JIT compilation guard (prevents reentrant compilation)
     internal static bool IsCompiling = false;
 
+    // JIT-compile a named LambdaProc if not already compiled. Called from both
+    // EvalCore and JitRuntime.Invoke so a lambda is JITted no matter which
+    // path calls it; otherwise a JIT function mutually tail-calling an
+    // uncompiled one recurses through EvalCore<->Invoke (+2 frames/round).
+    internal static void EnsureCompiled(LambdaProc lp)
+    {
+        if (IsCompiling || lp.CompiledVersion is not null || lp.Name is null) return;
+        IsCompiling = true;
+        try
+        {
+            var compiled = Miniscm.Compiler.Compiler.CompileLambdaProc(lp);
+            if (compiled is not null)
+                lp.CompiledVersion = compiled;
+        }
+        catch
+        {
+        }
+        finally
+        {
+            IsCompiling = false;
+        }
+    }
+
     // Current macro's definition environment, used by the Scheme sx-expand
     // hygiene resolution (free template identifiers resolve at definition time).
     internal static Env? CurrentMacroDefEnv;
@@ -219,31 +242,15 @@ public static class Evaluator
                 // LambdaProc
                 if (proc is LambdaProc lp)
             {
-                // JIT compilation trigger
-                if (!IsCompiling && lp.CompiledVersion is null && lp.Name is not null)
-                {
-                    IsCompiling = true;
-                    try
-                    {
-                        var compiled = Miniscm.Compiler.Compiler.CompileLambdaProc(lp);
-                        if (compiled is not null)
-                            lp.CompiledVersion = compiled;
-                    }
-                    catch
-                    {
-                    }
-                    finally
-                    {
-                        IsCompiling = false;
-                    }
-                }
+                EnsureCompiled(lp);
 
                 if (lp.CompiledVersion is CompiledLambda cv)
                 {
                     var argsArr = EvalArgsToArray(curArgs, env);
-                    var r2 = cv.Invoke(lp.ClosureEnv, argsArr);
-                    if (r2 is TailCall tc2) { expr = tc2.Expr; env = tc2.Env; continue; }
-                    return r2;
+                    // JitRuntime.Invoke 是迭代 trampoline：JIT 尾调用返回的 TailCall
+                    // 在循环内解包，不会把 MakeTailCall 的 (proc (quote v) ...) 表达式
+                    // 重新喂给解释器（否则对深列表值做 HQuote/StripSyntax 爆栈）。
+                    return Miniscm.Compiler.JitRuntime.Invoke(cv, argsArr, cv.Env);
                 }
 
                 var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
@@ -253,13 +260,13 @@ public static class Evaluator
                 return r3;
             }
 
-            // CompiledLambda 直接调用（闭包 box 捕获的值可能是已编译 lambda）
+            // CompiledLambda 直接调用（闭包 box 捕获的值可能是已编译 lambda）。
+            // JitRuntime.Invoke 是迭代 trampoline：JIT 尾调用返回的 TailCall 在
+            // 循环内解包，不会递归 EvalCore（否则深尾递归逐层 +1 栈帧爆栈）。
             if (proc is CompiledLambda cl)
             {
                 var argsArr = EvalArgsToArray(curArgs, env);
-                var rcl = cl.Invoke(cl.Env, argsArr);
-                while (rcl is TailCall tccl) rcl = Evaluator.EvalCore(tccl.Expr, tccl.Env);
-                return rcl;
+                return Miniscm.Compiler.JitRuntime.Invoke(cl, argsArr, cl.Env);
             }
 
             var evaledArgs = EvalArgsToArray(curArgs, env);

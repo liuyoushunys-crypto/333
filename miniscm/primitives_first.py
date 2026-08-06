@@ -409,12 +409,12 @@ def _expand_macro_compiled(compiled_lp, args, env, defEnv):
     try:
         if getattr(compiled_lp, '__native_syntax__', False):
             return compiled_lp(args if args is not None else NIL)
-        from compiler import __mscm_eval_tail_call__
-        from mtypes import TailCall, NIL as _NIL
+        from compiler import __mscm_invoke__
+        from mtypes import NIL as _NIL
         args_val = args if args is not None else _NIL
-        r = compiled_lp(args_val)
-        while isinstance(r, TailCall):
-            r = __mscm_eval_tail_call__(r)
+        # 迭代 trampoline（C# JitRuntime.Invoke 等价）：宏编译体的 JIT 尾调用
+        # 在循环内解包，避免递归 __mscm_eval_tail_call__ 逐层 +1 栈帧。
+        r = __mscm_invoke__(compiled_lp, [args_val], env)
         if isinstance(r, SyntaxObject):
             r = r.expr
         return r
