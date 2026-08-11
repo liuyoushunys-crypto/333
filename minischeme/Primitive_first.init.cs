@@ -62,8 +62,8 @@ public static partial class PrimitiveRegistry
         _b("sx-defined?", PSxDefinedQ);
         _b("sx-defmacro", PSxDefmacro);
         _b("sx-expand-env", args => Evaluator.CurrentExpandEnv ?? Evaluator.GlobalEnv);
-        _b("sx-macro-expand", args => MinRef.SxMacroExpand(args[0], args[1], args[2], (Env)args[3]));
-        _b("qq-walk", args => MinRef.QqWalk(args[0], (Env)args[1]));
+        _b("sx-macro-expand", args => MinRef.SxMacroExpand(args[0], args[1], args[2], args[3] is Env e ? e : Evaluator.GlobalEnv));
+        _b("qq-walk", args => MinRef.QqWalk(args[0], args[1] is Env e ? e : Evaluator.GlobalEnv));
         _b("sx-expand", args => NativeSyntax.SxExpand(args[0], MinRef.SxGetBindings(), MinRef.SxMutatedVars, MinRef.SxDefEnv()));
         _b("sx-get-bindings", args => MinRef.SxGetBindings());
         _b("sx-gen-temps", args => MinRef.SxGenTemps(args[0]));

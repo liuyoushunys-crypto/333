@@ -20,7 +20,7 @@ public static class Compiler
     // 缓存目录固定为仓库根 /333/.mscm_cache (与 miniscm 共享)。
     // 不再用 CWD 相对路径或 symlink (rm -rf .mscm_cache* 会误删 symlink)。
     static readonly string CacheDir =
-        Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "../.mscm_cache"));
+        Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "./.mscm_cache"));
     static readonly HashSet<string> SkipJitNames =
     [
         "flip",

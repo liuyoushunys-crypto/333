@@ -250,7 +250,7 @@ public static partial class PrimitiveRegistry
             }
             else
             {
-                var r = Lcm(acc is int ? (long)(int)acc : (long)acc!, NumericHelper.ToBigInt(x));
+                var r = Lcm(NumericHelper.ToBigInt(acc), NumericHelper.ToBigInt(x));
                 acc = r <= long.MaxValue ? (long)r : r;
             }
         }
@@ -1552,6 +1552,16 @@ public static partial class PrimitiveRegistry
         {
             sb.Append(FormatScheme(args[1], args[2..]));
             return Const.VOID;
+        }
+        if (args[0] is Sym s && s.Name == "#f")
+        {
+            var parts = new StringBuilder();
+            for (int i = 1; i < args.Length; i++)
+            {
+                if (i > 1) parts.Append(' ');
+                parts.Append(args[i] is string or SchemeString ? ToStr(args[i]) : Printer.Format(args[i]));
+            }
+            return new SchemeString(parts.ToString());
         }
         return new SchemeString(FormatScheme(args[0], args[1..]));
     }

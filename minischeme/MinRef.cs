@@ -273,19 +273,28 @@ internal static object? SxMacroExpand(object? pattern, object? body, object? arg
     {
         if (cur is Nil)
             return new SchemeVector(QqReverse(items).Cells());  // (list->vector (qq-reverse items))
-        var el = ((Cell)cur!).Car;
+        if (cur is not Cell curCell) return items; // Safety check
+        var el = curCell.Car;
         if (QqUnquote(el))
-            return QqWalkVectorHelper(((Cell)cur!).Cdr,
-                new Cell(Eval(((Cell)((Cell)el).Cdr!).Car, env), items), env);
+        {
+            if (el is Cell elCell && elCell.Cdr is Cell elCdrCell)
+                return QqWalkVectorHelper(curCell.Cdr,
+                    new Cell(Eval(elCdrCell.Car, env), items), env);
+            return QqWalkVectorHelper(curCell.Cdr, items, env);
+        }
         if (QqUnsplice(el))
         {
-            // 还原 let: v = (eval (cadr el) env)
-            var v = Eval(((Cell)((Cell)el).Cdr!).Car, env);
-            if (v is Cell) return QqWalkVectorHelper(((Cell)cur!).Cdr, QqAppendLists(QqReverse(v), items), env);
-            if (v is Nil) return QqWalkVectorHelper(((Cell)cur!).Cdr, items, env);
-            return QqWalkVectorHelper(((Cell)cur!).Cdr, new Cell(v, items), env);
+            if (el is Cell elCell && elCell.Cdr is Cell elCdrCell)
+            {
+                // 还原 let: v = (eval (cadr el) env)
+                var v = Eval(elCdrCell.Car, env);
+                if (v is Cell) return QqWalkVectorHelper(curCell.Cdr, QqAppendLists(QqReverse(v), items), env);
+                if (v is Nil) return QqWalkVectorHelper(curCell.Cdr, items, env);
+                return QqWalkVectorHelper(curCell.Cdr, new Cell(v, items), env);
+            }
+            return QqWalkVectorHelper(curCell.Cdr, items, env);
         }
-        return QqWalkVectorHelper(((Cell)cur!).Cdr,
+        return QqWalkVectorHelper(curCell.Cdr,
             new Cell(QqWalk(el, env), items), env);
     }
 
@@ -442,12 +451,19 @@ internal static List<(Sym, object?)> SxGetBindings()                 // 57
         if (QsUnsplice(cc.Car))                                 // (qs-unsplice? (car cur))
         {
             // 还原 let: v = (eval (cadr (car cur)) (sx-expand-env))
-            var v = Eval(((Cell)((Cell)cc.Car).Cdr!).Car, SxExpandEnv());
-            return QqAppendLists(QqReverse(v), QsWalkList(cc.Cdr));
+            if (cc.Car is Cell carCell && carCell.Cdr is Cell cdrCell)
+            {
+                var v = Eval(cdrCell.Car, SxExpandEnv());
+                return QqAppendLists(QqReverse(v), QsWalkList(cc.Cdr));
+            }
+            return QsWalkList(cc.Cdr);
         }
         if (QsUnquote(cc.Car))                                  // (qs-unquote? (car cur))
-            return new Cell(Eval(((Cell)((Cell)cc.Car).Cdr!).Car, SxExpandEnv()),
-                            QsWalkList(cc.Cdr));
+        {
+            if (cc.Car is Cell carCell && carCell.Cdr is Cell cdrCell)
+                return new Cell(Eval(cdrCell.Car, SxExpandEnv()), QsWalkList(cc.Cdr));
+            return QsWalkList(cc.Cdr);
+        }
         return new Cell(QsExpand(cc.Car), QsWalkList(cc.Cdr));
     }
 
@@ -457,9 +473,17 @@ internal static object? QsExpand(object? x)                          // 65
             return NativeSyntax.SxExpandSym(xs, SxGetBindings(), SxMutatedVars, SxDefEnv());
         if (x is not Cell xc) return x;                         // (not (pair? x))
         if (QsUnquote(xc))                                      // (qs-unquote? x)
-            return Eval(((Cell)xc.Cdr!).Car, SxExpandEnv());    // (eval (cadr x) (sx-expand-env))
+        {
+            if (xc.Cdr is Cell cdrCell)
+                return Eval(cdrCell.Car, SxExpandEnv());    // (eval (cadr x) (sx-expand-env))
+            return x;
+        }
         if (QsUnsplice(xc))                                     // (qs-unsplice? x)
-            return Eval(((Cell)xc.Cdr!).Car, SxExpandEnv());
+        {
+            if (xc.Cdr is Cell cdrCell)
+                return Eval(cdrCell.Car, SxExpandEnv());
+            return x;
+        }
         if (xc.Car is Sym cs && cs == SYM_QUASISYNTAX)          // (eq? (car x) 'quasisyntax)
             return x;
         return QsWalkList(xc);                                  // (qs-walk-list x)

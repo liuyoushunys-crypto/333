@@ -84,7 +84,30 @@ public static class JitRuntime
         u = default;
         if (tc.Expr is not Cell ec) return false;
         var proc = ec.Car;
-        if (proc is not (CompiledLambda or LambdaProc or System.Runtime.CompilerServices.ITuple or Delegate
+        object? procVal = proc;
+        if (proc is Sym sym)
+        {
+            // Check if it's a special form
+            if (Evaluator.Specials.TryGetValue(sym, out var specialHandler))
+            {
+                // Call special form handler with unevaluated args
+                var result = specialHandler(ec.Cdr, tc.Env);
+                if (result is TailCall tc2)
+                {
+                    // Recursively try to unpack the resulting tail call
+                    return TryUnpackTailCall(tc2, out u);
+                }
+                // Special form returned a value, not a tail call
+                return false;
+            }
+            var sentinel = new object();
+            procVal = tc.Env.LookupSilent(sym.Name, sentinel);
+            if (ReferenceEquals(procVal, sentinel))
+            {
+                return false;
+            }
+        }
+        if (procVal is not (CompiledLambda or LambdaProc or System.Runtime.CompilerServices.ITuple or Delegate
             or Func<object?[], object?>))
             return false;
         var args = new List<object?>();
@@ -95,10 +118,15 @@ public static class JitRuntime
             // MakeTailCall wraps each arg in (quote v)
             if (arg is Cell qc && qc.Car is Sym qs && qs.Name == "quote")
                 arg = qc.Cdr is Cell qarg ? qarg.Car : arg;
+            else
+            {
+                // Interpreter tail call: arg is unevaluated, evaluate it in tc.Env
+                arg = Evaluator.EvalCore(arg, tc.Env);
+            }
             args.Add(arg);
             cur = ac.Cdr;
         }
-        u = (proc, args.ToArray(), tc.Env);
+        u = (procVal, args.ToArray(), tc.Env);
         return true;
     }
 

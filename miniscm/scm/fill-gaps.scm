@@ -722,11 +722,7 @@
 ;;     (if (null? l) acc
 ;;         (loop (cdr l) (cons (car l) acc)))))
 
-(define (vector . args) (list->vector args))
-(define (vector->list v)
-  (let loop ((i (- (vector-length v) 1)) (acc '()))
-    (if (< i 0) acc
-        (loop (- i 1) (cons (vector-ref v i) acc)))))
+;; vector and vector->list are provided by C# primitives (handle bytevectors correctly)
 
 (define (symbol=? . args)
   (or (null? args) (null? (cdr args))

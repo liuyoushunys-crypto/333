@@ -1,22 +1,26 @@
 ;; 第十四部分：数论（纯 Scheme 精确算术）
 ;; ============================================================
 
+(define (num-den x)
+  (cons (numerator x) (denominator x)))
+
 (define (scheme-gcd . args)
   (if (null? args) 0
-      (let loop ((g (abs (car args))) (rest (cdr args)))
-        (if (null? rest) g
-            (loop (let rec ((a g) (b (abs (car rest))))
-                    (if (= b 0) a (rec b (remainder a b))))
-                  (cdr rest))))))
+      (let loop ((g (car args)) (rest (cdr args)))
+        (if (null? rest) (abs g)
+            (let ((a-g (num-den g)) (b-g (num-den (car rest))))
+              (loop (/ (gcd (car a-g) (car b-g))
+                       (lcm (cdr a-g) (cdr b-g)))
+                    (cdr rest)))))))
 
 (define (scheme-lcm . args)
   (if (null? args) 1
-      (let loop ((acc (abs (car args))) (nums (cdr args)))
-        (if (null? nums) acc
-            (let ((a acc) (b (abs (car nums))))
-              (if (or (= a 0) (= b 0)) 0
-                  (loop (quotient (* a b) (scheme-gcd a b))
-                        (cdr nums))))))))
+      (let loop ((acc (car args)) (nums (cdr args)))
+        (if (null? nums) (abs acc)
+            (let ((a-g (num-den acc)) (b-g (num-den (car nums))))
+              (loop (/ (lcm (car a-g) (car b-g))
+                       (gcd (cdr a-g) (cdr b-g)))
+                    (cdr nums)))))))
 
 (define (prime? n)
   ;; 试除法素性测试
