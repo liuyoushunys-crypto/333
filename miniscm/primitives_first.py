@@ -215,7 +215,7 @@ def add(*a):
     return sum(a)
 
 def sub(*a):
-    if not a: raise SchemeException("-: wrong number of arguments")
+    if not a: return 0
     if len(a)==1: return -a[0] if isnum(a[0]) else -num(a[0])
     all_int = True
     for x in a:
