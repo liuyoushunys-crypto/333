@@ -31,11 +31,11 @@ public static partial class PrimitiveRegistry
         _b("char-set", args => MakeCharSet(args));
         _b("char-set?", args => args[0] is bool[] b && b.Length == 256 ? Const.TRUE : Const.FALSE);
         _b("char-set-contains?", args => CharSetContains(args[0], args[1]) ? Const.TRUE : Const.FALSE);
-        _b("char-set-empty?", args => !((bool[])args[0]!).Any(x => x) ? Const.TRUE : Const.FALSE);
+        _b("char-set-empty?", args => !CharsetData(args[0]).Any(x => x) ? Const.TRUE : Const.FALSE);
         _b("char-set->list", args => CharSetToList(args[0]));
         _b("char-set->string", args => CharSetToString(args[0]));
-        _b("char-set-count", args => (long)((bool[])args[0]!).Count(x => x));
-        _b("char-set-copy", args => (bool[])((bool[])args[0]!).Clone());
+        _b("char-set-count", args => (long)CharsetData(args[0]).Count(x => x));
+        _b("char-set-copy", args => (bool[])CharsetData(args[0]).Clone());
         _b("char-set-union", args => CharSetBinOp(args, true));
         _b("char-set-intersection", args => CharSetBinOp(args, false));
         _b("char-set-difference", args => CharSetDiff(args));
@@ -137,10 +137,10 @@ public static partial class PrimitiveRegistry
     private static object? CharSetBinOp(object?[] args, bool union)
     {
         if (args.Length == 0) return new bool[256];
-        var result = (bool[])((bool[])args[0]!).Clone();
+        var result = (bool[])CharsetData(args[0]).Clone();
         for (int k = 1; k < args.Length; k++)
         {
-            var other = (bool[])args[k]!;
+            var other = CharsetData(args[k]);
             for (int i = 0; i < 256; i++)
                 result[i] = union ? (result[i] || other[i]) : (result[i] && other[i]);
         }
@@ -149,10 +149,10 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetDiff(object?[] args)
     {
-        var result = (bool[])((bool[])args[0]!).Clone();
+        var result = (bool[])CharsetData(args[0]).Clone();
         for (int k = 1; k < args.Length; k++)
         {
-            var other = (bool[])args[k]!;
+            var other = CharsetData(args[k]);
             for (int i = 0; i < 256; i++) if (other[i]) result[i] = false;
         }
         return result;
@@ -179,7 +179,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetAdjoin(object?[] args, bool add)
     {
-        var result = (bool[])((bool[])args[0]!).Clone();
+        var result = (bool[])CharsetData(args[0]).Clone();
         for (int k = 1; k < args.Length; k++)
         {
             int cp = AsChar(args[k]);
@@ -207,7 +207,7 @@ public static partial class PrimitiveRegistry
     private static object? CharSetFilter(object?[] args)
     {
         var pred = args[0];
-        var basis = args.Length > 2 ? (bool[])args[2]! : (bool[])args[1]!;
+        var basis = args.Length > 2 ? CharsetData(args[2]) : CharsetData(args[1]);
         var result = new bool[256];
         for (int i = 0; i < 256; i++)
             if (basis[i] && ReferenceEquals(App(pred, new SchemeChar(i)), Const.TRUE)) result[i] = true;
@@ -252,7 +252,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetHash(object?[] args)
     {
-        var cs = (bool[])args[0]!;
+        var cs = CharsetData(args[0]);
         long bound = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 65536;
         long h = 0;
         for (int i = 0; i < 256; i++)
@@ -263,10 +263,10 @@ public static partial class PrimitiveRegistry
     private static object? CharSetEqual(object?[] args)
     {
         if (args.Length < 2) return Const.TRUE;
-        var first = (bool[])args[0]!;
+        var first = CharsetData(args[0]);
         for (int k = 1; k < args.Length; k++)
         {
-            var other = (bool[])args[k]!;
+            var other = CharsetData(args[k]);
             for (int i = 0; i < 256; i++)
                 if (first[i] != other[i]) return Const.FALSE;
         }

@@ -116,7 +116,12 @@
     s))
 
 (define (char-set? x)
-  (if (and (number? (vector-length x)) (= (vector-length x) 256)) #t #f))
+  (if (vector-length x) #t #f))
+
+(define (char-set->integer cs)
+  (let loop ((i 0) (n 0))
+    (if (= i 256) n
+        (loop (+ i 1) (if (vector-ref cs i) (+ (* n 33) i) n)))))
 
 (define (char-set-contains? cs c)
   (and (< (char->integer c) 256) (vector-ref cs (char->integer c))))
@@ -993,6 +998,8 @@
 
 (define (deque-add-front! dq item) (deque-add-front dq item))
 (define (deque-add-back! dq item) (deque-add-back dq item))
+(define (deque-remove-front! dq) (deque-remove-front dq))
+(define (deque-remove-back! dq) (deque-remove-back dq))
 
 (define fx-width 24)
 
