@@ -389,14 +389,14 @@
 ;; ═══════════════════════════════════════════════════════════════
 (display "\n===== 10. define 编译正确性 =====\n")
 
-(define x10 42)
-(define y10 (+ 1 2))
-(define z10 "hello")
-(define w10 '(a b c))
-(check "define constant" x10 42)
-(check "define computed" y10 3)
-(check "define string" z10 "hello")
-(check "define list" w10 '(a b c))
+(define compiler-constant-x10 42)
+(define compiler-computed-y10 (+ 1 2))
+(define compiler-string-z10 "hello")
+(define compiler-list-w10 '(a b c))
+(check "define constant" compiler-constant-x10 42)
+(check "define computed" compiler-computed-y10 3)
+(check "define string" compiler-string-z10 "hello")
+(check "define list" compiler-list-w10 '(a b c))
 
 ;; ═══════════════════════════════════════════════════════════════
 ;; 11. 复盘14: 临时变量 __mscm_t_ 前缀 不冲突

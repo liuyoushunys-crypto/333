@@ -406,10 +406,13 @@
 (define-syntax some->
   (syntax-rules ()
     ((_ x) x)
+    ((_ x (lambda formals body ...)) (if x ((lambda formals body ...) x) #f))
+    ((_ x (lambda formals body ...) more ...) (if x (some-> ((lambda formals body ...) x) more ...) #f))
+    ((_ x (f args ...)) (if x (f x args ...) #f))
+    ((_ x (f args ...) . rest) (if x (some-> (f x args ...) . rest) #f))
     ((_ x proc) (if x (proc x) #f))
     ((_ x proc more ...) (if x (some-> (proc x) more ...) #f))
-    ((_ x (f . args)) (if x (f x . args) #f))
-    ((_ x (f . args) . rest) (if x (some-> (f x . args) . rest) #f))))
+    ))
 
 ;; Thread a value into the last argument position.
 (define-syntax ->>

@@ -1,28 +1,31 @@
 ;; number-type-smoke-test — Fraction/complex correctness
 
-(load "test/assert.scm")
+;; Standalone assertions: use call-with-values for SRFI-141 two-value results.
+(define (assert condition message)
+  (if condition #t (error message)))
 
 ;; ── helpers ──
 (define (approx= a b)
   (< (abs (- a b)) 1e-10))
 
 ;; ── SRFI-141 division with Fractions ──
-(assert (= (floor/ 7 3) 2 1)       "(floor/ 7 3)")
-(assert (= (floor/ -7 3) -3 2)     "(floor/ -7 3)")
-(assert (= (floor/ 7 -3) -3 -2)    "(floor/ 7 -3)")
-(assert (= (floor/ -7 -3) 2 -1)    "(floor/ -7 -3)")
+(define (check-div thunk q r) (assert (call-with-values thunk (lambda (a b) (and (= a q) (= b r)))) "division"))
+(check-div (lambda () (floor/ 7 3)) 2 1)
+(check-div (lambda () (floor/ -7 3)) -3 2)
+(check-div (lambda () (floor/ 7 -3)) -3 -2)
+(check-div (lambda () (floor/ -7 -3)) 2 -1)
 
-(assert (= (truncate/ 7 3) 2 1)    "(truncate/ 7 3)")
-(assert (= (truncate/ -7 3) -2 -1) "(truncate/ -7 3)")
+(check-div (lambda () (truncate/ 7 3)) 2 1)
+(check-div (lambda () (truncate/ -7 3)) -2 -1)
 
-(assert (= (ceiling/ 7 3) 3 -2)    "(ceiling/ 7 3)")
-(assert (= (ceiling/ -7 3) -2 -1)  "(ceiling/ -7 3)")
+(check-div (lambda () (ceiling/ 7 3)) 3 -2)
+(check-div (lambda () (ceiling/ -7 3)) -2 -1)
 
-(assert (= (round/ 5 3) 2 -1)      "(round/ 5 3)")
-(assert (= (round/ 7 3) 2 1)       "(round/ 7 3)")
+(check-div (lambda () (round/ 5 3)) 2 -1)
+(check-div (lambda () (round/ 7 3)) 2 1)
 
-(assert (= (euclidean/ 7 3) 2 1)   "(euclidean/ 7 3)")
-(assert (= (euclidean/ -7 3) -3 2)  "(euclidean/ -7 3)")
+(check-div (lambda () (euclidean/ 7 3)) 2 1)
+(check-div (lambda () (euclidean/ -7 3)) -3 2)
 
 ;; ── Fraction / Rational arithmetic ──
 (assert (= (/ 1 3 2) 1/6)          "(/ 1 3 2)")

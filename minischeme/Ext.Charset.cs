@@ -7,6 +7,12 @@ namespace Miniscm.Primitives;
 
 public static partial class PrimitiveRegistry
 {
+    private static bool[] CharsetData(object? value)
+    {
+        if (value is bool[] bits) return bits;
+        if (value is SchemeVector vector) return vector.Data.Select(x => x is Sym s && !ReferenceEquals(s, Const.FALSE)).Select(x => x).ToArray();
+        throw new ArgumentException("not a character set");
+    }
     private static object? RegisterExtChars()
     {
         // char predicates
@@ -109,12 +115,12 @@ public static partial class PrimitiveRegistry
     private static bool CharSetContains(object? cs, object? c)
     {
         int i = AsChar(c);
-        return i < 256 && ((bool[])cs!)[i];
+        return i < 256 && CharsetData(cs)[i];
     }
 
     private static object? CharSetToList(object? cs)
     {
-        var data = (bool[])cs!;
+        var data = CharsetData(cs);
         var res = new List<object?>();
         for (int i = 0; i < 256; i++) if (data[i]) res.Add(new SchemeChar(i));
         return res.ToCell();
@@ -122,7 +128,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetToString(object? cs)
     {
-        var data = (bool[])cs!;
+        var data = CharsetData(cs);
         var sb = new System.Text.StringBuilder();
         for (int i = 0; i < 256; i++) if (data[i]) sb.Append(char.ConvertFromUtf32(i));
         return new SchemeString(sb.ToString());
@@ -157,7 +163,7 @@ public static partial class PrimitiveRegistry
         var result = new bool[256];
         foreach (var csArg in args)
         {
-            var cs = (bool[])csArg!;
+            var cs = CharsetData(csArg);
             for (int i = 0; i < 256; i++) if (cs[i]) result[i] = !result[i];
         }
         return result;
@@ -165,7 +171,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetComplement(object? cs)
     {
-        var data = (bool[])cs!;
+            var data = CharsetData(cs);
         var result = new bool[256];
         for (int i = 0; i < 256; i++) result[i] = !data[i];
         return result;
@@ -184,7 +190,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetAny(object? pred, object? cs)
     {
-        var data = (bool[])cs!;
+        var data = CharsetData(cs);
         for (int i = 0; i < 256; i++)
             if (data[i] && !ReferenceEquals(App(pred, new SchemeChar(i)), Const.FALSE)) return new SchemeChar(i);
         return Const.FALSE;
@@ -192,7 +198,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetEvery(object? pred, object? cs)
     {
-        var data = (bool[])cs!;
+        var data = CharsetData(cs);
         for (int i = 0; i < 256; i++)
             if (data[i] && !ReferenceEquals(App(pred, new SchemeChar(i)), Const.TRUE)) return Const.FALSE;
         return Const.TRUE;
@@ -210,7 +216,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetFold(object? kons, object? knil, object? cs)
     {
-        var data = (bool[])cs!;
+        var data = CharsetData(cs);
         object? acc = knil;
         for (int i = 0; i < 256; i++)
             if (data[i]) acc = App(kons, acc, new SchemeChar(i));
@@ -219,7 +225,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetForEach(object? proc, object? cs)
     {
-        var data = (bool[])cs!;
+        var data = CharsetData(cs);
         for (int i = 0; i < 256; i++)
             if (data[i]) App(proc, new SchemeChar(i));
         return Const.VOID;
@@ -227,7 +233,7 @@ public static partial class PrimitiveRegistry
 
     private static object? CharSetMap(object? proc, object? cs)
     {
-        var data = (bool[])cs!;
+        var data = CharsetData(cs);
         var result = new bool[256];
         for (int i = 0; i < 256; i++)
         {
