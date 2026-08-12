@@ -28,7 +28,8 @@ public class Program
             "generators.scm", "misc.scm", "fill-gaps.scm",
         };
         var pyb = Environment.GetEnvironmentVariable("MSCM_PYB") == "1";
-        var _libs = pyb ? _allLibs.Take(3).ToArray() : _allLibs;
+        var _libs = _allLibs;//pyb ? _allLibs.Take(3).ToArray() : _allLibs;
+        PrimitiveRegistry.InitExt();
         if (Directory.Exists(scmDir))
         {
             foreach (var lib in _libs)
@@ -62,10 +63,18 @@ public class Program
                     {
                         var src = File.ReadAllText(path);
                         var exprs = Parser.ReadAll(src);
+                        int _ei = 0;
                         foreach (var expr in exprs)
                         {
+                            if (expr is Eof) continue;
+                            _ei++;
                             try { Evaluator.Eval(expr, Evaluator.GlobalEnv); }
-                            catch { }
+                            catch (Exception ex) 
+                            { 
+                                var _s = Printer.Format(expr);
+                                if (_s.Length > 60) _s = _s[..60];
+                                Console.Error.WriteLine($"DEBUG: expr#{_ei} {_s} => {ex.GetType().Name}: {ex.Message}"); 
+                            }
                         }
                     }
                     catch { }

@@ -1,6 +1,24 @@
 ;; test-boot-sugar-usage.scm — Comprehensive usage examples for all macros in boot-sugar.scm
 ;; Run: python3 miniscm.py test/test-boot-sugar-usage.scm
 
+;; 覆盖版本 check：本文件用 2 参形式 (check actual expected)，boot-sugar 的
+;; check 是 3 参函数 (check label actual expected)。宏版本同时支持两种形式，
+;; 2 参时用实际表达式源码作为标签。
+(define-syntax check
+  (syntax-rules ()
+    ((_ actual expected)
+     (if (equal? actual expected)
+         (begin (display "[PASS] ") (display 'actual) (newline))
+         (begin (display "[FAIL] ") (display 'actual)
+                (display "  expected: ") (write expected)
+                (display "  actual: ") (write actual) (newline))))
+    ((_ label actual expected)
+     (if (equal? actual expected)
+         (begin (display "[PASS] ") (display label) (newline))
+         (begin (display "[FAIL] ") (display label)
+                (display "  expected: ") (write expected)
+                (display "  actual: ") (write actual) (newline))))))
+
 (display "=== Phase 5 — User Macros ===\n\n")
 
 (display "-- nth: positional access\n")

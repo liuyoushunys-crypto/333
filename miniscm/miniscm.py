@@ -435,19 +435,22 @@ def load_file(path):
     # 加载并求值 Scheme 文件中的所有顶层表达式。
     # 使用 be（全局内置环境）作为求值环境。
     #
-    # 重要警告：except: pass 静默捕获所有异常。
-    # 这意味着文件中的语法错误、未定义变量、类型错误等
-    # 都只会跳过出错表达式，不会中断加载过程。
-    # 这是有意为之（引导库可能包含条件加载的表达式），
-    # 但也意味着错误很难调试——打印了 n 但不会告诉你哪个表达式失败了。
+    # 与 minischeme (C#) Program.cs 对齐：顶层表达式异常不再静默吞掉，
+    # 统一打印 "DEBUG: eval exception = ..." 到 stderr，
+    # MSCM_JIT_DEBUG=1 时附加完整 traceback。
     #
     # 返回值是被成功求值的表达式数量。
     with open(path,encoding="utf-8") as f: src=f.read()
     exprs=read_all(src); n=0
     for expr in exprs:
         if expr is EOF: continue
-        try: _eval(expr,be); n+=1
-        except: pass
+        n+=1
+        try: _eval(expr,be)
+        except Exception as e:
+            _s=str(expr)[:60].replace('\n',' ')
+            sys.stderr.write(f"DEBUG: expr#{n} {_s} => {type(e).__name__}: {e}\n")
+            if os.environ.get("MSCM_JIT_DEBUG"):
+                import traceback; traceback.print_exc()
     return n
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
@@ -621,36 +624,39 @@ if __name__=='__main__':
     compiler.PYB_MODE = 'pyb' if pyb else 'scm'
     from initenv_ext import initenv_ext
     initenv_ext()
-    if pyb:
-        pass
-    else:
-        _libs = ['char-boolean.scm','numeric.scm',
-                'srfi-1-list.scm','srfi-13-string.scm','hof-vector.scm',
-                'number-theory.scm','gensym-stream.scm',
-                'data-structures-ext.scm','srfi-14-char-set.scm',
-                'generators.scm','misc.scm','fill-gaps.scm']
-        for f in _libs:
-            try:
-                n=load_file(_BASE+'/scm/'+f)
-                sys.stderr.write(f"loaded {n} from {f}\n")
-            except: pass
+    # if pyb:
+    #     pass
+    # else:
+    _libs = ['char-boolean.scm','numeric.scm',
+            'srfi-1-list.scm','srfi-13-string.scm','hof-vector.scm',
+            'number-theory.scm','gensym-stream.scm',
+            'data-structures-ext.scm','srfi-14-char-set.scm',
+            'generators.scm','misc.scm','fill-gaps.scm']
+    for f in _libs:
+        try:
+            n=load_file(_BASE+'/scm/'+f)
+            sys.stderr.write(f"loaded {n} from {f}\n")
+        except: pass
+
+    from initenv_ext import initenv_ext
+    initenv_ext()
 
 
         # scm 库 parameterize 版 with-output-to-string 需 display 支持端口重定向，
         # Python 的 display 写 sys.stdout，故用原生版（sys.stdout 切换）
-        from primitives import call as _call2
-        import io as _io2
-        from mtypes import SchemeString as _SS2
-        def _wots2(thunk):
-            buf = _io2.StringIO()
-            old = sys.stdout
-            sys.stdout = buf
-            try:
-                _call2(thunk, [])
-                return _SS2(buf.getvalue())
-            finally:
-                sys.stdout = old
-        be.define('with-output-to-string', _wots2)
+    from primitives import call as _call2
+    import io as _io2
+    from mtypes import SchemeString as _SS2
+    def _wots2(thunk):
+        buf = _io2.StringIO()
+        old = sys.stdout
+        sys.stdout = buf
+        try:
+            _call2(thunk, [])
+            return _SS2(buf.getvalue())
+        finally:
+            sys.stdout = old
+    be.define('with-output-to-string', _wots2)
 
     # from initenv_py import initenv_py
     # initenv_py()

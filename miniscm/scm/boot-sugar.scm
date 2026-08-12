@@ -289,7 +289,7 @@
          (begin (display (string-append "[FAIL] " name)) (newline)))
        result))))
 
-(define-syntax test-equal
+(define-syntax test-equal1
   (syntax-rules ()
     ((_ name expected actual)
      (let ((e expected) (a actual))
@@ -298,6 +298,23 @@
          (begin (display (string-append "[FAIL] " name)) (newline)
                 (display (string-append "  expected: " (with-output-to-string (lambda () (write e))))) (newline)
                 (display (string-append "  actual:   " (with-output-to-string (lambda () (write a))))) (newline)))))))
+
+(define (test-equal label expected actual)
+  (if (equal? actual expected)
+      (begin (display "[PASS] ") (display label) (newline))
+      (begin (display "[FAIL] ") (display label)
+             (display "  expected: ") (display expected)
+             (display "  actual: ") (display actual) (newline))))
+
+(define-syntax test-approximate
+  (syntax-rules ()
+    ((_ name expected actual epsilon)
+     (let ((e expected) (a actual))
+       (if (< (abs (- a e)) epsilon)
+           (begin (display (string-append "[PASS] " name)) (newline))
+           (begin (display (string-append "[FAIL] " name)) (newline)
+                  (display "  expected: ") (display e) (display " ± ") (display epsilon) (newline)
+                  (display "  actual:   ") (display a) (newline)))))))
 
 ;; ── define-immutable ──
 ;; 定义不可变函数（展开为 lambda，不创建可 set! 的变量）。
@@ -1019,5 +1036,12 @@
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; 在纯 Scheme 模式（pyb=False）下替代 Python 特殊形式的占位。
 ;; 当前为空（Python 相关宏已迁移到 boot-py.scm）。
+
+(define (test-begin . name)
+  (display "===  Testing ")
+  (if (null? name) (display "unnamed") (display (car name)))
+  (display "  ===") (newline))
+
+(define (test-end . name) (newline))
 
 (display "=== boot-sugar.scm 加载完成 ===\n")(newline)

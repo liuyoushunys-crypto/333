@@ -57,7 +57,7 @@
 
 (test-equal "let basic" 3 (let ((x 1) (y 2)) (+ x y)))
 (test-equal "let single binding" 42 (let ((x 42)) x))
-(test-equal "let empty body" #t (let ((x 1))))
+(test-equal "let empty body" (void) (let ((x 1))))
 (test-equal "let nested" 6 (let ((x 1)) (let ((y 2)) (let ((z 3)) (+ x y z)))))
 
 (display "-- let named (recursive)\n")

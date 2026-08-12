@@ -56,6 +56,8 @@
 ;;     - 命名 let 是 named-let / 内循环的惯用写法
 (define-syntax let
   (syntax-rules ()
+    ((let ((var val) ...))
+     ((lambda (var ...) (if #f #f)) val ...))
     ((let ((var val) ...) body1 body2 ...)
      ((lambda (var ...) body1 body2 ...) val ...))
     ((let name ((var val) ...) body1 body2 ...)

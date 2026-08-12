@@ -79,7 +79,7 @@ public static class JitRuntime
     // JIT 的 proc 是运行时函数对象、参数是已求值值（quote 包装）；
     // 解释器 SeqTailCall/HIf/HCond 的尾调用携带未求值 AST（proc 为
     // Sym/Cell/字面量），必须交回 EvalCore 求值，不能按值解包。
-    static bool TryUnpackTailCall(TailCall tc, out (object?, object?[], Env) u)
+    public static bool TryUnpackTailCall(TailCall tc, out (object?, object?[], Env) u)
     {
         u = default;
         if (tc.Expr is not Cell ec) return false;

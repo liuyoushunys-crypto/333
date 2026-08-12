@@ -892,6 +892,31 @@ public static partial class PrimitiveRegistry
         object? result = null;
         var myId = ++ContCounter.Value;
         object? captured = null;
+        
+        // If receiver is a CompiledLambda or LambdaProc with compiled version, 
+        // execute trampoline within try/catch to ensure ContinuationEscape is caught
+        // (JitRuntime.Invoke doesn't have the handler)
+        if (receiver is Miniscm.Compiler.CompiledLambda cl)
+        {
+            var escape = new Func<object?[], object?>(_ => { captured = _[0]; throw new ContinuationEscape(captured, myId); });
+            try 
+            { 
+                result = InvokeContTrampoline(cl, [escape], cl.Env); 
+            }
+            catch (ContinuationEscape ce) { if (ce.Id != myId) throw; result = ce.Val; }
+            return result;
+        }
+        if (receiver is LambdaProc lp && lp.CompiledVersion is Miniscm.Compiler.CompiledLambda cl2)
+        {
+            var escape = new Func<object?[], object?>(_ => { captured = _[0]; throw new ContinuationEscape(captured, myId); });
+            try 
+            { 
+                result = InvokeContTrampoline(cl2, [escape], lp.ClosureEnv); 
+            }
+            catch (ContinuationEscape ce) { if (ce.Id != myId) throw; result = ce.Val; }
+            return result;
+        }
+        
         try { result = App(receiver, new Func<object?[], object?>(_ => { captured = _[0]; throw new ContinuationEscape(captured, myId); })); }
         catch (ContinuationEscape ce) { if (ce.Id != myId) throw; result = ce.Val; }
         return result;
@@ -903,9 +928,95 @@ public static partial class PrimitiveRegistry
         object? result = null;
         var myId = ++ContCounter.Value;
         object? captured = null;
+        
+        // If receiver is a CompiledLambda or LambdaProc with compiled version, 
+        // execute trampoline within try/catch
+        if (receiver is Miniscm.Compiler.CompiledLambda cl)
+        {
+            var escape = new Func<object?[], object?>(_ => { captured = _[0]; throw new ContinuationEscape(captured, myId); });
+            try 
+            { 
+                result = InvokeContTrampoline(cl, [escape], cl.Env); 
+            }
+            catch (ContinuationEscape ce) { if (ce.Id != myId) throw; result = ce.Val; }
+            return result;
+        }
+        if (receiver is LambdaProc lp && lp.CompiledVersion is Miniscm.Compiler.CompiledLambda cl2)
+        {
+            var escape = new Func<object?[], object?>(_ => { captured = _[0]; throw new ContinuationEscape(captured, myId); });
+            try 
+            { 
+                result = InvokeContTrampoline(cl2, [escape], lp.ClosureEnv); 
+            }
+            catch (ContinuationEscape ce) { if (ce.Id != myId) throw; result = ce.Val; }
+            return result;
+        }
+        
         try { result = App(receiver, new Func<object?[], object?>(_ => { captured = _[0]; throw new ContinuationEscape(captured, myId); })); }
         catch (ContinuationEscape ce) { if (ce.Id != myId) throw; result = ce.Val; }
         return result;
+    }
+
+    // Execute continuation trampoline within call/cc's try/catch context
+    // Handles CompiledLambda, LambdaProc, and Delegate continuations
+    private static object? InvokeContTrampoline(Miniscm.Compiler.CompiledLambda cont, object?[] args, Env env)
+    {
+        object? procVal = cont;
+        object?[] argsVal = args;
+        Env curEnv = env;
+        
+        while (true)
+        {
+            if (procVal is Func<object?[], object?> fn)
+                return fn(argsVal);
+            if (procVal is Miniscm.Compiler.CompiledLambda cv)
+            {
+                var r = cv.Invoke(cv.Env, argsVal);
+                if (r is not TailCall tc) return r;
+                if (!Miniscm.Compiler.JitRuntime.TryUnpackTailCall(tc, out var u))
+                    return Evaluator.EvalCore(tc.Expr, tc.Env);
+                (procVal, argsVal, curEnv) = u;
+                continue;
+            }
+            if (procVal is LambdaProc lp)
+            {
+                Evaluator.EnsureCompiled(lp);
+                if (lp.CompiledVersion is Miniscm.Compiler.CompiledLambda cl)
+                {
+                    var r = cl.Invoke(lp.ClosureEnv, argsVal);
+                    if (r is not TailCall tc) return r;
+                    if (!Miniscm.Compiler.JitRuntime.TryUnpackTailCall(tc, out var u))
+                        return Evaluator.EvalCore(tc.Expr, tc.Env);
+                    (procVal, argsVal, curEnv) = u;
+                    continue;
+                }
+                var nenv = new Env(lp.ClosureEnv, lp.Params.Count);
+                Evaluator.BindParams(lp.Params, argsVal, nenv);
+                var r2 = Evaluator.SeqTailCall(lp.Body, nenv);
+                if (r2 is not TailCall tc2) return r2;
+                if (!Miniscm.Compiler.JitRuntime.TryUnpackTailCall(tc2, out var u2))
+                    return Evaluator.EvalCore(tc2.Expr, tc2.Env);
+                (procVal, argsVal, curEnv) = u2;
+                continue;
+            }
+            if (procVal is Delegate d)
+                return d.DynamicInvoke(argsVal);
+            if (procVal is System.Runtime.CompilerServices.ITuple it && it.Length >= 2 && it[0] is string t0)
+            {
+                if (t0 == "lambda" && it.Length >= 5 && it[1] is List<string> lamParams && it[3] is Env le)
+                {
+                    var nenv = new Env(le, lamParams.Count);
+                    Evaluator.BindParams(lamParams, argsVal, nenv);
+                    var r = Evaluator.SeqTailCall(it[2], nenv);
+                    if (r is not TailCall tc) return r;
+                    if (!Miniscm.Compiler.JitRuntime.TryUnpackTailCall(tc, out var u))
+                        return Evaluator.EvalCore(tc.Expr, tc.Env);
+                    (procVal, argsVal, curEnv) = u;
+                    continue;
+                }
+            }
+            throw new Exception($"not callable: {Printer.Format(procVal)}");
+        }
     }
 
     static object? PLoad(object?[] args)
