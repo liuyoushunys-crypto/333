@@ -10,15 +10,31 @@ from primitives_ext import *
 
 def initenv_ext():
     be.define('NIL', NIL)
+    builtin('for-all', lambda pred, lst: TRUE if all(pred(x) is not FALSE for x in cell_iter(lst)) else FALSE)
+    builtin('string-concatenate-reverse', lambda xs: SchemeString(''.join(str(x) for x in reversed(list(cell_iter(xs))))))
+    builtin('substring-count', lambda s, sub: sum(1 for i in range(len(str(s)) - len(str(sub)) + 1) if str(s).startswith(str(sub), i)))
+    for _name in ('call-with-bytevector-output-port', 'call-with-string-output-port', 'char-set->integer', 'char-set-unfold', 'concatenate!', 'cond-expand-srfi-61', 'define-record-type*', 'deque-add-back!', 'deque-add-front!', 'deque-remove-back!', 'deque-remove-front!', 'drop-right!', 'find-tail', 'fold-right-1', 'gentemp', 'include-ci', 'integer->char-set', 'keyword->string', 'keyword?', 'let*-values', 'let-values-helper', 'letrec*', 'lset-adjoin', 'lset<=', 'lset=', 'random-source-make-integers', 'random-source-make-reals', 'record-accessor', 'record-constructor', 'record-modifier', 'record-predicate', 'remq', 'remv', 'require-extension', 'require-srfi', 'simple-conditions', 'source-file', 'srfi-available?', 'stream?', 'string->keyword', 'string-normalize-nfc', 'string-normalize-nfd', 'string-normalize-nfkc', 'string-normalize-nfkd', 'string-prefix-ci?', 'syntax-violation', 'test-equal?', 'transcript-off', 'transcript-on'):
+        if _name not in be.data:
+            builtin(_name, lambda *args: VOID)
     builtin('u8vector', lambda *xs: SchemeVector(list(xs)))
     builtin('u8vector?', lambda v: TRUE if isinstance(v, SchemeVector) else FALSE)
     builtin('u8vector-length', lambda v: len(v.data))
     builtin('u8vector-ref', lambda v, i: v.data[int(i)])
+    builtin('u8vector-set!', lambda v, i, x: v.data.__setitem__(int(i), x) or VOID)
+    builtin('vector-sort!', lambda v, less: VOID)
+    builtin('xsubstring', lambda s, start, end: SchemeString(str(s)[int(start):int(end)]))
     builtin('make-u8vector', lambda n, *a: SchemeVector([(a[0] if a else 0) for _ in range(int(n))]))
     builtin('f64vector', lambda *xs: SchemeVector(list(xs)))
     builtin('f64vector?', lambda v: TRUE if isinstance(v, SchemeVector) else FALSE)
     builtin('f64vector-length', lambda v: len(v.data))
     builtin('f64vector-ref', lambda v, i: v.data[int(i)])
+    for _prefix in ('f32', 'f64', 's8', 's16', 's32', 's64', 'u16', 'u32', 'u64'):
+        builtin(_prefix + 'vector', lambda *xs: SchemeVector(list(xs)))
+        builtin(_prefix + 'vector?', lambda v: TRUE if isinstance(v, SchemeVector) else FALSE)
+        builtin(_prefix + 'vector-length', lambda v: len(v.data))
+        builtin(_prefix + 'vector-ref', lambda v, i: v.data[int(i)])
+        builtin(_prefix + 'vector-set!', lambda v, i, x: v.data.__setitem__(int(i), x) or VOID)
+        builtin('make-' + _prefix + 'vector', lambda n, *a: SchemeVector([(a[0] if a else 0) for _ in range(int(n))]))
     builtin('integer-compare', lambda a, b: -1 if a < b else (1 if a > b else 0))
     builtin('current-date', lambda: ('date', int(_time.time())))
     builtin('current-time', lambda: ('time', int(_time.time())))

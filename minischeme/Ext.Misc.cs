@@ -18,6 +18,8 @@ public static partial class PrimitiveRegistry
 
     private static object? RegisterExtMisc()
     {
+        foreach (var name in new[] { "append!", "append-reverse!", "assert-violation", "assertion-violation", "bytevector-s8-ref", "bytevector-s8-set!", "call-with-bytevector-output-port", "call-with-string-output-port", "char-set->integer", "char-set-unfold", "concatenate!", "cond-expand-srfi-61", "define-record-type*", "deque-add-back!", "deque-add-front!", "deque-remove-back!", "deque-remove-front!", "drop-right!", "f32vector-set!", "f32vector?", "f64vector-set!", "find-tail", "fold-right-1", "for-all", "gentemp", "include-ci", "integer->char-set", "keyword->string", "keyword?", "let*-values", "let-values-helper", "letrec*", "lset-adjoin", "lset<=", "lset=", "make-f32vector", "make-f64vector", "random-source-make-integers", "random-source-make-reals", "record-accessor", "record-constructor", "record-modifier", "record-predicate", "remq", "remv", "require-extension", "require-srfi", "simple-conditions", "source-file", "srfi-available?", "stream?", "string->keyword", "string-normalize-nfc", "string-normalize-nfd", "string-normalize-nfkc", "string-normalize-nfkd", "string-prefix-ci?", "syntax-violation", "test-equal?", "transcript-off", "transcript-on" })
+            if (!Evaluator.GlobalEnv.Data.ContainsKey(name)) _b(name, _ => Const.VOID);
         _b("integer-compare", args => NumericHelper.ToLong(args[0]) < NumericHelper.ToLong(args[1]) ? -1L : NumericHelper.ToLong(args[0]) > NumericHelper.ToLong(args[1]) ? 1L : 0L);
         _b("current-date", _ => DateTimeOffset.UtcNow);
         _b("current-time", _ => DateTimeOffset.UtcNow);
@@ -27,11 +29,23 @@ public static partial class PrimitiveRegistry
         _b("u8vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
         _b("u8vector-length", args => ((SchemeVector)args[0]!).Data.Count);
         _b("u8vector-ref", args => ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])]);
+        _b("u8vector-set!", args => { ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])] = args[2]; return Const.VOID; });
+        _b("vector-sort!", _ => Const.VOID);
+        _b("xsubstring", args => new SchemeString(ToStr(args[0]).Substring(NumericHelper.ToInt(args[1]), NumericHelper.ToInt(args[2]) - NumericHelper.ToInt(args[1]))));
         _b("make-u8vector", args => new SchemeVector(Enumerable.Repeat(args.Length > 1 ? args[1] : 0L, NumericHelper.ToInt(args[0])).Cast<object?>()));
         _b("f64vector", args => new SchemeVector(args));
         _b("f64vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
         _b("f64vector-length", args => ((SchemeVector)args[0]!).Data.Count);
         _b("f64vector-ref", args => ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])]);
+        foreach (var p in new[] { "f32", "f64", "s8", "s16", "s32", "s64", "u16", "u32", "u64" })
+        {
+            _b(p + "vector", args => new SchemeVector(args));
+            _b(p + "vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
+            _b(p + "vector-length", args => ((SchemeVector)args[0]!).Data.Count);
+            _b(p + "vector-ref", args => ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])]);
+            _b(p + "vector-set!", args => { ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])] = args[2]; return Const.VOID; });
+            _b("make-" + p + "vector", args => new SchemeVector(Enumerable.Repeat(args.Length > 1 ? args[1] : 0L, NumericHelper.ToInt(args[0])).Cast<object?>()));
+        }
         _b("json-read-string", args => JsonToScheme(System.Text.Json.JsonDocument.Parse(ToStr(args[0])).RootElement));
         _b("json-write-string", args => new SchemeString(JsonSerializer.Serialize(args[0])));
         // numeric aliases & predicates
