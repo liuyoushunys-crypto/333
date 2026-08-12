@@ -107,6 +107,9 @@ public static class JitRuntime
                 return false;
             }
         }
+        if (procVal is System.Runtime.CompilerServices.ITuple tuple
+            && !(tuple.Length >= 5 && tuple[0] is string tag && tag == "lambda"))
+            return false;
         if (procVal is not (CompiledLambda or LambdaProc or System.Runtime.CompilerServices.ITuple or Delegate
             or Func<object?[], object?>))
             return false;

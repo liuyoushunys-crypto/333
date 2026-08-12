@@ -232,6 +232,17 @@
 (define (call-tail) (tail-id 42))
 (check "app indirect tail-call" (call-tail) 42)
 
+(display "\n===== B51: interpreter macro tail call from JIT =====\n")
+(define (macro-tail-callee x)
+  (cond ((eq? x 'ok) '(1 . 0))
+        (else #f)))
+(define (macro-tail-caller proc)
+  (macro-tail-callee 'ok)
+  (proc 1 2))
+(check "macro tuple is not callable tail proc"
+       (macro-tail-caller (lambda (a b) (+ a b)))
+       3)
+
 (display "\n===== B52: div zero check =====\n")
 (check "division by zero int" (guard (ex (else 'caught)) (/ 1 0)) 'caught)
 
@@ -455,5 +466,4 @@
 (display "\n===== B157: datum comment =====\n")
 (check "#; datum comment" (list 1 #;2 3) '(1 3))
 (check "#; nested" (list 1 #;(+ 2 3) 4) '(1 4))
-
 
