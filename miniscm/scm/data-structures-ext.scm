@@ -116,7 +116,7 @@
     s))
 
 (define (char-set? x)
-  (and (vector? x) (= (vector-length x) 256)))
+  (if (vector? x) (= (vector-length x) 256) #f))
 
 (define (char-set-contains? cs c)
   (and (< (char->integer c) 256) (vector-ref cs (char->integer c))))
