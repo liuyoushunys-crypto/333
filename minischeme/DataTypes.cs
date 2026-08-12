@@ -27,7 +27,8 @@ public sealed class SchemeString
     }
 
     public override int GetHashCode() => ToString().GetHashCode();
-    public override bool Equals(object? obj) => obj is SchemeString ss && ToString() == ss.ToString();
+    public override bool Equals(object? obj) => obj is SchemeString ss && ToString() == ss.ToString()
+        || obj is string s && ToString() == s;
 }
 
 public sealed class SchemeChar : IEquatable<SchemeChar>

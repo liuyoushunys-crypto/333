@@ -240,7 +240,7 @@ def lcm(*a):
     return r
 def load(path):
     from miniscm import load_file
-    return load_file(path)
+    return load_file(str(path))
 # map_：标准 map，支持多列表
 #   TailCall 陷阱：f_real() 调用可能返回 TailCall（当 f 是编译后的跨函数尾调用时）
 #   必须用 _eval_fn 解析 TailCall 后才 cons 到结果 Cell 中

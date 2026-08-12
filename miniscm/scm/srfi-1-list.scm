@@ -257,7 +257,7 @@
     (msort seq (length seq))))
 
 (define list-stable-sort list-sort)
-(define sort list-sort)
+(define (sort seq less?) (list-sort less? seq))
 
 (define (vector-sort pred vec)
   (list->vector (list-sort pred (vector->list vec))))

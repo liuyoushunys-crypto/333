@@ -517,7 +517,7 @@
        (define (,pred obj) (and (pair? obj) (eq? (car obj) (quote ,name))))
        ,@(map (lambda (f)
                 (set! n (+ n 1))
-                (let ((accessor (car f))
+                 (let ((accessor (cadr f))
                       (mutator (if (pair? (cddr f)) (caddr f) #f)))
                   `(begin
                      (define (,accessor obj) (list-ref obj ,(+ n 1)))
@@ -645,4 +645,3 @@
 (define-syntax cute
   (syntax-rules (<> <...>)
     ((cute . args) (cut . args))))
-

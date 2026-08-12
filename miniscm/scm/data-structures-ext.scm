@@ -472,7 +472,12 @@
     (let* ((new-state (remainder (+ (* 1103515245 state) 12345) 2147483648))
            (val (/ new-state 2147483648.0)))
       (set-random-source-state! source new-state)
-      val)))
+       val)))
+
+(define (random-source-random-integer source n)
+  (random-source->random-integer source n))
+(define (random-source-random-real source)
+  (random-source->random-real source))
 
 (define (random-source-randomize! source)
   (set-random-source-state! source (current-second)))
@@ -500,10 +505,14 @@
 (define *default-random-source* (make-random-source))
 
 (define-record-type <list-queue>
-  (make-list-queue front back)
+  (%make-list-queue front back)
   list-queue?
   (front %list-queue-front %set-list-queue-front!)
   (back  %list-queue-back  %set-list-queue-back!))
+
+(define (make-list-queue front . rest)
+  (%make-list-queue front
+    (if (pair? rest) (car rest) (if (null? front) '() (last-pair front)))))
 
 (define (list-queue . items)
   (let ((front (list-copy items)))
@@ -588,16 +597,18 @@
                (car lists))))))
 
 (define-record-type <binary-heap>
-  (%make-binary-heap vec n)
+  (%make-binary-heap vec n cmp)
   binary-heap?
   (vec binary-heap-vec set-binary-heap-vec!)
-  (n   binary-heap-n   set-binary-heap-n!))
+  (n   binary-heap-n   set-binary-heap-n!)
+  (cmp binary-heap-cmp))
 
 (define (make-binary-heap . args)
-  (let ((init (if (and (pair? args) (pair? (cdr args))) (cadr args) '())))
+  (let ((cmp (if (pair? args) (car args) <))
+        (init (if (and (pair? args) (pair? (cdr args))) (cadr args) '())))
     (let ((vec (list->vector init))
           (len (length init)))
-      (%make-binary-heap vec len))))
+      (%make-binary-heap vec len cmp))))
 
 (define (binary-heap-insert! heap val)
   (let ((vec (binary-heap-vec heap))
@@ -614,7 +625,7 @@
     (let loop ((i n))
       (when (> i 0)
         (let ((parent (quotient (- i 1) 2)))
-          (if (< val (vector-ref vec parent))
+             (if ((binary-heap-cmp heap) val (vector-ref vec parent))
               (begin
                 (vector-set! vec i (vector-ref vec parent))
                 (vector-set! vec parent val)
@@ -638,14 +649,14 @@
       (let loop ((i 0))
         (let* ((left (+ (* i 2) 1))
                (right (+ (* i 2) 2))
-               (smallest
-                 (cond ((and (< left (- n 1))
-                             (< (vector-ref vec left) (vector-ref vec i)))
+                (smallest
+                  (cond ((and (< left (- n 1))
+                              ((binary-heap-cmp heap) (vector-ref vec left) (vector-ref vec i)))
                         left)
                        (else i)))
                (smallest
-                 (if (and (< right (- n 1))
-                          (< (vector-ref vec right) (vector-ref vec smallest)))
+                  (if (and (< right (- n 1))
+                           ((binary-heap-cmp heap) (vector-ref vec right) (vector-ref vec smallest)))
                      right
                      smallest)))
           (unless (= smallest i)
@@ -653,7 +664,17 @@
               (vector-set! vec i (vector-ref vec smallest))
               (vector-set! vec smallest tmp))
             (loop smallest))))
-      min-val)))
+       min-val)))
+
+(define (binary-heap-delete-min! heap)
+  (binary-heap-remove-min! heap))
+
+(define (reverse! lst)
+  (let loop ((cur lst) (out '()))
+    (if (null? cur) out
+        (let ((next (cdr cur)))
+          (set-cdr! cur out)
+          (loop next cur)))))
 
 (define (binary-heap-size heap)
   (binary-heap-n heap))
@@ -863,7 +884,7 @@
   (%make-bimap forward reverse)
   bimap?
   (forward %bimap-forward %bimap-forward-set!)
-  (%bimap-rev %bimap-rev-set!))
+  (rev %bimap-rev %bimap-rev-set!))
 
 (define (make-bimap init)
   (let ((fwd (make-hash-table))
@@ -875,20 +896,20 @@
     (%make-bimap fwd rev)))
 
 (define (bimap-forward bimap key)
-  (hash-table-ref (%bimap-fwd bimap) key))
+  (hash-table-ref (%bimap-forward bimap) key))
 
 (define (bimap-forward/default bimap key default)
-  (hash-table-ref/default (%bimap-fwd bimap) key default))
+  (hash-table-ref/default (%bimap-forward bimap) key default))
 
 (define (bimap-reverse bimap val)
   (hash-table-ref (%bimap-rev bimap) val))
 
 (define (bimap-set! bimap key val)
-  (hash-table-set! (%bimap-fwd bimap) key val)
+  (hash-table-set! (%bimap-forward bimap) key val)
   (hash-table-set! (%bimap-rev bimap) val key))
 
 (define (bimap-contains? bimap key)
-  (hash-table-contains? (%bimap-fwd bimap) key))
+  (hash-table-contains? (%bimap-forward bimap) key))
 
 (define-record-type <deque>
   (%make-deque front-len front back-len back)
@@ -961,6 +982,11 @@
 
 (define (deque->list dq)
   (append (%deque-f dq) (reverse (%deque-b dq))))
+
+(define (deque-push-front! dq item) (deque-add-front dq item))
+(define (deque-push-back! dq item) (deque-add-back dq item))
+(define (deque-pop-front! dq) (deque-remove-front dq))
+(define (deque-pop-back! dq) (deque-remove-back dq))
 
 (define fx-width 24)
 
@@ -1151,6 +1177,3 @@
                      (arithmetic-shift field (- count len)))))
       (bitwise-if (arithmetic-shift (- (expt 2 len) 1) 0)
                   rotated n))))
-
-
-

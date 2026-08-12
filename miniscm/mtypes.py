@@ -191,6 +191,9 @@ class SchemeString:
     def __getitem__(self,i): return SchemeChar(self.data[i])
     def __setitem__(self,i,c): self.data[i]=c.char if isinstance(c,SchemeChar) else c
     def __bool__(self): return True
+    def __hash__(self): return hash(str(self))
+    def __eq__(self, other):
+        return str(self) == (str(other) if isinstance(other, (str, SchemeString)) else other)
 
 class SchemeChar:
     """Scheme 字符类型
