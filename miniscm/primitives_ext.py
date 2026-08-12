@@ -421,8 +421,17 @@ def string_pad_right(s, n, ch=' '):
     if len(s) >= n: return SchemeString(s[:n])
     return SchemeString(s + ch * (n - len(s)))
 
-def string_trim(s):
-    return SchemeString(str(s).strip())
+def string_trim(s, char_set=None):
+    text = str(s)
+    if char_set is None: return SchemeString(text.strip())
+    def matches(ch):
+        value = call(char_set, [SchemeChar(ch)]) if not callable(char_set) else char_set(SchemeChar(ch))
+        return scheme_truthy(value)
+    left = 0
+    right = len(text)
+    while left < right and matches(text[left]): left += 1
+    while right > left and matches(text[right - 1]): right -= 1
+    return SchemeString(text[left:right])
 
 def string_trim_right(s):
     return SchemeString(str(s).rstrip())

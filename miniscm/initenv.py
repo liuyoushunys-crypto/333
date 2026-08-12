@@ -286,8 +286,8 @@ def initenv():
     builtin('string-downcase', lambda s: SchemeString(str(s).lower()))
     builtin('string-upcase', lambda s: SchemeString(str(s).upper()))
     builtin('list->string', lambda lst: SchemeString(''.join(c[1] if isinstance(c,tuple) else (c.char if hasattr(c,'char') else str(c)) for c in _plist(lst))))
-    builtin('string->utf8', lambda s: SchemeBytevector(str(s).encode('utf-8')))
-    builtin('utf8->string', lambda s: SchemeString(bytes(s.data).decode('utf-8')) if hasattr(s,'data') else s)
+    builtin('string->utf8', lambda s, *span: SchemeBytevector(str(s).encode('utf-8')[int(span[0]) if span else 0:int(span[1]) if len(span) > 1 else None]))
+    builtin('utf8->string', lambda s, *span: SchemeString(bytes(s.data)[int(span[0]) if span else 0:int(span[1]) if len(span) > 1 else None].decode('utf-8')) if hasattr(s,'data') else s)
     builtin('format', format_dispatch)
 
 # ── 向量操作 ──
