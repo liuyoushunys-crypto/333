@@ -575,12 +575,33 @@ def _invoke_compiled(cv, args_val):
 # 必须交回 _eval 求值，不能按值解包。
 # （C# JitRuntime.TryUnpackTailCall 等价；返回 None 表示需交回解释器）
 def __mscm_try_unpack_tail_call__(tc):
+    from miniscm import _eval, SPECIALS, Sym
     expr = tc.expr
     if not isinstance(expr, Cell):
         return None
     proc = expr.car
-    if not (callable(proc) or (isinstance(proc, tuple) and len(proc) >= 2 and proc[0] == 'lambda')):
+    
+    # Handle Sym proc: check special forms first, then environment lookup
+    proc_val = proc
+    if isinstance(proc, Sym):
+        # Check if it's a special form
+        if proc in SPECIALS:
+            # Call special form handler with unevaluated args
+            result = SPECIALS[proc](expr.cdr, tc.env)
+            if isinstance(result, TailCall):
+                # Recursively try to unpack the resulting tail call
+                return __mscm_try_unpack_tail_call__(result)
+            # Special form returned a value, not a tail call
+            return None
+        # Look up in environment
+        sentinel = object()
+        proc_val = tc.env.lookup_silent(proc.name, sentinel)
+        if proc_val is sentinel:
+            return None
+    
+    if not (callable(proc_val) or (isinstance(proc_val, tuple) and len(proc_val) >= 2 and proc_val[0] == 'lambda')):
         return None
+    
     args = []
     cur = expr.cdr
     while isinstance(cur, Cell):
@@ -589,9 +610,13 @@ def __mscm_try_unpack_tail_call__(tc):
         if isinstance(arg, Cell) and arg.car is SYM_QUOTE:
             if isinstance(arg.cdr, Cell):
                 arg = arg.cdr.car
+        else:
+            # Interpreter tail call: arg is unevaluated, evaluate it in tc.env
+            arg = _eval(arg, tc.env)
         args.append(arg)
         cur = cur.cdr
-    return proc, args, tc.env
+    
+    return proc_val, args, tc.env
 
 def __mscm_invoke__(proc_val, args_val, env):
     """统一调用路径：迭代 trampoline（C# JitRuntime.Invoke 等价）。
@@ -602,13 +627,13 @@ def __mscm_invoke__(proc_val, args_val, env):
     """
     while True:
         if isinstance(proc_val, LambdaProc):
-            from miniscm import _ensure_jit_compiled
+            from miniscm import _ensure_jit_compiled, eval_seq
+            from mtypes import Env
             _ensure_jit_compiled(proc_val)
             if proc_val.compiled_version is not None:
                 r = _invoke_compiled(proc_val.compiled_version, args_val)
             else:
                 # 与 C# `BindParams + SeqTailCall` 分支一致
-                from miniscm import eval_seq
                 nenv = Env(proc_val.env)
                 _bind_params(proc_val.params, args_val, nenv)
                 r = eval_seq(proc_val.body, nenv)
@@ -631,7 +656,72 @@ def __mscm_invoke__(proc_val, args_val, env):
             from miniscm import _eval as _eval_fn
             return _eval_fn(r.expr, r.env)
         if callable(proc_val):
-            return proc_val(*args_val)
+            # Special handling for call/cc with CompiledLambda continuation:
+            # The continuation must be executed within call_cc's try/except for _ContinuationEscape.
+            # If we return a TailCall from the continuation, call_cc returns it and the exception
+            # handler is no longer on the stack. So we execute the continuation AND all subsequent
+            # trampoline steps directly here within a single try/except.
+            from primitives import call_cc as _call_cc_fn
+            from mtypes import _ContinuationEscape
+            if proc_val is _call_cc_fn and args_val and isinstance(args_val[0], CompiledLambda):
+                cont = args_val[0]
+                # Create escape procedure that throws _ContinuationEscape
+                import sys
+                _cont_id = getattr(sys.modules.get('primitives'), '_cont_id', 0) + 1
+                captured = [None]
+                def_esc = lambda v: captured.__setitem__(0, v) or (_ for _ in ()).throw(_ContinuationEscape(_cont_id))
+                try:
+                    # Execute continuation directly with escape procedure
+                    proc_val = cont
+                    args_val = [def_esc]
+                    env = cont.env
+                    # Run the trampoline loop for the continuation and all its tail calls
+                    while True:
+                        if isinstance(proc_val, CompiledLambda):
+                            r = _invoke_compiled(proc_val, args_val)
+                        elif isinstance(proc_val, LambdaProc):
+                            from miniscm import _ensure_jit_compiled, eval_seq
+                            from mtypes import Env
+                            _ensure_jit_compiled(proc_val)
+                            if proc_val.compiled_version is not None:
+                                r = _invoke_compiled(proc_val.compiled_version, args_val)
+                            else:
+                                nenv = Env(proc_val.env)
+                                _bind_params(proc_val.params, args_val, nenv)
+                                r = eval_seq(proc_val.body, nenv)
+                        elif callable(proc_val):
+                            r = proc_val(*args_val)
+                        elif isinstance(proc_val, tuple) and proc_val[0] == 'lambda':
+                            from miniscm import eval_seq
+                            from mtypes import Env
+                            _, params, body, penv, is_simple = proc_val
+                            nenv = Env(penv)
+                            _bind_params(params, args_val, nenv)
+                            r = eval_seq(body, nenv)
+                        else:
+                            raise TypeError(f"not callable: {proc_val}")
+                        
+                        if not isinstance(r, TailCall):
+                            return r
+                        u = __mscm_try_unpack_tail_call__(r)
+                        if u is not None:
+                            proc_val, args_val, env = u
+                            continue
+                        from miniscm import _eval as _eval_fn
+                        return _eval_fn(r.expr, r.env)
+                except _ContinuationEscape as e:
+                    if e.args[0] != _cont_id:
+                        raise
+                    return captured[0]
+            r = proc_val(*args_val)
+            if isinstance(r, TailCall):
+                u = __mscm_try_unpack_tail_call__(r)
+                if u is not None:
+                    proc_val, args_val, env = u
+                    continue
+                from miniscm import _eval as _eval_fn
+                return _eval_fn(r.expr, r.env)
+            return r
         if isinstance(proc_val, tuple) and proc_val[0] == 'lambda':
             from miniscm import eval_seq
             _, params, body, penv, is_simple = proc_val
@@ -1249,6 +1339,21 @@ class AstExprCompiler:
                     return self._stmt_self_tail_call(node, lexical_vars)
                 if self._is_cross_tail_target(node, lexical_vars):
                     return self._stmt_cross_tail_call(node, lexical_vars)
+                # Call to a parameter (local variable) in tail position:
+                # generate direct call instead of MakeTailCall.
+                # This is critical for escape procedures (continuations) passed as params,
+                # which must throw _ContinuationEscape directly instead of returning a TailCall.
+                if node.proc.name in lexical_vars:
+                    proc_ast = self.compile_expr(node.proc, lexical_vars)
+                    args_list = ast.List(
+                        elts=[self.compile_expr(a, lexical_vars) for a in node.args],
+                        ctx=ast.Load()
+                    )
+                    return [ast.Return(value=ast.Call(
+                        func=proc_ast,
+                        args=[args_list],
+                        keywords=[]
+                    ))]
             # 兜底 trampoline（C# `isTail && AppAst` 分支等价）：词法局部函数、
             # 嵌套 lambda 应用等一律 MakeTailCall 值返回，由 __mscm_invoke__
             # 循环解包，避免深尾递归逐层 +1 栈帧（无名字的嵌套 lambda 无法
