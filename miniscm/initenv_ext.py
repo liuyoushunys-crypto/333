@@ -363,7 +363,7 @@ def initenv_ext():
     builtin('generator->string', generator_string_and)
     builtin('generator-for-each', generator_for_each)
     builtin('generator-fold', generator_fold_fn)
-    builtin('make-iota-generator', lambda n, s=1, st=0: generator_iota(int(n), s, st))
+    builtin('make-iota-generator', lambda n, start=0, step=1: generator_iota(int(n), step, start))
     builtin('make-range-generator', lambda s, e, st=1: generator_range(s, e, st))
 
     # ═══════════════════════════════════════════════════════════════

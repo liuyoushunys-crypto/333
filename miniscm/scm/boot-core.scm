@@ -464,6 +464,9 @@
 (define-syntax include
   (syntax-rules () ((_ filename) (load filename))))
 
+(define-syntax import
+  (syntax-rules () ((_ library ...) (if #f #f))))
+
 ;; ── cond-expand ──
 ;; 条件编译：根据库是否存在选择分支（R7RS）。
 ;;   用法: (cond-expand (library body ...) ...)

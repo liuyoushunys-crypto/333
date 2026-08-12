@@ -995,13 +995,13 @@
 (define fx-least (- -1 fx-greatest))
 
 (define (fixnum? obj)
-  (and (integer? obj) (exact? obj) (<= fx-least obj fx-greatest)))
+  (and (integer? obj) (exact? obj) (<= (fx-least) obj (fx-greatest))))
 
-(define (fixnum-width) fx-width)
+(define (fixnum-width) (fx-width))
 
-(define (least-fixnum) fx-least)
+(define (least-fixnum) (fx-least))
 
-(define (greatest-fixnum) fx-greatest)
+(define (greatest-fixnum) (fx-greatest))
 
 (define (flonum? obj)
   (and (real? obj) (not (exact? obj))))
