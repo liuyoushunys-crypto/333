@@ -411,6 +411,16 @@
     ((_ x (f . args)) (if x (f x . args) #f))
     ((_ x (f . args) . rest) (if x (some-> (f x . args) . rest) #f))))
 
+;; Thread a value into the last argument position.
+(define-syntax ->>
+  (syntax-rules ()
+    ((_ x) x)
+    ((_ x (f args ...)) (f args ... x))
+    ((_ x (f . args) rest ...)
+     (->> (f args ... x) rest ...))
+    ((_ x f) (f x))
+    ((_ x f rest ...) (->> (f x) rest ...))))
+
 ;; ── doto ──
 ;; 对对象执行多个操作后返回对象本身（Clojure doto）。
 ;;   用法: (doto val (f args ...) ...)
@@ -853,10 +863,9 @@
 (define-syntax as->
   (syntax-rules ()
     ((_ x name) x)
-    ((_ x name (expr) . rest)
-     (as-> (let ((name x)) expr) name . rest))
-    ((_ x name expr . rest)
-     (as-> (let ((name x)) expr) name . rest))))
+    ((_ x name expr) (let ((name x)) expr))
+    ((_ x name expr next-name rest ...)
+     (let ((name x)) (as-> expr next-name rest ...)))))
 
 ;; ── juxt ──
 ;; 并联应用：多个函数作用于同一输入，返回结果列表。

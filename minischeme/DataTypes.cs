@@ -105,7 +105,7 @@ public sealed class SchemeBytevector
     public byte this[int i] { get => Data[i]; set => Data[i] = value; }
 
     public override bool Equals(object? obj) => obj is SchemeBytevector b && Data.AsSpan().SequenceEqual(b.Data);
-    public override int GetHashCode() => Data.Length;
+    public override int GetHashCode() => HashCode.Combine(Data.Length, Data.Length == 0 ? 0 : Data[0]);
 
     public override string ToString() => "#u8(" + string.Join(",", Data) + ")";
 }

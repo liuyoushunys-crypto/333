@@ -226,6 +226,7 @@ public static partial class PrimitiveRegistry
 
         // ── Bytevectors ──
         _b("bytevector", args => new SchemeBytevector(args.Select(NumericHelper.ToInt)));
+        _b("bytevector-append", args => new SchemeBytevector(args.SelectMany(a => AsBytevector(a).Data).ToArray()));
         _b("bytevector->u8-list", args => AsBytevector(args[0]).Data.Select(b => (object?)(long)b).ToCell());
         _b("bytevector-copy", args => new SchemeBytevector([.. AsBytevector(args[0]).Data]));
         _b("bytevector-length", args => AsBytevector(args[0]).Length);
@@ -400,8 +401,11 @@ public static partial class PrimitiveRegistry
         _b("delete-file", args => { File.Delete(ToStr(args[0])); return Const.VOID; });
         _b("file-exists?", args => File.Exists(ToStr(args[0])) ? Const.TRUE : Const.FALSE);
         _b("open-input-file", args => MakePort("input", new StreamReader(ToStr(args[0]))));
+        _b("open-binary-input-file", args => MakePort("input", new BytePort(File.ReadAllBytes(ToStr(args[0])))));
         _b("open-output-file", args => MakePort("output", new StreamWriter(ToStr(args[0]))));
         _b("port-open?", args => IsPort(args[0], null) ? Const.TRUE : Const.FALSE);
+        _b("input-port-open?", args => IsPort(args[0], "input") ? Const.TRUE : Const.FALSE);
+        _b("output-port-open?", args => IsPort(args[0], "output") ? Const.TRUE : Const.FALSE);
         _b("rename-file", args => { File.Move(ToStr(args[0]), ToStr(args[1])); return Const.VOID; });
 
         // ── Conditions ──

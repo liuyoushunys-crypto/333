@@ -251,6 +251,9 @@ class SchemeBytevector:
     def __len__(self): return len(self.data)
     def __getitem__(self,i): return self.data[i]
     def __bool__(self): return True
+    def __eq__(self, other):
+        return isinstance(other, SchemeBytevector) and self.data == other.data
+    def __hash__(self): return hash(bytes(self.data))
 
 # 全局单例定义
 # 这些单例在模块加载时创建，贯穿整个解释器生命周期。

@@ -102,7 +102,9 @@ def format(fmt,args):
     while i<len(fmt):
         if fmt[i]=='~' and i+1<len(fmt):
             c=fmt[i+1]
-            if c=='a': parts.append(str(args[ai]) if isinstance(args[ai], (str, SchemeString)) else _pr(args[ai])); ai+=1; i+=2
+            if c=='a':
+                value = args[ai]
+                parts.append(value.char if isinstance(value, SchemeChar) else (str(value) if isinstance(value, (str, SchemeString)) else _pr(value))); ai+=1; i+=2
             elif c=='s': parts.append(_pr(args[ai])); ai+=1; i+=2
             elif c=='d':
                 if ai >= len(args): raise SchemeException("format: not enough arguments")
@@ -113,7 +115,7 @@ def format(fmt,args):
             elif c=='~': parts.append('~'); i+=2
             else: parts.append(fmt[i]); i+=2
         else: parts.append(fmt[i]); i+=1
-    return ''.join(parts)
+    return ''.join(str(p) for p in parts)
 
 # compose: 函数组合（从右到左执行）
 def compose(fns):

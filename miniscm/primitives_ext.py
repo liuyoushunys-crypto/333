@@ -2282,6 +2282,9 @@ def read_u8_fn(*p):
     if port is None:
         data = sys.stdin.buffer.read(1)
         return data[0] if data else EOF
+    if isinstance(port, tuple) and port[0] == 'bin-file-port' and len(port) > 3:
+        data = port[3].read(1)
+        return data[0] if data else EOF
     if isinstance(port, tuple) and port[0] == 'file-port' and len(port) > 3:
         data = port[3].read(1)
         if isinstance(data, str): data = bytes(data, 'latin-1')
