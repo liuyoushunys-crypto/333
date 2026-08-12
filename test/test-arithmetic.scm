@@ -4,7 +4,7 @@
 ;; =============================================================================
 (display ";; === 5. Numeric edge cases ===\n")
 
-(check "zero-arg (-)" (-) 0)
+(check "zero-arg (-) errors" (guard (ex (else 'caught)) (-)) 'caught)
 (check "zero-arg (+)" (+) 0)
 (check "zero-arg (*)" (*) 1)
 (check "single-arg (-)" (- 5) -5)
@@ -15,7 +15,7 @@
 (check "fraction" (/ 1 3 2) 1/6)
 
 ;; 5.1 (-) 歧义
-(check "(-) in list context" (list (-) 1 2) '(0 1 2))
+(check "(-) in list context errors" (guard (ex (else 'caught)) (list (-) 1 2)) 'caught)
 (check "(- x) in list"       (list (- 10) 5) '(-10 5))
 
 ;; 5.2 变量名 i 解析
@@ -544,4 +544,3 @@
 (test-equal "list->integer" (list->integer '(1 0 1)) 5)
 
 (test-end "scheme_builtins_base_ext — bitvector")
-

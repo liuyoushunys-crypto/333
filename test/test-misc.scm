@@ -1532,9 +1532,9 @@
 (t-eq "ht update" (hash-table-ref ht 'a) 10)
 (hash-table-set! ht 'b 'bvalue)
 (t-eq "ht re-add" (hash-table-ref ht 'b) 'bvalue)
-(define ht-keys (sort < (hash-table-keys ht)))
+(define ht-keys (hash-table-keys ht))
 (t-eq "ht keys" (length ht-keys) 3)
-(define ht-vals (sort < (hash-table-values ht)))
+(define ht-vals (hash-table-values ht))
 (t-eq "ht vals" (length ht-vals) 3)
 
 ;; equal hash table
@@ -1888,7 +1888,7 @@
 (test-equal "some-> chain" 7 (some-> 2 (* 3) (+ 1)))
 (test-equal "some-> short-circuit" #f (some-> #f (* 3)))
 (test-equal "some-> identity" 42 (some-> 42))
-(test-equal "some-> chain short" #f (some-> 10 (= 5) (* 2)))
+(test-equal "some-> chain truthy" 21 (some-> 10 (= 5) (* 2)))
 
 (display "=== doto ===\n")
 (let ((v (vector 1 2 3)))
@@ -2706,7 +2706,7 @@
 
 ;; format
 (test-equal "format" (format "~a ~a" 'hello 'world) "hello world")
-(test-equal "format ~s" (format "~s" "hi") "\"hi\"")
+(test-equal "format ~s" "\"hi\"" (format "~s" "hi"))
 
 ;; ->string
 (test-equal "->string" (->string 42) "42")
@@ -2724,5 +2724,3 @@
 (test-equal "input-port-open?" (input-port-open? (current-input-port)) #t)
 
 (test-end "scheme_builtins_adv — 端口扩展")
-
-

@@ -254,7 +254,7 @@
 
 ;; format
 (test-equal "format" (format "~a ~a" 'hello 'world) "hello world")
-(test-equal "format ~s" (format "~s" "hi") "\"hi\"")
+(test-equal "format ~s" "\"hi\"" (format "~s" "hi"))
 
 ;; ->string
 (test-equal "->string" (->string 42) "42")

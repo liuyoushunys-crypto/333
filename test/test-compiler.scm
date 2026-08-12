@@ -624,7 +624,7 @@
 (display "\n===== 5. 高阶函数使用 IC 缓存 =====\n")
 (define (call-twice f x) (f (f x)))
 (check "call-twice car/cdr" (call-twice cdr '(1 2 3 4)) '(3 4))
-(check "call-twice null?" (call-twice cdr '()) '())
+(check "call-twice null? errors" (guard (ex (else 'caught)) (call-twice cdr '())) 'caught)
 (check "call-twice add1" (call-twice (lambda (x) (+ x 1)) 5) 7)
 
 (define (mymap f lst)

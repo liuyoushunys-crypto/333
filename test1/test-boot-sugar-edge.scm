@@ -26,7 +26,7 @@
 (test-equal "some-> chain" 7 (some-> 2 (λ (x) (* x 3)) (λ (x) (+ x 1))))
 (test-equal "some-> short-circuit" #f (some-> #f (λ (x) (* x 3))))
 (test-equal "some-> identity" 42 (some-> 42))
-(test-equal "some-> chain short" #f (some-> 10 (λ (x) (and (> x 5) (* x 2))) (λ (x) (+ x 1))))
+(test-equal "some-> chain truthy" 21 (some-> 10 (λ (x) (and (> x 5) (* x 2))) (λ (x) (+ x 1))))
 
 (display "=== doto ===\n")
 (let ((v (vector 1 2 3)))

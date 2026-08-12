@@ -44,9 +44,9 @@
 (t-eq "ht update" (hash-table-ref ht 'a) 10)
 (hash-table-set! ht 'b 'bvalue)
 (t-eq "ht re-add" (hash-table-ref ht 'b) 'bvalue)
-(define ht-keys (sort (hash-table-keys ht) <))
+(define ht-keys (hash-table-keys ht))
 (t-eq "ht keys" (length ht-keys) 3)
-(define ht-vals (sort (hash-table-values ht) <))
+(define ht-vals (hash-table-values ht))
 (t-eq "ht vals" (length ht-vals) 3)
 
 ;; equal hash table
