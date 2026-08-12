@@ -13,7 +13,20 @@ def initenv_ext():
     builtin('for-all', lambda pred, lst: TRUE if all(pred(x) is not FALSE for x in cell_iter(lst)) else FALSE)
     builtin('string-concatenate-reverse', lambda xs: SchemeString(''.join(str(x) for x in reversed(list(cell_iter(xs))))))
     builtin('substring-count', lambda s, sub: sum(1 for i in range(len(str(s)) - len(str(sub)) + 1) if str(s).startswith(str(sub), i)))
-    for _name in ('call-with-bytevector-output-port', 'call-with-string-output-port', 'char-set->integer', 'char-set-unfold', 'concatenate!', 'cond-expand-srfi-61', 'define-record-type*', 'deque-add-back!', 'deque-add-front!', 'deque-remove-back!', 'deque-remove-front!', 'drop-right!', 'find-tail', 'fold-right-1', 'gentemp', 'include-ci', 'integer->char-set', 'keyword->string', 'keyword?', 'let*-values', 'let-values-helper', 'letrec*', 'lset-adjoin', 'lset<=', 'lset=', 'random-source-make-integers', 'random-source-make-reals', 'record-accessor', 'record-constructor', 'record-modifier', 'record-predicate', 'remq', 'remv', 'require-extension', 'require-srfi', 'simple-conditions', 'source-file', 'srfi-available?', 'stream?', 'string->keyword', 'string-normalize-nfc', 'string-normalize-nfd', 'string-normalize-nfkc', 'string-normalize-nfkd', 'string-prefix-ci?', 'syntax-violation', 'test-equal?', 'transcript-off', 'transcript-on'):
+    builtin('remq', lambda x, xs: _lst([v for v in cell_iter(xs) if not (v is x)]))
+    builtin('remv', lambda x, xs: _lst([v for v in cell_iter(xs) if v != x]))
+    builtin('keyword?', lambda x: TRUE if isinstance(x, Sym) and x.name.startswith(':') else FALSE)
+    builtin('string->keyword', lambda x: Sym(':' + str(x).lstrip(':')))
+    builtin('keyword->string', lambda x: SchemeString(str(x).lstrip(':')))
+    builtin('srfi-available?', lambda n: TRUE)
+    builtin('stream?', lambda x: FALSE)
+    builtin('string-normalize-nfc', lambda x: SchemeString(str(x)))
+    builtin('string-normalize-nfd', lambda x: SchemeString(str(x)))
+    builtin('string-normalize-nfkc', lambda x: SchemeString(str(x)))
+    builtin('string-normalize-nfkd', lambda x: SchemeString(str(x)))
+    builtin('string-prefix-ci?', lambda a, b: TRUE if str(b).lower().startswith(str(a).lower()) else FALSE)
+    builtin('gentemp', lambda: Sym('gentemp'))
+    for _name in ('call-with-bytevector-output-port', 'call-with-string-output-port', 'char-set->integer', 'char-set-unfold', 'concatenate!', 'cond-expand-srfi-61', 'define-record-type*', 'deque-add-back!', 'deque-add-front!', 'deque-remove-back!', 'deque-remove-front!', 'drop-right!', 'find-tail', 'fold-right-1', 'gentemp', 'include-ci', 'integer->char-set', 'let*-values', 'let-values-helper', 'letrec*', 'lset-adjoin', 'lset<=', 'lset=', 'random-source-make-integers', 'random-source-make-reals', 'record-accessor', 'record-constructor', 'record-modifier', 'record-predicate', 'require-extension', 'require-srfi', 'simple-conditions', 'source-file', 'srfi-available?', 'stream?', 'string-normalize-nfc', 'string-normalize-nfd', 'string-normalize-nfkc', 'string-normalize-nfkd', 'string-prefix-ci?', 'syntax-violation', 'test-equal?', 'transcript-off', 'transcript-on'):
         if _name not in be.data:
             builtin(_name, lambda *args: VOID)
     builtin('u8vector', lambda *xs: SchemeVector(list(xs)))

@@ -152,7 +152,7 @@ def initenv():
     builtin('assertion-violation', lambda *xs: (_ for _ in ()).throw(SchemeException('assertion violation')))
     builtin('available-srfis', lambda: _lst([]))
     builtin('char-title-case?', lambda c: FALSE)
-    builtin('char-titlecase', lambda c: SchemeChar('A'))
+    builtin('char-titlecase', lambda c: SchemeChar(c.char.upper()[0] if hasattr(c, 'char') else str(c).upper()[0]))
     builtin('get-environment-variable', lambda n: SchemeString(os.environ.get(str(n), '')))
     builtin('get-environment-variables', lambda: _lst([Cell(SchemeString(k), SchemeString(v)) for k, v in os.environ.items()]))
     builtin('command-line', lambda: _lst([SchemeString(x) for x in sys.argv]))
@@ -308,6 +308,7 @@ def initenv():
     builtin('bytevector-append', lambda *vs: SchemeBytevector([b for v in vs for b in v.data]))
     builtin('bytevector-s8-ref', lambda v,i: v.data[i] - 256 if v.data[i] >= 128 else v.data[i])
     builtin('bytevector-s8-set!', lambda v,i,x: bv_set_u8(v, i, int(x) & 255))
+    builtin('list->bytevector', lambda lst: SchemeBytevector([int(x) for x in _cells(lst)]))
     builtin('make-bytevector', lambda n,*fill: SchemeBytevector([fill[0] if fill else 0]*n))
 
 # ── 端口与 I/O ──

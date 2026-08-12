@@ -18,7 +18,7 @@ public static partial class PrimitiveRegistry
 
     private static object? RegisterExtMisc()
     {
-        foreach (var name in new[] { "append!", "append-reverse!", "assert-violation", "assertion-violation", "bytevector-s8-ref", "bytevector-s8-set!", "call-with-bytevector-output-port", "call-with-string-output-port", "char-set->integer", "char-set-unfold", "concatenate!", "cond-expand-srfi-61", "define-record-type*", "deque-add-back!", "deque-add-front!", "deque-remove-back!", "deque-remove-front!", "drop-right!", "f32vector-set!", "f32vector?", "f64vector-set!", "find-tail", "fold-right-1", "for-all", "gentemp", "include-ci", "integer->char-set", "keyword->string", "keyword?", "let*-values", "let-values-helper", "letrec*", "lset-adjoin", "lset<=", "lset=", "make-f32vector", "make-f64vector", "random-source-make-integers", "random-source-make-reals", "record-accessor", "record-constructor", "record-modifier", "record-predicate", "remq", "remv", "require-extension", "require-srfi", "simple-conditions", "source-file", "srfi-available?", "stream?", "string->keyword", "string-normalize-nfc", "string-normalize-nfd", "string-normalize-nfkc", "string-normalize-nfkd", "string-prefix-ci?", "syntax-violation", "test-equal?", "transcript-off", "transcript-on" })
+        foreach (var name in new[] { "append!", "append-reverse!", "assert-violation", "assertion-violation", "bytevector-s8-ref", "bytevector-s8-set!", "call-with-bytevector-output-port", "call-with-string-output-port", "char-set->integer", "char-set-unfold", "concatenate!", "cond-expand-srfi-61", "define-record-type*", "deque-add-back!", "deque-add-front!", "deque-remove-back!", "deque-remove-front!", "drop-right!", "f32vector-set!", "f32vector?", "f64vector-set!", "find-tail", "fold-right-1", "for-all", "gentemp", "include-ci", "integer->char-set", "let*-values", "let-values-helper", "letrec*", "lset-adjoin", "lset<=", "lset=", "make-f32vector", "make-f64vector", "random-source-make-integers", "random-source-make-reals", "record-accessor", "record-constructor", "record-modifier", "record-predicate", "require-extension", "require-srfi", "simple-conditions", "source-file", "srfi-available?", "stream?", "string-normalize-nfc", "string-normalize-nfd", "string-normalize-nfkc", "string-normalize-nfkd", "string-prefix-ci?", "syntax-violation", "test-equal?", "transcript-off", "transcript-on" })
             if (!Evaluator.GlobalEnv.Data.ContainsKey(name)) _b(name, _ => Const.VOID);
         _b("integer-compare", args => NumericHelper.ToLong(args[0]) < NumericHelper.ToLong(args[1]) ? -1L : NumericHelper.ToLong(args[0]) > NumericHelper.ToLong(args[1]) ? 1L : 0L);
         _b("current-date", _ => DateTimeOffset.UtcNow);
@@ -37,6 +37,19 @@ public static partial class PrimitiveRegistry
         _b("f64vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
         _b("f64vector-length", args => ((SchemeVector)args[0]!).Data.Count);
         _b("f64vector-ref", args => ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])]);
+        _b("remq", args => args[1].Cells().Where(x => !ReferenceEquals(x, args[0])).ToList().ToCell());
+        _b("remv", args => args[1].Cells().Where(x => !Equals(x, args[0])).ToList().ToCell());
+        _b("keyword?", args => args[0] is Sym s && s.Name.StartsWith(":") ? Const.TRUE : Const.FALSE);
+        _b("string->keyword", args => Sym.Intern(":" + ToStr(args[0]).TrimStart(':')));
+        _b("keyword->string", args => new SchemeString(ToStr(args[0]).TrimStart(':')));
+        _b("srfi-available?", _ => Const.TRUE);
+        _b("stream?", _ => Const.FALSE);
+        _b("string-normalize-nfc", args => new SchemeString(ToStr(args[0])));
+        _b("string-normalize-nfd", args => new SchemeString(ToStr(args[0])));
+        _b("string-normalize-nfkc", args => new SchemeString(ToStr(args[0])));
+        _b("string-normalize-nfkd", args => new SchemeString(ToStr(args[0])));
+        _b("string-prefix-ci?", args => ToStr(args[1]).StartsWith(ToStr(args[0]), StringComparison.OrdinalIgnoreCase) ? Const.TRUE : Const.FALSE);
+        _b("gentemp", _ => Sym.Intern("gentemp"));
         foreach (var p in new[] { "f32", "f64", "s8", "s16", "s32", "s64", "u16", "u32", "u64" })
         {
             _b(p + "vector", args => new SchemeVector(args));

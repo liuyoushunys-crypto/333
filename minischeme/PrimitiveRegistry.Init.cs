@@ -135,6 +135,7 @@ public static partial class PrimitiveRegistry
         _b("exact-integer-floor", args => (long)Math.Floor(NumericHelper.ToDouble(args[0]) / NumericHelper.ToDouble(args[1])));
         _b("make-record-type", _ => Const.VOID);
         _b("bytevector->list", args => ((SchemeBytevector)args[0]!).Data.Select(x => (object?)(long)x).ToList().ToCell());
+        _b("list->bytevector", args => new SchemeBytevector(args[0].Cells().Select(NumericHelper.ToInt)));
         _b("car+cdr", args => new Cell(((Cell)args[0]!).Car, ((Cell)args[0]!).Cdr));
         _b("available-srfis", _ => Const.NIL);
         _b("char-title-case?", _ => Const.FALSE);
