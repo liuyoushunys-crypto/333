@@ -1654,14 +1654,14 @@ public static partial class PrimitiveRegistry
     private static long BitsToInteger(object? lst)
     {
         long r = 0;
+        int bit = 0;
         foreach (var v in lst.Cells())
         {
             if (ReferenceEquals(v, Const.TRUE) || (v is Sym vs && vs.Name == "1") ||
                 (v is long l && l == 1) || (v is int iv && iv == 1) ||
                 (v is BigInteger bi && bi == BigInteger.One))
-                r = (r << 1) | 1;
-            else
-                r <<= 1;
+                r |= 1L << bit;
+            bit++;
         }
         return r;
     }

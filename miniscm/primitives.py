@@ -789,7 +789,6 @@ def integer_to_bits_list(n, k=0):
         bits.append(1 if temp & 1 else 0)
         temp >>= 1
     if not bits: bits = [0]
-    bits.reverse()
     if k > len(bits):
         bits = bits + [0] * (k - len(bits))
     return _lst(bits)

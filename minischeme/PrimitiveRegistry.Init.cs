@@ -409,6 +409,17 @@ public static partial class PrimitiveRegistry
         });
         _b("delete-file", args => { File.Delete(ToStr(args[0])); return Const.VOID; });
         _b("file-exists?", args => File.Exists(ToStr(args[0])) ? Const.TRUE : Const.FALSE);
+        _b("get-environment-variable", args => Environment.GetEnvironmentVariable(ToStr(args[0])) ?? "");
+        _b("get-environment-variables", _ => Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().Select(e => new Cell(e.Key?.ToString() ?? "", e.Value?.ToString() ?? "")).ToList().ToCell());
+        _b("command-line", _ => Environment.GetCommandLineArgs().Select(x => (object?)x).ToList().ToCell());
+        _b("current-monotonic-time", _ => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency);
+        _b("implementation-version", _ => new SchemeString("minischeme 1.0"));
+        _b("string-null?", args => ToStr(args[0]).Length == 0 ? Const.TRUE : Const.FALSE);
+        _b("clamp", args => Math.Max(NumericHelper.ToLong(args[1]), Math.Min(NumericHelper.ToLong(args[2]), NumericHelper.ToLong(args[0]))));
+        _b("symbol-append", args => Sym.Intern(string.Concat(args.Select(ToStr))));
+        _b("immutable-string?", args => args[0] is SchemeString ? Const.TRUE : Const.FALSE);
+        _b("rational-expt", args => Math.Pow(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1])));
+        _b("provide", _ => Const.VOID);
         _b("open-input-file", args => MakePort("input", new StreamReader(ToStr(args[0]))));
         _b("open-binary-input-file", args => MakePort("input", new BytePort(File.ReadAllBytes(ToStr(args[0])))));
         _b("open-output-file", args => MakePort("output", new StreamWriter(ToStr(args[0]))));

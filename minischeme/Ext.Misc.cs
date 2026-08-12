@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using Miniscm.Types;
 using Miniscm.Eval;
 using Void = Miniscm.Types.Void;
@@ -31,6 +32,8 @@ public static partial class PrimitiveRegistry
         _b("f64vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
         _b("f64vector-length", args => ((SchemeVector)args[0]!).Data.Count);
         _b("f64vector-ref", args => ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])]);
+        _b("json-read-string", args => JsonToScheme(System.Text.Json.JsonDocument.Parse(ToStr(args[0])).RootElement));
+        _b("json-write-string", args => new SchemeString(JsonSerializer.Serialize(args[0])));
         // numeric aliases & predicates
         _b("add1", args => NumericHelper.Add(args[0], 1L));
         _b("sub1", args => NumericHelper.Sub(args[0], 1L));

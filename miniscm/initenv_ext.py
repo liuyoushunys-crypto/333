@@ -1,5 +1,5 @@
 # initenv_ext.py — builtin registration extracted from primitives_ext.py
-import math, sys, time as _time
+import math, sys, time as _time, json as _json
 from mtypes import (
     Sym, Cell, SchemeString, SchemeVector, SchemeBytevector,
     ErrorObject, NIL, VOID, TRUE, FALSE,
@@ -617,6 +617,8 @@ def initenv_ext():
     # ═══════════════════════════════════════════════════════════════
     builtin('json-read', json_read)
     builtin('json-write', json_write)
+    builtin('json-read-string', lambda s: _json.loads(str(s)))
+    builtin('json-write-string', lambda x: _json.dumps(x, separators=(',', ':')))
 
     # ═══════════════════════════════════════════════════════════════
     # SRFI-207: String-notable (bytevector <-> string)

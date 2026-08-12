@@ -133,6 +133,17 @@ def initenv():
 
 # ── 有理数操作 ──
     builtin('rationalize', lambda x, eps: simplest_between(float(x) - float(eps), float(x) + float(eps)) if isinstance(x,(int,float,Fraction)) else x)
+    builtin('get-environment-variable', lambda n: SchemeString(os.environ.get(str(n), '')))
+    builtin('get-environment-variables', lambda: _lst([Cell(SchemeString(k), SchemeString(v)) for k, v in os.environ.items()]))
+    builtin('command-line', lambda: _lst([SchemeString(x) for x in sys.argv]))
+    builtin('current-monotonic-time', lambda: time.monotonic())
+    builtin('implementation-version', lambda: SchemeString('miniscm 1.0'))
+    builtin('string-null?', lambda s: TRUE if len(str(s)) == 0 else FALSE)
+    builtin('clamp', lambda x, lo, hi: max(lo, min(hi, x)))
+    builtin('symbol-append', lambda *xs: Sym(''.join(x.name for x in xs)))
+    builtin('immutable-string?', lambda s: TRUE if isinstance(s, SchemeString) else FALSE)
+    builtin('rational-expt', lambda x, n: x ** n)
+    builtin('provide', lambda *xs: VOID)
     # exact-integer-sqrt：返回 (sqrt, remainder) 二元组（非 tuple，直接返回两个值）
     builtin('exact-integer-sqrt', lambda x: (math.isqrt(x), x - math.isqrt(x)**2) if isinstance(x,int) else (0, 0))
 
@@ -195,7 +206,7 @@ def initenv():
     builtin('last', lambda lst: (lambda c: c.car if isinstance(c, Cell) else FALSE)(_last_pair(lst)))
 
     builtin('booleans->integer', booleans_to_integer)
-    builtin('bits->integer', bits_to_integer)
+    builtin('bits->integer', bits_to_integer_lsb)
     builtin('integer->bits-list', integer_to_bits_list)
     builtin('list->integer', bits_to_integer_lsb)
     builtin('integer->bits', lambda n, k=0: integer_to_bits_list(n, k))
