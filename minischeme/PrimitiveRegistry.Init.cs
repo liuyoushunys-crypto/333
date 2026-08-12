@@ -435,7 +435,11 @@ public static partial class PrimitiveRegistry
         _b("clamp", args => Math.Max(NumericHelper.ToLong(args[1]), Math.Min(NumericHelper.ToLong(args[2]), NumericHelper.ToLong(args[0]))));
         _b("symbol-append", args => Sym.Intern(string.Concat(args.Select(ToStr))));
         _b("immutable-string?", args => args[0] is SchemeString ? Const.TRUE : Const.FALSE);
-        _b("rational-expt", args => Math.Pow(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1])));
+        _b("rational-expt", args =>
+        {
+            var value = Math.Pow(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1]));
+            return value == Math.Truncate(value) ? (object?)(long)value : value;
+        });
         _b("provide", _ => Const.VOID);
         _b("open-input-file", args => MakePort("input", new StreamReader(ToStr(args[0]))));
         _b("open-binary-input-file", args => MakePort("input", new BytePort(File.ReadAllBytes(ToStr(args[0])))));
