@@ -148,8 +148,8 @@ def initenv():
 
     builtin('gcd', gcd)
     builtin('lcm', lcm)
-    builtin('max', max)
-    builtin('min', min)
+    builtin('max', lambda *xs: max(cell_iter(xs[0])) if len(xs) == 1 and isinstance(xs[0], Cell) else max(xs))
+    builtin('min', lambda *xs: min(cell_iter(xs[0])) if len(xs) == 1 and isinstance(xs[0], Cell) else min(xs))
     builtin('sum', lambda *a: sum(a))
 
 # ── 位运算 ──
@@ -195,7 +195,7 @@ def initenv():
     builtin('last', lambda lst: (lambda c: c.car if isinstance(c, Cell) else FALSE)(_last_pair(lst)))
 
     builtin('booleans->integer', booleans_to_integer)
-    builtin('bits->integer', bits_to_integer_lsb)
+    builtin('bits->integer', bits_to_integer)
     builtin('integer->bits-list', integer_to_bits_list)
     builtin('list->integer', bits_to_integer_lsb)
     builtin('integer->bits', lambda n, k=0: integer_to_bits_list(n, k))

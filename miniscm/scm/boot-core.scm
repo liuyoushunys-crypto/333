@@ -376,12 +376,29 @@
 ;;     - 若无匹配子句且无 rest 兜底，触发运行时错误
 ;;     - case-lambda-arity 在编译期常量化（define-macro），
 ;;       运行时开销仅为 (= n k) 或 (>= n k) 的比较
-(define-syntax case-lambda
-  (syntax-rules ()
-    ((case-lambda (fmls b1 b2 ...) ...)
-     (lambda args
+(define-macro (case-lambda . clauses)
+  (letrec ((arity
+            (lambda (fmls)
+              (cond ((null? fmls) '(= n 0))
+                    ((pair? fmls)
+                     (let loop ((f fmls) (count 0))
+                       (if (null? f) (list '= 'n count)
+                           (if (pair? f) (loop (cdr f) (+ count 1))
+                               (list '>= 'n count)))))
+                    (else #t))))
+           (dispatch
+            (lambda (cs)
+              (if (null? cs)
+                  '(error "case-lambda: no matching clause")
+                  (let* ((clause (car cs))
+                         (fmls (car clause))
+                         (body (cdr clause)))
+                    `(if ,(arity fmls)
+                         (apply (lambda ,fmls ,@body) args)
+                         ,(dispatch (cdr cs))))))))
+    `(lambda args
        (let ((n (length args)))
-         (case-lambda-helper args n (fmls b1 b2 ...) ...))))))
+         ,(dispatch clauses)))))
 
 ;; ── case-lambda-helper ──
 ;; case-lambda 的递归分派辅助宏（不直接使用）。
@@ -389,9 +406,9 @@
 ;;   无匹配子句时调用 (error "case-lambda: no matching clause")。
 (define-syntax case-lambda-helper
   (syntax-rules ()
-    ((case-lambda-helper args n)
+    ((_ args n)
      (error "case-lambda: no matching clause"))
-    ((case-lambda-helper args n (fmls b1 b2 ...) rest ...)
+    ((_ args n (fmls b1 b2 ...) rest ...)
      (if (case-lambda-arity n fmls)
          (apply (lambda fmls b1 b2 ...) args)
          (case-lambda-helper args n rest ...)))))
@@ -466,6 +483,8 @@
 
 (define-syntax import
   (syntax-rules () ((_ library ...) (if #f #f))))
+
+(define NIL '())
 
 ;; ── cond-expand ──
 ;; 条件编译：根据库是否存在选择分支（R7RS）。

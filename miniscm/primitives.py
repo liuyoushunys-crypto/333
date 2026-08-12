@@ -98,6 +98,7 @@ def bit_op(args,op):
 
 # format: ~a/~s/~d/~%/~~ 格式化引擎（Scheme format 子集）
 def format(fmt,args):
+    fmt = str(fmt)
     parts=[]; i=0; ai=0
     while i<len(fmt):
         if fmt[i]=='~' and i+1<len(fmt):
@@ -788,6 +789,7 @@ def integer_to_bits_list(n, k=0):
         bits.append(1 if temp & 1 else 0)
         temp >>= 1
     if not bits: bits = [0]
+    bits.reverse()
     if k > len(bits):
         bits = bits + [0] * (k - len(bits))
     return _lst(bits)

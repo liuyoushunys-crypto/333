@@ -95,12 +95,12 @@ public static partial class PrimitiveRegistry
         _b("random-seed", args =>
         {
             var seed = NumericHelper.ToInt(args[0]);
-            _extRng = new Random(seed);
+            _extRandomState = seed;
             return Const.VOID;
         });
     }
 
-    private static Random _extRng = new();
+    private static long _extRandomState = Environment.TickCount;
 
     private static bool Truthy(object? v)
     {

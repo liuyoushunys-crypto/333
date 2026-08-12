@@ -500,7 +500,10 @@
     (let* ((new-state (remainder (+ (* 1103515245 state) 12345) 2147483648))
            (val (/ new-state 2147483648.0)))
       (set-random-source-state! *default-random-source* new-state)
-      val)))
+       val)))
+
+(define (random-seed seed)
+  (set-random-source-state! *default-random-source* seed))
 
 (define *default-random-source* (make-random-source))
 

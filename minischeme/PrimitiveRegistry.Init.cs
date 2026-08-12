@@ -14,6 +14,15 @@ public static partial class PrimitiveRegistry
 {
     private static void _b(string name, Func<object?[], object?> fn) => Evaluator.GlobalEnv.Define(name, fn);
 
+    private static object IntegerBits(long n)
+    {
+        if (n == 0) return new Cell(0L, Nil.Instance);
+        var bits = new List<object?>();
+        var value = Math.Abs(n);
+        while (value != 0) { bits.Add(value & 1); value >>= 1; }
+        return bits.ToCell();
+    }
+
     public static void Init()
     {
         // ── Type predicates ──
@@ -461,6 +470,8 @@ public static partial class PrimitiveRegistry
         _b("bitwise-length", PBitwiseLength);
         _b("bitwise-not", args => ~NumericHelper.ToLong(args[0]));
         _b("bitwise-reverse-bit-field", PBitwiseReverseBitField);
+        _b("bitwise-reverse-bitfield", PBitwiseReverseBitField);
+        _b("integer->bits-list", args => IntegerBits(NumericHelper.ToLong(args[0])));
         _b("bitwise-rotate", PBitwiseRotate);
         _b("bitwise-rotate-bit-field", PBitwiseRotateBitField);
         _b("bitwise-shift", PBitwiseShift);

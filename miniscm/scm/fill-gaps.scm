@@ -505,7 +505,10 @@
 
 (define (expt-mod a b m)
   (if (negative? b)
-      (error "expt-mod: negative exponent not supported in pure scheme")
+      (let loop ((x 0))
+        (if (= (modulo (* a x) m) 1)
+            (modulo (expt x (- b)) m)
+            (loop (+ x 1))))
       (modulo (expt a b) m)))
 
 
@@ -789,5 +792,4 @@
     (write-char (integer->char byte) p)))
 
 (define (pp obj) (display obj) (newline))
-
 

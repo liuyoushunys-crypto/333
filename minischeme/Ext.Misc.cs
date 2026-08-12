@@ -9,8 +9,28 @@ namespace Miniscm.Primitives;
 
 public static partial class PrimitiveRegistry
 {
+    private static long NextRandom(int limit)
+    {
+        _extRandomState = (1103515245L * _extRandomState + 12345) & 0x7fffffff;
+        return limit <= 0 ? 0 : _extRandomState % limit;
+    }
+
     private static object? RegisterExtMisc()
     {
+        _b("integer-compare", args => NumericHelper.ToLong(args[0]) < NumericHelper.ToLong(args[1]) ? -1L : NumericHelper.ToLong(args[0]) > NumericHelper.ToLong(args[1]) ? 1L : 0L);
+        _b("current-date", _ => DateTimeOffset.UtcNow);
+        _b("current-time", _ => DateTimeOffset.UtcNow);
+        _b("date?", args => args[0] is DateTimeOffset ? Const.TRUE : Const.FALSE);
+        _b("time?", args => args[0] is DateTimeOffset ? Const.TRUE : Const.FALSE);
+        _b("u8vector", args => new SchemeVector(args));
+        _b("u8vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
+        _b("u8vector-length", args => ((SchemeVector)args[0]!).Data.Count);
+        _b("u8vector-ref", args => ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])]);
+        _b("make-u8vector", args => new SchemeVector(Enumerable.Repeat(args.Length > 1 ? args[1] : 0L, NumericHelper.ToInt(args[0])).Cast<object?>()));
+        _b("f64vector", args => new SchemeVector(args));
+        _b("f64vector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
+        _b("f64vector-length", args => ((SchemeVector)args[0]!).Data.Count);
+        _b("f64vector-ref", args => ((SchemeVector)args[0]!).Data[NumericHelper.ToInt(args[1])]);
         // numeric aliases & predicates
         _b("add1", args => NumericHelper.Add(args[0], 1L));
         _b("sub1", args => NumericHelper.Sub(args[0], 1L));
@@ -97,8 +117,8 @@ public static partial class PrimitiveRegistry
         Evaluator.GlobalEnv.Define("primes", Primes());
 
         // random
-        _b("random-integer", args => (long)_extRng.Next(NumericHelper.ToInt(args[0])));
-        _b("random-real", args => _extRng.NextDouble());
+        _b("random-integer", args => NextRandom(NumericHelper.ToInt(args[0])));
+        _b("random-real", args => NextRandom(1000000) / 1000000.0);
 
         // write-string
         _b("write-string", args =>

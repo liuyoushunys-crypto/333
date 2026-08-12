@@ -1,5 +1,5 @@
 # initenv_ext.py — builtin registration extracted from primitives_ext.py
-import math, sys
+import math, sys, time as _time
 from mtypes import (
     Sym, Cell, SchemeString, SchemeVector, SchemeBytevector,
     ErrorObject, NIL, VOID, TRUE, FALSE,
@@ -10,6 +10,20 @@ from primitives_ext import *
 
 def initenv_ext():
     be.define('NIL', NIL)
+    builtin('u8vector', lambda *xs: SchemeVector(list(xs)))
+    builtin('u8vector?', lambda v: TRUE if isinstance(v, SchemeVector) else FALSE)
+    builtin('u8vector-length', lambda v: len(v.data))
+    builtin('u8vector-ref', lambda v, i: v.data[int(i)])
+    builtin('make-u8vector', lambda n, *a: SchemeVector([(a[0] if a else 0) for _ in range(int(n))]))
+    builtin('f64vector', lambda *xs: SchemeVector(list(xs)))
+    builtin('f64vector?', lambda v: TRUE if isinstance(v, SchemeVector) else FALSE)
+    builtin('f64vector-length', lambda v: len(v.data))
+    builtin('f64vector-ref', lambda v, i: v.data[int(i)])
+    builtin('integer-compare', lambda a, b: -1 if a < b else (1 if a > b else 0))
+    builtin('current-date', lambda: ('date', int(_time.time())))
+    builtin('current-time', lambda: ('time', int(_time.time())))
+    builtin('date?', lambda v: TRUE if isinstance(v, tuple) and v and v[0] == 'date' else FALSE)
+    builtin('time?', lambda v: TRUE if isinstance(v, tuple) and v and v[0] == 'time' else FALSE)
     # ═══════════════════════════════════════════════════════════════
     # SRFI-111: Boxes
     # ═══════════════════════════════════════════════════════════════

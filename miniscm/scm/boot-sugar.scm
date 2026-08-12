@@ -860,12 +860,16 @@
 ;;   用法: (as-> x name expr ...)
 ;;   示例: (as-> 5 n (+ n 1) (* n 2))  => 12
 ;;   对比: 与 -> 不同，as-> 允许在不同位置引用变量
-(define-syntax as->
-  (syntax-rules ()
-    ((_ x name) x)
-    ((_ x name expr) (let ((name x)) expr))
-    ((_ x name expr next-name rest ...)
-     (let ((name x)) (as-> expr next-name rest ...)))))
+(define-macro (as-> value name . forms)
+  (letrec ((build
+            (lambda (v current fs)
+              (if (null? fs) v
+                  (let* ((form (car fs)) (tail (cdr fs))
+                         (next (if (and (pair? tail) (symbol? (car tail))) (car tail) current))
+                         (rest (if (eq? next current) tail (cdr tail))))
+                    `(let ((,current ,v))
+                       ,(if (null? rest) form (build form next rest))))))))
+    (build value name forms)))
 
 ;; ── juxt ──
 ;; 并联应用：多个函数作用于同一输入，返回结果列表。
