@@ -2293,6 +2293,12 @@ def read_u8_fn(*p):
         b = ord(s[0]) & 0xFF
         port[1][0] = s[1:]
         return b
+    if isinstance(port, tuple) and port[0] == 'bin-str-port' and isinstance(port[1], list):
+        data, pos = port[1]
+        if pos >= len(data):
+            return EOF
+        port[1][1] = pos + 1
+        return data[pos]
     return EOF
 
 def peek_u8_fn(*p):

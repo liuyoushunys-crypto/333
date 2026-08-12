@@ -11,6 +11,8 @@ namespace Miniscm.Primitives;
 
 public static partial class PrimitiveRegistry
 {
+    static readonly Dictionary<string, SchemeString> MutableStringViews =
+        new(ReferenceEqualityComparer.Instance);
 
 
 
@@ -321,6 +323,16 @@ public static partial class PrimitiveRegistry
         if (args[0] is SchemeString s)
         {
             s.Data[NumericHelper.ToInt(args[1])] = args[2] is SchemeChar sc ? sc.Codepoint : AsChar(args[2]);
+            return Const.VOID;
+        }
+        if (args[0] is string raw)
+        {
+            if (!MutableStringViews.TryGetValue(raw, out var view))
+            {
+                view = new SchemeString(raw);
+                MutableStringViews[raw] = view;
+            }
+            view.Data[NumericHelper.ToInt(args[1])] = args[2] is SchemeChar sc ? sc.Codepoint : AsChar(args[2]);
             return Const.VOID;
         }
         throw new Exception("string-set! requires mutable SchemeString");
@@ -728,6 +740,8 @@ public static partial class PrimitiveRegistry
     {
         if (args[0] is ITuple t && t.Length >= 3 && t[0] is "port" && t[1] is "input" && t[2] is StringPort sp)
             return (long)sp.Pos;
+        if (args[0] is ITuple tb && tb.Length >= 3 && tb[0] is "port" && tb[1] is "input" && tb[2] is BytePort bp)
+            return (long)bp.Pos;
         return Const.FALSE;
     }
 
@@ -736,6 +750,11 @@ public static partial class PrimitiveRegistry
         if (args[0] is ITuple t && t.Length >= 3 && t[0] is "port" && t[1] is "input" && t[2] is StringPort sp)
         {
             sp.SetPos(NumericHelper.ToInt(args[1]));
+            return Const.VOID;
+        }
+        if (args[0] is ITuple tb && tb.Length >= 3 && tb[0] is "port" && tb[1] is "input" && tb[2] is BytePort bp)
+        {
+            bp.Pos = Math.Clamp(NumericHelper.ToInt(args[1]), 0, bp.Data.Length);
             return Const.VOID;
         }
         return Const.FALSE;
@@ -1851,7 +1870,7 @@ public static partial class PrimitiveRegistry
 
     private static string ToStr(object? x) => x switch
     {
-        string s => s,
+        string s => MutableStringViews.TryGetValue(s, out var view) ? view.ToString() : s,
         SchemeString ss => ss.ToString(),
         _ => x?.ToString() ?? ""
     };

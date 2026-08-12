@@ -832,6 +832,8 @@ def set_port_pos(p, pos):
         if key not in set_port_pos._saved_str:
             set_port_pos._saved_str[key] = s
         p[1][0] = set_port_pos._saved_str[key][pos:] if 0 <= pos < len(set_port_pos._saved_str[key]) else ('' if pos >= len(set_port_pos._saved_str[key]) else set_port_pos._saved_str[key])
+    if isinstance(p, tuple) and p[0] == 'bin-str-port' and isinstance(p[1], list):
+        p[1][1] = max(0, min(pos, len(p[1][0])))
     if isinstance(p, tuple) and p[0] == 'file-port' and len(p) > 3:
         p[3].seek(pos)
     return VOID

@@ -281,6 +281,13 @@ public static partial class PrimitiveRegistry
                 if (!peek) sp.Pos++;
                 return (long)b;
             }
+            if (t[2] is BytePort bp)
+            {
+                if (bp.Pos >= bp.Data.Length) return Const.EOF;
+                var b = bp.Data[bp.Pos];
+                if (!peek) bp.Pos++;
+                return (long)b;
+            }
             if (t[2] is StreamReader sr)
             {
                 int b = sr.Peek();

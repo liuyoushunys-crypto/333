@@ -306,7 +306,18 @@ def initenv():
     builtin('peek-char', pkc)
     builtin('write', write_proc)
     builtin('write-char', wc)
-    builtin('port-position', lambda p: (len(p[1][0]) and 0) if not (isinstance(p,tuple) and isinstance(p[1],list) and len(p[1])>1) else 0)
+    def port_pos(p):
+        if isinstance(p, tuple) and p[0] == 'str-port' and isinstance(p[1], list) and len(p[1]) > 1:
+            if not hasattr(set_port_pos, '_saved_str'):
+                set_port_pos._saved_str = {}
+            original = set_port_pos._saved_str.setdefault(id(p), p[1][0])
+            return len(original) - len(p[1][0])
+        if isinstance(p, tuple) and p[0] == 'file-port' and len(p) > 3:
+            return p[3].tell()
+        if isinstance(p, tuple) and p[0] == 'bin-str-port' and isinstance(p[1], list) and len(p[1]) > 1:
+            return p[1][1]
+        return 0
+    builtin('port-position', port_pos)
     builtin('set-port-position!', set_port_pos)
     builtin('get-output-string', lambda x: x[1][0] if isinstance(x,tuple) and x[0]=='str-port' and isinstance(x[1],list) else (x[1] if isinstance(x,tuple) and x[0]=='str-port' else (''.join(x.data) if hasattr(x,'data') else '')))
 

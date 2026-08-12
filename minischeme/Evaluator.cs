@@ -206,6 +206,7 @@ public static class Evaluator
             {
                 if (expr is Nil or Void or Eof) return expr;
                 if (expr is SyntaxObject so) return so.Expr;
+                if (expr is string s) return new SchemeString(s);
                 return expr;
             }
 

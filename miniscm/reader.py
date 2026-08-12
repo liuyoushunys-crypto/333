@@ -8,6 +8,7 @@ from fractions import Fraction
 import re
 from mtypes import (
     TRUE, FALSE, NIL, Sym, Cell, SchemeVector,
+    SchemeString,
     SYM_QUOTE, SYM_QQ, SYM_UNQUOTE, SYM_UNSPLICE,
     SYM_SYNTAX, SYM_QS, SYM_USYNTAX, SYM_USPLICES,
     _lst
@@ -164,7 +165,7 @@ def _atom(tok):
                 # 非法转义：直接输出反斜杠后的字符（Scheme 宽松行为）
                 else: r.append(ch); i+=2
             else: r.append(s[i]); i+=1
-        return ''.join(r)
+        return SchemeString(''.join(r))
     # 数值解析尝试：int/float/complex/Fraction；失败则作为符号
     # 如果 token 以字母开头，一定是符号，跳过数值解析
     if tok and tok[0].isalpha():

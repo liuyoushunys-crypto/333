@@ -131,6 +131,7 @@ public static partial class PrimitiveRegistry
 
     static object? PMinus(object?[] args)
     {
+        if (args.Length == 0) return 0L;
         if (args.Length == 1) return NumericHelper.Negate(args[0]);
         return args.Skip(1).Aggregate((object?)args[0], (acc, x) => NumericHelper.Sub(acc!, x))!;
     }

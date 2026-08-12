@@ -337,7 +337,10 @@ public static class Compiler
             var op = cell.Car;
             var args = cell.Cdr;
             if (op == Sym.QUOTE)
-                return new LiteralAst(args is Cell ac ? ac.Car : Const.NIL);
+            {
+                var quoted = args is Cell ac ? ac.Car : Const.NIL;
+                return new LiteralAst(quoted is string qs ? new SchemeString(qs) : quoted);
+            }
             if (op == Sym.IF)
             {
                 var argsC = args as Cell;
@@ -390,7 +393,7 @@ public static class Compiler
             while (cur is Cell cc) { argAsts.Add(ToAst(cc.Car)); cur = cc.Cdr; }
             return new AppAst(procAst, argAsts);
         }
-        return new LiteralAst(expr);
+        return new LiteralAst(expr is string text ? new SchemeString(text) : expr);
     }
 
     // Fully expand cond/let/letrec/let*/or/and into if/lambda/begin/set!

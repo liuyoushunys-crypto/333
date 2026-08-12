@@ -24,6 +24,14 @@ def eval(expr, env):                    # 依赖原语: (eval expr env)
     from miniscm import _eval
     return _eval(expr, env)
 
+def eval_qs(expr, env):
+    """Evaluate an unsyntax expression with syntax-case bindings in scope."""
+    if isinstance(expr, Sym):
+        value = sx_lookup(expr, sx_get_bindings())
+        if value is not None:
+            return value
+    return eval(expr, env)
+
 def sx_expand_call(expr, env):          # (sx-expand-call expr env)
     from primitives_first import _sx_expand_call
     return _sx_expand_call(expr, env)
@@ -400,10 +408,10 @@ def qs_walk_list(cur):                          # 64: (define (qs-walk-list cur)
         return qs_expand(cur)                   # (qs-expand cur)
     if qs_unsplice(cur.car):                    # (qs-unsplice? (car cur))
         # 还原 let: v = (eval (cadr (car cur)) (sx-expand-env))
-        v = eval(cur.car.cdr.car, sx_expand_env())
+        v = eval_qs(cur.car.cdr.car, sx_expand_env())
         return qq_append_lists(qq_reverse(v), qs_walk_list(cur.cdr))
     if qs_unquote(cur.car):                     # (qs-unquote? (car cur))
-        return Cell(eval(cur.car.cdr.car, sx_expand_env()),
+        return Cell(eval_qs(cur.car.cdr.car, sx_expand_env()),
                     qs_walk_list(cur.cdr))
     return Cell(qs_expand(cur.car), qs_walk_list(cur.cdr))
 
@@ -416,7 +424,7 @@ def qs_expand(x):                               # 65: (define (qs-expand x) ...)
     if not isinstance(x, Cell):                 # (not (pair? x))
         return x
     if qs_unquote(x):                           # (qs-unquote? x)
-        return eval(x.cdr.car, sx_expand_env()) # (eval (cadr x) (sx-expand-env))
+        return eval_qs(x.cdr.car, sx_expand_env()) # (eval (cadr x) (sx-expand-env))
     if qs_unsplice(x):                          # (qs-unsplice? x)
         return eval(x.cdr.car, sx_expand_env())
     if isinstance(x.car, Sym) and x.car is SYM_QUASISYNTAX:  # (eq? (car x) 'quasisyntax)
@@ -473,7 +481,7 @@ def sx_with_syntax(pairs, body):                # 70: (define (sx-with-syntax pa
     while ps is not NIL:                        # (if (null? ps) ...) → 迭代
         p = ps.car
         pat = p.car                             # (caar ps)
-        val = p.car.cdr.car                     # (cadar ps)
+        val = p.cdr.car                          # (cadar ps)
         b = sx_match(pat, val, [])              # (sx-match pat val '())
         if b is None:
             raise SchemeError("with-syntax: no match")

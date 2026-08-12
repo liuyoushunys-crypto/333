@@ -81,6 +81,9 @@ public static class AtomParser
             return result;
         }
 
+        if (tok.Length > 1 && (tok[0] == 'b' || tok[0] == 'B') && tok[1..].All(c => c == '0' || c == '1'))
+            return ParseBigInt(tok[1..], 2);
+
         var pn = ParseNumber(tok);
         if (pn is not null) return pn;
 

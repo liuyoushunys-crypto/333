@@ -53,6 +53,13 @@ public class StringPort
     public void SetPos(int p) => Pos = p;
 }
 
+public sealed class BytePort
+{
+    public byte[] Data;
+    public int Pos;
+    public BytePort(IEnumerable<byte> data) { Data = data.ToArray(); Pos = 0; }
+}
+
 public sealed class LambdaProc
 {
     public List<string> Params { get; }

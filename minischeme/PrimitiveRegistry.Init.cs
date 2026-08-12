@@ -280,6 +280,7 @@ public static partial class PrimitiveRegistry
         _b("current-output-port", PCurrentOutputPort);
         _b("get-output-string", PGetOutputString);
         _b("open-input-string", args => MakePort("input", new StringPort(ToStr(args[0]))));
+        _b("open-input-bytevector", args => MakePort("input", new BytePort(AsBytevector(args[0]).Data)));
         _b("open-output-string", args => MakePort("output", new StringBuilder()));
         _b("peek-char", PPeekChar);
         _b("port-position", PPortPosition);
@@ -388,7 +389,9 @@ public static partial class PrimitiveRegistry
         _b("jiffies-per-second", args => (long)1000000);
 
         // ── Ports and files ──
-        _b("binary-port?", args => args[0] is ITuple it && it.Length > 1 && it[0] is string bs && (bs == "bin-file-port" || bs == "bin-str-port") ? Const.TRUE : Const.FALSE);
+        _b("binary-port?", args => args[0] is ITuple it && it.Length > 2 && it[0] is "port" && it[2] is BytePort ? Const.TRUE : Const.FALSE);
+        _b("input-port-open?", args => IsPort(args[0], "input") ? Const.TRUE : Const.FALSE);
+        _b("output-port-open?", args => IsPort(args[0], "output") ? Const.TRUE : Const.FALSE);
         _b("close-port", args =>
         {
             if (args[0] is ITuple it && it.Length > 2 && it[0] is "port" && it[2] is IDisposable d) d.Dispose();

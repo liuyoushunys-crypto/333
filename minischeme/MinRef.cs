@@ -316,6 +316,16 @@ internal static object? QqWalk(object? e, Env env)                   // 25
         return idx >= 0 ? bindings[idx].Item2 : null;           // (if b (cdr b) #f)
     }
 
+    static object? EvalQs(object? expr, Env env)
+    {
+        if (expr is Sym s)
+        {
+            int idx = SxGetBindings().FindIndex(b => b.Item1 == s);
+            if (idx >= 0) return SxGetBindings()[idx].Item2;
+        }
+        return Eval(expr, env);
+    }
+
     static List<(Sym, object?)> SxMergeBindings(
         List<(Sym, object?)> b1, List<(Sym, object?)> b2)       // 27: (append b2 b1)
     {
@@ -453,7 +463,7 @@ internal static List<(Sym, object?)> SxGetBindings()                 // 57
             // 还原 let: v = (eval (cadr (car cur)) (sx-expand-env))
             if (cc.Car is Cell carCell && carCell.Cdr is Cell cdrCell)
             {
-                var v = Eval(cdrCell.Car, SxExpandEnv());
+                var v = EvalQs(cdrCell.Car, SxExpandEnv());
                 return QqAppendLists(QqReverse(v), QsWalkList(cc.Cdr));
             }
             return QsWalkList(cc.Cdr);
@@ -461,7 +471,7 @@ internal static List<(Sym, object?)> SxGetBindings()                 // 57
         if (QsUnquote(cc.Car))                                  // (qs-unquote? (car cur))
         {
             if (cc.Car is Cell carCell && carCell.Cdr is Cell cdrCell)
-                return new Cell(Eval(cdrCell.Car, SxExpandEnv()), QsWalkList(cc.Cdr));
+                return new Cell(EvalQs(cdrCell.Car, SxExpandEnv()), QsWalkList(cc.Cdr));
             return QsWalkList(cc.Cdr);
         }
         return new Cell(QsExpand(cc.Car), QsWalkList(cc.Cdr));
@@ -475,13 +485,13 @@ internal static object? QsExpand(object? x)                          // 65
         if (QsUnquote(xc))                                      // (qs-unquote? x)
         {
             if (xc.Cdr is Cell cdrCell)
-                return Eval(cdrCell.Car, SxExpandEnv());    // (eval (cadr x) (sx-expand-env))
+                return EvalQs(cdrCell.Car, SxExpandEnv());    // (eval (cadr x) (sx-expand-env))
             return x;
         }
         if (QsUnsplice(xc))                                     // (qs-unsplice? x)
         {
             if (xc.Cdr is Cell cdrCell)
-                return Eval(cdrCell.Car, SxExpandEnv());
+                return EvalQs(cdrCell.Car, SxExpandEnv());
             return x;
         }
         if (xc.Car is Sym cs && cs == SYM_QUASISYNTAX)          // (eq? (car x) 'quasisyntax)
