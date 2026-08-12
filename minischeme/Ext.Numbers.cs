@@ -24,6 +24,9 @@ public static partial class PrimitiveRegistry
         _b("comparator?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
         _b("comparator-order?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
         _b("comparator-hashable?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
+        _b("integer-comparator", _ => new Cell(Sym.Intern("comparator"), Const.NIL));
+        _b("=?", args => NumericHelper.ToLong(args[1]) == NumericHelper.ToLong(args[2]) ? Const.TRUE : Const.FALSE);
+        _b("<?", args => NumericHelper.ToLong(args[1]) < NumericHelper.ToLong(args[2]) ? Const.TRUE : Const.FALSE);
         _b("comparator-test-type", args => (Func<object?[], object?>)(_ => Const.TRUE));
         _b("make-default-comparator", args => new Cell(Sym.Intern("comparator"),
             new Cell((Func<object?[], object?>)(a => (object?)(Const.TRUE)), Const.NIL)));

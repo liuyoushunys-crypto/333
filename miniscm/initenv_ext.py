@@ -1,5 +1,5 @@
 # initenv_ext.py — builtin registration extracted from primitives_ext.py
-import math, sys, time as _time, json as _json
+import math, sys, time as _time, json as _json, re as _re
 from mtypes import (
     Sym, Cell, SchemeString, SchemeVector, SchemeBytevector,
     ErrorObject, NIL, VOID, TRUE, FALSE,
@@ -49,6 +49,25 @@ def initenv_ext():
         builtin(_prefix + 'vector-set!', lambda v, i, x: v.data.__setitem__(int(i), x) or VOID)
         builtin('make-' + _prefix + 'vector', lambda n, *a: SchemeVector([(a[0] if a else 0) for _ in range(int(n))]))
     builtin('integer-compare', lambda a, b: -1 if a < b else (1 if a > b else 0))
+    builtin('set', lambda *xs: _lst(list(xs)))
+    builtin('set?', lambda x: TRUE if isinstance(x, Cell) else FALSE)
+    builtin('set-contains?', lambda s, x: TRUE if any(v == x for v in cell_iter(s)) else FALSE)
+    builtin('regexp', lambda s: _re.compile(str(s)))
+    builtin('regexp?', lambda x: TRUE if hasattr(x, 'search') else FALSE)
+    builtin('regexp-matches?', lambda r, s: TRUE if r.search(str(s)) else FALSE)
+    builtin('make-timer', lambda *args: ('timer', args))
+    builtin('timer?', lambda x: TRUE if isinstance(x, tuple) and x and x[0] == 'timer' else FALSE)
+    builtin('nonempty-list?', lambda x: TRUE if isinstance(x, Cell) else FALSE)
+    builtin('string-cursor-start', lambda s: 0)
+    builtin('lset=', lambda eq, a, b: TRUE if len(list(cell_iter(a))) == len(list(cell_iter(b))) and all(any(eq(x, y) is TRUE for y in cell_iter(b)) for x in cell_iter(a)) else FALSE)
+    builtin('generic-sequence?', lambda x: TRUE if isinstance(x, Cell) or isinstance(x, SchemeVector) or isinstance(x, SchemeString) else FALSE)
+    builtin('flat-sequence?', lambda x: TRUE if isinstance(x, Cell) else FALSE)
+    builtin('parse-body', lambda *args: VOID)
+    builtin('type-of', lambda *args: VOID)
+    integer_cmp = make_comparator(lambda a, b: TRUE if a == b else FALSE, lambda a, b: TRUE if a < b else FALSE, lambda x: int(x), 'integer')
+    be.define('integer-comparator', integer_cmp)
+    builtin('=?', lambda c, a, b: comparator_eq_fn(c)(a, b))
+    builtin('<?', lambda c, a, b: comparator_lt_fn(c)(a, b))
     builtin('current-date', lambda: ('date', int(_time.time())))
     builtin('current-time', lambda: ('time', int(_time.time())))
     builtin('date?', lambda v: TRUE if isinstance(v, tuple) and v and v[0] == 'date' else FALSE)

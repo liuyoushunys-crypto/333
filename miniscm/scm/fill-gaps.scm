@@ -358,7 +358,12 @@
 
   (make-comparator (lambda (x) #t) equal?
 
-    (lambda (a b) (and (number? a) (number? b) (< a b)))))
+     (lambda (a b) (and (number? a) (number? b) (< a b)))))
+
+(define integer-comparator
+  (make-comparator (lambda (x) (integer? x)) = <))
+(define (=? c a b) ((vector-ref c 1) a b))
+(define (<? c a b) ((vector-ref c 2) a b))
 
 
 

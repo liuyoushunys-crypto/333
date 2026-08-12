@@ -991,6 +991,9 @@
 (define (deque-pop-front! dq) (deque-remove-front dq))
 (define (deque-pop-back! dq) (deque-remove-back dq))
 
+(define (deque-add-front! dq item) (deque-add-front dq item))
+(define (deque-add-back! dq item) (deque-add-back dq item))
+
 (define fx-width 24)
 
 (define fx-greatest (- (expt 2 (- fx-width 1)) 1))
