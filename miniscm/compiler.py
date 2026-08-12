@@ -1350,8 +1350,8 @@ class AstExprCompiler:
                         ctx=ast.Load()
                     )
                     return [ast.Return(value=ast.Call(
-                        func=proc_ast,
-                        args=[args_list],
+                        func=ast.Name(id='__mscm_invoke__', ctx=ast.Load()),
+                        args=[proc_ast, args_list, ast.Name(id='__mscm_env__', ctx=ast.Load())],
                         keywords=[]
                     ))]
             # 兜底 trampoline（C# `isTail && AppAst` 分支等价）：词法局部函数、

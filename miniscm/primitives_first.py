@@ -103,6 +103,7 @@ def car(p):
     raise TypeError("car: not a pair")
 
 def cdr(p):
+    if p is NIL: return NIL
     if isinstance(p,Cell): return p.cdr
     raise TypeError("cdr: not a pair")
 

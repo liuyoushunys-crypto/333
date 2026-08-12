@@ -158,7 +158,7 @@ public static class JitRuntime
     }
 
     public static object? CarOf(object? x) => x is Cell c ? c.Car : throw new Exception("car: not a pair");
-    public static object? CdrOf(object? x) => x is Cell c ? c.Cdr : throw new Exception("cdr: not a pair");
+    public static object? CdrOf(object? x) => x is Nil ? Const.NIL : x is Cell c ? c.Cdr : throw new Exception("cdr: not a pair");
 
     public static LambdaProc MakeLambda(List<string> @params, bool isSimple, Env env, object? body)
     {

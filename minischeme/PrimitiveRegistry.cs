@@ -1847,7 +1847,7 @@ public static partial class PrimitiveRegistry
     }
 
     private static object? CarFn(object? p) => p is Cell c ? c.Car : throw new Exception($"pair required: car of {Miniscm.Compiler.MinRef.SxPrint(p)}");
-    private static object? CdrFn(object? p) => p is Cell c ? c.Cdr : throw new Exception("pair required");
+    private static object? CdrFn(object? p) => p is Nil ? Const.NIL : p is Cell c ? c.Cdr : throw new Exception("pair required");
 
     private static string ToStr(object? x) => x switch
     {
@@ -1946,4 +1946,3 @@ public static partial class PrimitiveRegistry
         return result.ToString();
     }
 }
-
