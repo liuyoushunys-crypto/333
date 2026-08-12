@@ -168,6 +168,10 @@ def _atom(tok):
     # 数值解析尝试：int/float/complex/Fraction；失败则作为符号
     # 如果 token 以字母开头，一定是符号，跳过数值解析
     if tok and tok[0].isalpha():
+        if len(tok) > 1 and tok[0] in 'bBoOxXdD':
+            prefix = '#' + tok[0].lower() + tok[1:]
+            pn = parse_number_scheme(prefix)
+            if isinstance(pn, int): return pn
         return Sym(tok)
     pn=parse_number_scheme(tok)
     if isinstance(pn,(int,float,complex)): return pn

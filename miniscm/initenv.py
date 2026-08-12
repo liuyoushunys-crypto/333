@@ -81,6 +81,7 @@ def _with_file(path, thunk, mode, redirect):
     return r
 
 def initenv():
+    builtin('NIL', lambda: NIL)
     builtin('pi', math.pi)
     builtin('*', mul)
     builtin('/', div)
@@ -117,7 +118,16 @@ def initenv():
         if isinstance(x, Fraction) and x.denominator == 1: return int(x)
         return x
     builtin('inexact->exact', _inexact_to_exact_fn)
-    builtin('string->number', lambda s: parse_number_scheme(str(s)))
+    def _string_to_number(s, radix=10):
+        text = str(s)
+        radix = int(radix)
+        if radix != 10:
+            try:
+                return int(text, radix)
+            except ValueError:
+                return FALSE
+        return parse_number_scheme(text)
+    builtin('string->number', _string_to_number)
     builtin('numerator', lambda x: int(x) if isinstance(x,int) else (x.numerator if isinstance(x,Fraction) else x))
     builtin('denominator', lambda x: 1 if isinstance(x,int) else (x.denominator if isinstance(x,Fraction) else x.numerator if isinstance(x,float) and x==int(x) else 1))
 
@@ -186,6 +196,7 @@ def initenv():
 
     builtin('booleans->integer', booleans_to_integer)
     builtin('bits->integer', bits_to_integer_lsb)
+    builtin('integer->bits-list', integer_to_bits_list)
     builtin('list->integer', bits_to_integer_lsb)
     builtin('integer->bits', lambda n, k=0: integer_to_bits_list(n, k))
     builtin('bits->list', lambda n, *a: integer_to_bits_list(n, a[0] if a else 0))
@@ -238,7 +249,7 @@ def initenv():
     builtin('string-fill!', string_fill_prim)
     builtin('string-copy', lambda s,*a: SchemeString(str(s)) if not a else SchemeString(str(s)[a[0]:a[1]] if len(a)>1 else str(s)[a[0]:]))
     builtin('make-string', lambda n,*a: SchemeString((char_val(a[0]) if a else ' ') * n))
-    builtin('substring', lambda s,i,j: str(s)[i:j])
+    builtin('substring', lambda s,i,j: SchemeString(str(s)[i:j]))
     builtin('string->list', lambda s: _lst([SchemeChar(c) for c in str(s)]))
     builtin('symbol->string', str)
     builtin('string-downcase', lambda s: SchemeString(str(s).lower()))
@@ -263,6 +274,9 @@ def initenv():
     builtin('bytevector-length', lambda v: len(v.data) if hasattr(v,'data') else 0)
     builtin('bytevector-u8-ref', lambda v,i: v.data[i] if hasattr(v,'data') else 0)
     builtin('bytevector-u8-set!', lambda v,i,x: bv_set_u8(v, i, x) if hasattr(v,'data') else VOID)
+    builtin('bytevector-append', lambda *vs: SchemeBytevector([b for v in vs for b in v.data]))
+    builtin('bytevector-s8-ref', lambda v,i: v.data[i] - 256 if v.data[i] >= 128 else v.data[i])
+    builtin('bytevector-s8-set!', lambda v,i,x: bv_set_u8(v, i, int(x) & 255))
     builtin('make-bytevector', lambda n,*fill: SchemeBytevector([fill[0] if fill else 0]*n))
 
 # ── 端口与 I/O ──
@@ -280,6 +294,7 @@ def initenv():
     builtin('open-output-file', lambda n: ("file-port",str(n),"w",open(str(n),'w')))
     # open-input-string: 端口为 ('str-port', [字符串, 位置])，位置暂未使用
     builtin('open-input-string', lambda s: ("str-port", [str(s), 0]))
+    builtin('open-input-bytevector', lambda v: ("bin-str-port", [bytes(v.data), 0]))
     builtin('open-output-string', lambda *a: ('str-port',['']))
     builtin('close-input-port', lambda p: p[3].close() if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3 else VOID)
     builtin('close-output-port', lambda p: p[3].close() if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3 else VOID)

@@ -441,6 +441,8 @@ def load_file(path):
     #
     # 返回值是被成功求值的表达式数量。
     with open(path,encoding="utf-8") as f: src=f.read()
+    from primitives_first import clear_macro_caches
+    clear_macro_caches()
     exprs=read_all(src); n=0
     for expr in exprs:
         if expr is EOF: continue

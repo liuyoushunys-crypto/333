@@ -344,6 +344,10 @@ def _sx_expand_call(expr, env=None):
 # 失败都回退解释器。调用前设置 _CURRENT_MACRO_DEF_ENV/_CURRENT_EXPAND_ENV 等价。
 _MBODY_COMPILE_CACHE = {}
 
+def clear_macro_caches():
+    """Drop compiled macro bodies after a Scheme library is reloaded."""
+    _MBODY_COMPILE_CACHE.clear()
+
 def _extract_syntax_rules(proc):
     """从宏元组提取 (lits, rules)。结构必须是 sx-make-macro-binding 生成的
     ((sx-macro-expand 'args '((sx-dispatch args 'lits 'rules))) args (sx-expand-env))。

@@ -9,6 +9,7 @@ from primitives import *
 from primitives_ext import *
 
 def initenv_ext():
+    be.define('NIL', NIL)
     # ═══════════════════════════════════════════════════════════════
     # SRFI-111: Boxes
     # ═══════════════════════════════════════════════════════════════
@@ -22,9 +23,9 @@ def initenv_ext():
     builtin('comparator-hashable?', is_comparator_hashable)
     builtin('comparator-test-type', lambda c: (lambda x: TRUE))
     builtin('make-default-comparator', lambda: default_comparator())
-    builtin('make-eq-comparator', lambda: lst(COMPARATOR_TAG, lambda a,b: a is b, lambda a,b: False, lambda x: id(x)))
-    builtin('make-eqv-comparator', lambda: lst(COMPARATOR_TAG, lambda a,b: a is b or a == b, lambda a,b: False, lambda x: id(x)))
-    builtin('make-equal-comparator', lambda: lst(COMPARATOR_TAG, lambda a,b: a == b, lambda a,b: False, lambda x: id(x)))
+    builtin('make-eq-comparator', lambda: make_comparator(lambda a,b: a is b, lambda a,b: False, lambda x: id(x)))
+    builtin('make-eqv-comparator', lambda: make_comparator(lambda a,b: a is b or a == b, lambda a,b: False, lambda x: id(x)))
+    builtin('make-equal-comparator', lambda: make_comparator(lambda a,b: a == b, lambda a,b: False, lambda x: id(x)))
 
     # ═══════════════════════════════════════════════════════════════
     # SRFI-141: Division (exact integer division variants)
@@ -152,6 +153,7 @@ def initenv_ext():
     builtin('bitwise-length', bitwise_length)
     builtin('bitwise-count', bitwise_count)
     builtin('bitwise-reverse-bit-field', bitwise_reverse_bitfield)
+    builtin('bitwise-reverse-bitfield', bitwise_reverse_bitfield)
     builtin('bitwise-rotate', bitwise_rotate)
     builtin('bitwise-rotate-bit-field', bitwise_rotate_field)
     builtin('bitwise-copy-bit-field', bitwise_copy_bit_field)

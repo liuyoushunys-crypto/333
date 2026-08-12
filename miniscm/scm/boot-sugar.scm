@@ -406,6 +406,8 @@
 (define-syntax some->
   (syntax-rules ()
     ((_ x) x)
+    ((_ x proc) (if x (proc x) #f))
+    ((_ x proc more ...) (if x (some-> (proc x) more ...) #f))
     ((_ x (f . args)) (if x (f x . args) #f))
     ((_ x (f . args) . rest) (if x (some-> (f x . args) . rest) #f))))
 
@@ -430,7 +432,8 @@
 (define-syntax and=>
   (syntax-rules ()
     ((_ val proc) (if val (proc val) #f))
-    ((_ val proc . more) (if val (and=> (proc val) . more) #f))))
+    ((_ val proc next) (if val (let ((v (proc val))) (if v (next v) #f)) #f))
+    ((_ val proc next rest ...) (if val (and=> (let ((v (proc val))) v) next rest ...) #f))))
 
 ;; ── swap! ──
 ;; 交换两个变量的值。
@@ -701,6 +704,8 @@
 (define-syntax tap
   (syntax-rules ()
     ((_ x) x)
+    ((_ x proc) (begin (proc x) x))
+    ((_ x proc more ...) (begin (proc x) (tap x more ...)))
     ((_ x (proc . args) rest ...)
      (begin
        (proc x . args)
@@ -975,7 +980,9 @@
   (syntax-rules ()
     ((_ x) x)
     ((_ x (f . args)) (f x . args))
-    ((_ x (f . args) . rest) (value-> (f x . args) . rest))))
+    ((_ x (f . args) . rest) (value-> (f x . args) . rest))
+    ((_ x proc) (proc x))
+    ((_ x proc more ...) (value-> (proc x) more ...))))
 
 ;; ── nlet ──
 ;; 命名 let：定义局部递归函数。

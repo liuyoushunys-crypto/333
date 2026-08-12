@@ -25,7 +25,21 @@ def initenv_first():
     builtin('>', gt)
     builtin('<=', le)
     builtin('>=', ge)
-    builtin('number->string', str)
+    def _number_to_string(x, radix=10):
+        radix = int(radix)
+        if radix != 10 and isinstance(x, int) and not isinstance(x, bool):
+            if not 2 <= radix <= 36:
+                raise ValueError("number->string: invalid radix")
+            digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+            sign = "-" if x < 0 else ""
+            n = abs(x)
+            out = "0" if n == 0 else ""
+            while n:
+                out = digits[n % radix] + out
+                n //= radix
+            return SchemeString(sign + out)
+        return SchemeString(str(x))
+    builtin('number->string', _number_to_string)
 
     # ── 谓词 ──
     builtin('eq?', lambda a, b: TRUE if a is b else FALSE)

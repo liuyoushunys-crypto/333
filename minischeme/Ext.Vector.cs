@@ -129,6 +129,18 @@ public static partial class PrimitiveRegistry
         {
             var r = App(fn, (long)i, s);
             if (r is Cell c) { result.Add(c.Car); s = c.Cdr; }
+            else if (r is System.Runtime.CompilerServices.ITuple t && t.Length >= 2)
+            {
+                result.Add(t[0]);
+                if (t.Length == 2) s = t[1];
+                else
+                {
+                    object? tail = Const.NIL;
+                    for (int j = t.Length - 1; j >= 1; j--)
+                        tail = new Cell(t[j], tail);
+                    s = tail;
+                }
+            }
             else { result.Add(r); s = r; }
         }
         return new SchemeVector(result);

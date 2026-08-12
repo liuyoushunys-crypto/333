@@ -579,6 +579,9 @@ def vector_unfold(fn, n, seed):
         if isinstance(r, Cell):
             result.append(r.car)
             s = r.cdr
+        elif isinstance(r, tuple) and len(r) >= 2:
+            result.append(r[0])
+            s = r[1] if len(r) == 2 else _lst(r[1:])
         else:
             result.append(r)
             s = r
@@ -1641,7 +1644,8 @@ def bitwise_bit_field(n, start, end):
     return (n >> start) & ((1 << width) - 1)
 
 def bitwise_copy_bit(n, i, v):
-    n, i, v = int(n), int(i), int(v)
+    n, i = int(n), int(i)
+    v = 1 if v is TRUE else 0 if v is FALSE else int(v)
     if v & 1:
         return n | (1 << i)
     return n & ~(1 << i)
