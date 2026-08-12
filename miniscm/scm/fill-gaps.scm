@@ -284,7 +284,6 @@
 
 
 
-(define (get-output-bytevector) (bytevector))
 
 (define (make-strong-hash-table) (make-hash-table))
 
@@ -792,4 +791,3 @@
     (write-char (integer->char byte) p)))
 
 (define (pp obj) (display obj) (newline))
-

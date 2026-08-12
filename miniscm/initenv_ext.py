@@ -673,7 +673,7 @@ def initenv_ext():
     builtin('read-line', read_line)
     builtin('read-string', read_string_fn)
     builtin('write-string', write_string)
-    builtin('get-output-bytevector', lambda: SchemeBytevector([]))
+    builtin('get-output-bytevector', lambda p=None: SchemeBytevector(list(p[1])) if isinstance(p, tuple) and p[0] == 'byte-port' else SchemeBytevector([]))
 
 
     # Bytevector (base builtin in initenv.py)
