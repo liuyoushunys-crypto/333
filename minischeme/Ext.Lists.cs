@@ -145,7 +145,7 @@ public static partial class PrimitiveRegistry
         _b("list-queue-remove-front!", args => ListQueueRemove(args));
         _b("list-queue-list", args => ListQueueToList(args[0]));
         _b("list-queue-first", args => ListQueueFirst(args[0]));
-        throw new SchemeException("list-set!: index out of bounds");
+        return Const.VOID;
     }
 
     private static object? ConsStar(object?[] args)    {
@@ -282,7 +282,7 @@ public static partial class PrimitiveRegistry
             if (i == NumericHelper.ToInt(args[1])) { c.Car = args[2]; return Const.VOID; }
             cur = c.Cdr; i++;
         }
-        return Const.VOID;
+        throw new SchemeException("list-set!: index out of bounds");
     }
 
     private static object? ListFind(object? pred, object? lst)
