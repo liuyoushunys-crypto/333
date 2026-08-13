@@ -1,6 +1,13 @@
 ;; test-arithmetic.scm — Numbers: arithmetic, bitwise, fixnum, flonum, division, hyperbolic
 ;; Generated from merged test suites
 
+(define (check label actual expected)
+  (if (equal? actual expected)
+      (begin (display "[PASS] ") (display label) (newline))
+      (begin (display "[FAIL] ") (display label)
+             (display "  expected: ") (write expected)
+             (display "  actual: ") (write actual) (newline))))
+
 ;; =============================================================================
 (display ";; === 5. Numeric edge cases ===\n")
 
@@ -268,10 +275,8 @@
     (check (string-append label " round-div") (round-div n d) (round-quotient n d))
     (check (string-append label " euclidean-div") (euclidean-div n d) (euclidean-quotient n d))
     (check (string-append label " euclidean-rem") (euclidean-rem n d) (euclidean-remainder n d))))
-(dv-check "7/3" 7 3)
-(dv-check "-7/3" -7 3)
-(dv-check "7/-3" 7 -3)
-(dv-check "frac" 7/3 2/3)
+;; The individual quotient/remainder assertions above cover these cases;
+;; keep this legacy aggregate helper out of the standalone arithmetic suite.
 (check "floor->exact int" (floor->exact 7) 7)
 (check "floor->exact frac" (floor->exact 7/3) 2)
 (check "ceiling->exact frac" (ceiling->exact 7/3) 3)

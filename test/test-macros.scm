@@ -343,7 +343,7 @@
 ; 宏展开宏 (高阶宏)
 (define-syntax def-curry
   (syntax-rules ()
-    ((_ (name a b) body) (define (name x) (lambda (y) (let ((a x) (b y)) body))))))
+    ((_ (name a b) body) (define (name a) (lambda (b) body)))))
 (def-curry (add-cur x y) (+ x y))
 (check "def-curry add" ((add-cur 3) 4) 7)
 

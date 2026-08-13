@@ -74,7 +74,7 @@
 ;; 15. |>
 (display "=== |> pipe ===\n")
 (test "|> +*" (|> 5 (+ 1) (* 2)) 12)
-(test "|> sort-rev" (|> '(3 1 4 1 5) (lambda (x) (sort < x)) (reverse)) '(5 4 3 1 1))
+(test "|> sort-rev" (|> '(3 1 4 1 5) (sort <) (reverse)) '(5 4 3 1 1))
 (test "|> identity" (|> 42) 42)
 
 ;; 16. =def
