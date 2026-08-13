@@ -82,7 +82,8 @@
   (if (null? lists) '()
       (let ((first (car lists)))
         (if (null? first) (apply my-append (cdr lists))
-            (cons (car first) (apply my-append (cdr first) (cdr lists)))))))
+            (cons (car first)
+                  (apply my-append (cons (cdr first) (cdr lists))))))))
 
 (check "last-pair (1 2 3)" (my-last-pair '(1 2 3)) '(3))
 (check "list-ref 0"        (my-list-ref '(a b c) 0) 'a)
