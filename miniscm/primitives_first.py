@@ -468,29 +468,51 @@ def expand_macro(proc, args, env):
     return resolve_hygiene_markers(result, defEnv)
 
 def resolve_hygiene_markers(expr, defEnv):
-    while isinstance(expr, SyntaxObject):
-        expr = expr.expr
-    if isinstance(expr, Cell):
-        c = expr
-        if isinstance(c.car, Sym) and c.car.name == 'sx-hygiene':
-            name = None
-            if isinstance(c.cdr, Cell) and c.cdr.cdr is NIL and isinstance(c.cdr.car, Sym):
-                name = c.cdr.car.name
-            if name is not None:
-                v = defEnv.data.get(name)
-                if v is not None:
-                    if isinstance(v, tuple) and len(v) >= 2 and v[0] == 'macro':
-                        return c.cdr.car
-                    if callable(v):
-                        return c.cdr.car
-                    return Cell(SYM_QUOTE, Cell(v, NIL))
-            return c.cdr.car
-        new_car = resolve_hygiene_markers(c.car, defEnv)
-        new_cdr = resolve_hygiene_markers(c.cdr, defEnv)
-        if new_car is c.car and new_cdr is c.cdr:
-            return c
-        return Cell(new_car, new_cdr)
-    return expr
+    def marker_name(value):
+        if isinstance(value, Cell) and isinstance(value.car, Sym) and value.car.name == 'sx-hygiene':
+            if isinstance(value.cdr, Cell) and value.cdr.cdr is NIL and isinstance(value.cdr.car, Sym):
+                return value.cdr.car.name
+        return value.name if isinstance(value, Sym) else None
+
+    def walk(value, bound):
+        while isinstance(value, SyntaxObject):
+            value = value.expr
+        if not isinstance(value, Cell):
+            return value
+        if isinstance(value.car, Sym) and value.car.name == 'sx-hygiene':
+            name = marker_name(value)
+            if name in bound:
+                return Sym(name)
+            v = defEnv.data.get(name) if name is not None else None
+            if v is not None and not callable(v) and not (isinstance(v, tuple) and v and v[0] == 'macro'):
+                return Cell(SYM_QUOTE, Cell(v, NIL))
+            return Sym(name) if name is not None else value
+        if (isinstance(value.car, Sym) and value.car.name in ('let', 'let*', 'letrec', 'letrec*')
+                and isinstance(value.cdr, Cell) and isinstance(value.cdr.car, Cell)):
+            binds, rest = value.cdr.car, value.cdr.cdr
+            names = []
+            out = NIL
+            tail = None
+            cur = binds
+            while isinstance(cur, Cell):
+                b = cur.car
+                if isinstance(b, Cell):
+                    name = marker_name(b.car)
+                    name_value = Sym(name) if name is not None else walk(b.car, bound)
+                    names.append(name or (name_value.name if isinstance(name_value, Sym) else ''))
+                    item = Cell(name_value, walk(b.cdr, bound))
+                else:
+                    item = walk(b, bound)
+                node = Cell(item, NIL)
+                if tail is None: out = node
+                else: tail.cdr = node
+                tail = node
+                cur = cur.cdr
+            body = walk(rest, bound | {n for n in names if n})
+            return Cell(value.car, Cell(out, body))
+        return Cell(walk(value.car, bound), walk(value.cdr, bound))
+
+    return walk(expr, set())
 
 def _sx_def_env():
     global _CURRENT_MACRO_DEF_ENV
