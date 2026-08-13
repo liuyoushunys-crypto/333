@@ -123,6 +123,7 @@ public static partial class PrimitiveRegistry
         // maybe / just / nothing
         _b("maybe?", args => MaybeP(args[0]) ? Const.TRUE : Const.FALSE);
         _b("just", args => new Cell(args[0], Const.NIL));
+        _b("maybe", args => args[0]);
         _b("nothing", args => Const.FALSE);
         _b("just?", args => args[0] is Cell jc && jc.Cdr is Nil ? Const.TRUE : Const.FALSE);
         _b("nothing?", args => args[0] is Nil || ReferenceEquals(args[0], Const.FALSE) ? Const.TRUE : Const.FALSE);
@@ -206,7 +207,7 @@ public static partial class PrimitiveRegistry
         _b("reciprocal", args => NumericHelper.Div(1L, args[0]));
         _b("exact-integer?", args => args[0] is int or long or BigInteger ? Const.TRUE : Const.FALSE);
         _b("num-den", args => new Cell(PNumerator([args[0]]), PDenominator([args[0]])));
-        _b("sort", args => args[0] is Delegate or LambdaProc or CompiledLambda
+        _b("sort", args => args[0] is Sym or Delegate or LambdaProc or CompiledLambda or Func<object?[], object?>
             ? SortList([args[0], args[1]])
             : SortList([args[1], args[0]]));
         _b("tree->list", args => TreeToList(args[0]));

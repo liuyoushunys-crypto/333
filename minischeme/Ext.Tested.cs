@@ -117,7 +117,9 @@ public static partial class PrimitiveRegistry
         });
         _b("sxml?", a => a[0] is Cell ? Const.TRUE : Const.FALSE);
         _b("recursive-equality?", a => Const.TRUE);
-        _b("sort", a => SortList(a));
+        _b("sort", a => a.Length > 1 && a[0] is Cell && a[1] is not Cell
+            ? SortList([a[1], a[0]])
+            : SortList(a));
         _b("make-range", a => Range(a));
         _b("range->list", a => a[0] is Cell ? a[0] : Const.NIL);
         _b("int-vector", a => new SchemeVector(a));
