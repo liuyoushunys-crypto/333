@@ -7,34 +7,6 @@ namespace Miniscm.Primitives;
 
 public static partial class PrimitiveRegistry
 {
-    private static object? RegisterExtVectors()
-    {
-        _b("vector-map", args => VectorMap(args));
-        _b("vector-map!", args => VectorMapBang(args));
-        _b("vector-for-each", args => VectorForEach(args));
-        _b("vector-count", args => VectorCount(args[0], args[1]));
-        _b("vector-any", args => VectorAnyEvery(args, false));
-        _b("vector-every", args => VectorAnyEvery(args, true));
-        _b("vector-fold", args => VectorFold(args, false));
-        _b("vector-fold-right", args => VectorFold(args, true));
-        _b("vector-unfold", args => VectorUnfold(args));
-        _b("vector-index", args => VectorIndex(args[0], args[1]));
-        _b("vector-skip", args => VectorSkip(args[0], args[1]));
-        _b("vector-swap!", args => VectorSwap(args));
-        _b("vector-reverse!", args => VectorReverseBang(args));
-        _b("vector-empty?", args => ((SchemeVector)args[0]!).Length == 0 ? Const.TRUE : Const.FALSE);
-        _b("vector-append", args => VectorAppend(args));
-        _b("vector-copy", args => VectorCopy(args));
-        _b("vector-copy!", args => VectorCopyBang(args));
-        _b("vector-concatenate", args => VectorConcat(args[0]));
-        _b("vector-reverse", args => VectorReverse(args));
-        _b("vector-sort", args => VectorSort(args));
-        _b("vector=", args => VectorEqual(args));
-        _b("reverse-list->vector", ReverseListToVector);
-        _b("vector-fill!", VectorFill);
-        _b("vector-count", args => VectorCount(args[0], args[1]));
-        return Const.VOID;
-    }
 
     private static object? ReverseListToVector(object?[] args)
     {

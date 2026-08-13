@@ -26,205 +26,18 @@ public static partial class PrimitiveRegistry
     }
 
     // SRFI-128 Comparators
-    private static object? RegisterExtComparators()
-    {
-        _b("make-comparator", MakeComparatorPrimitive);
-        _b("comparator?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
-        _b("comparator-order?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
-        _b("comparator-hashable?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
-        Evaluator.GlobalEnv.Define("integer-comparator", MakeComparator(
-            (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]) == 0 ? Const.TRUE : Const.FALSE),
-            (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]) < 0 ? Const.TRUE : Const.FALSE),
-            (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]))));
-        _b("=?", args => CallComparator(args[0], args[1], args[2], 0));
-        _b("<?", args => CallComparator(args[0], args[1], args[2], -1));
-        _b("comparator-test-type", args => (Func<object?[], object?>)(_ => Const.TRUE));
-        _b("make-default-comparator", args => new Cell(Sym.Intern("comparator"),
-            new Cell((Func<object?[], object?>)(a => (object?)(Const.TRUE)), Const.NIL)));
-        _b("make-eq-comparator", args => new Cell(Sym.Intern("comparator"), new Cell((Func<object?[], object?>)(a => (object?)(Const.TRUE)), Const.NIL)));
-        _b("make-eqv-comparator", args => new Cell(Sym.Intern("comparator"), new Cell((Func<object?[], object?>)(a => (object?)(Const.TRUE)), Const.NIL)));
-        _b("make-equal-comparator", args => new Cell(Sym.Intern("comparator"), new Cell((Func<object?[], object?>)(a => (object?)(Const.TRUE)), Const.NIL)));
-        return Const.VOID;
-    }
 
     // SRFI-141 Division
-    private static object? RegisterExtDivision()
-    {
-        _b("floor-div", args => FloorDiv(args[0], args[1]));
-        _b("floor-mod", args => NumericHelper.Modulo(args[0], args[1]));
-        _b("floor-rem", args => NumericHelper.Modulo(args[0], args[1]));
-        _b("floor-quotient", args => FloorDiv(args[0], args[1]));
-        _b("floor-remainder", args => NumericHelper.Modulo(args[0], args[1]));
-        _b("floor/", args => new Cell(FloorDiv(args[0], args[1]), NumericHelper.Modulo(args[0], args[1])));
-
-        _b("truncate-div", args => NumericHelper.Quotient(args[0], args[1]));
-        _b("truncate-rem", args => NumericHelper.Remainder(args[0], args[1]));
-        _b("truncate-quotient", args => NumericHelper.Quotient(args[0], args[1]));
-        _b("truncate-remainder", args => NumericHelper.Remainder(args[0], args[1]));
-        _b("truncate/", args => new Cell(NumericHelper.Quotient(args[0], args[1]), NumericHelper.Remainder(args[0], args[1])));
-
-        _b("ceiling-div", args => CeilDiv(args[0], args[1]));
-        _b("ceiling-rem", args => CeilRem(args[0], args[1]));
-        _b("ceiling-quotient", args => CeilDiv(args[0], args[1]));
-        _b("ceiling-remainder", args => CeilRem(args[0], args[1]));
-        _b("ceiling/", args => new Cell(CeilDiv(args[0], args[1]), CeilRem(args[0], args[1])));
-
-        _b("round-div", args => RoundDiv(args[0], args[1]));
-        _b("round-quotient", args => RoundDiv(args[0], args[1]));
-        _b("round-rem", args => NumericHelper.Sub(args[0], NumericHelper.Mul(RoundDiv(args[0], args[1]), args[1])));
-        _b("round-remainder", args => NumericHelper.Sub(args[0], NumericHelper.Mul(RoundDiv(args[0], args[1]), args[1])));
-        _b("round/", args => new Cell(RoundDiv(args[0], args[1]), NumericHelper.Sub(args[0], NumericHelper.Mul(RoundDiv(args[0], args[1]), args[1]))));
-
-        _b("euclidean-div", args => EuclideanDiv(args[0], args[1]));
-        _b("euclidean-rem", args => EuclideanRem(args[0], args[1]));
-        _b("euclidean-quotient", args => EuclideanDiv(args[0], args[1]));
-        _b("euclidean-remainder", args => EuclideanRem(args[0], args[1]));
-        _b("euclidean/", args => new Cell(EuclideanDiv(args[0], args[1]), EuclideanRem(args[0], args[1])));
-
-        // exact/inexact floor/round/etc conversions
-        _b("floor->exact", args => args[0] is double df ? (object?)(long)Math.Floor(df) : args[0] is SchemeFraction fr1 ? (object?)(long)Math.Floor((double)fr1.Num / (double)fr1.Den) : args[0]);
-        _b("ceiling->exact", args => args[0] is double dc ? (object?)(long)Math.Ceiling(dc) : args[0] is SchemeFraction fr2 ? (object?)(long)Math.Ceiling((double)fr2.Num / (double)fr2.Den) : args[0]);
-        _b("round->exact", args => args[0] is double dr ? (object?)(long)Math.Round(dr) : args[0] is SchemeFraction fr3 ? (object?)(long)Math.Round((double)fr3.Num / (double)fr3.Den) : args[0]);
-        _b("truncate->exact", args => args[0] is double dt ? (object?)(long)dt : args[0] is SchemeFraction fr4 ? (object?)(long)(fr4.Num / fr4.Den) : args[0]);
-        _b("exact", args => args[0] is double de && de == Math.Floor(de) ? (object?)(long)de : args[0]);
-        _b("inexact", args => NumericHelper.ToDouble(args[0]));
-        return Const.VOID;
-    }
 
     // SRFI-143 Fixnums
-    private static object? RegisterExtFixnums()
-    {
-        _b("fx-width", args => 64L);
-        _b("fx-greatest", args => FX_GREATEST);
-        _b("fx-least", args => FX_LEAST);
-        _b("fx+", FxAdd);
-        _b("fx-", FxSubtract);
-        _b("fx*", FxMultiply);
-        _b("fxdiv", args => NumericHelper.Quotient(args[0], args[1]));
-        _b("fxmod", args => NumericHelper.Remainder(args[0], args[1]));
-        _b("fxdiv0", args => FloorDiv(args[0], args[1]));
-        _b("fxmod0", args => NumericHelper.Modulo(args[0], args[1]));
-        _b("fxzero?", args => NumericHelper.ToLong(args[0]) == 0 ? Const.TRUE : Const.FALSE);
-        _b("fxpositive?", args => NumericHelper.ToLong(args[0]) > 0 ? Const.TRUE : Const.FALSE);
-        _b("fxnegative?", args => NumericHelper.ToLong(args[0]) < 0 ? Const.TRUE : Const.FALSE);
-        _b("fxodd?", args => (NumericHelper.ToLong(args[0]) & 1) != 0 ? Const.TRUE : Const.FALSE);
-        _b("fxeven?", args => (NumericHelper.ToLong(args[0]) & 1) == 0 ? Const.TRUE : Const.FALSE);
-        _b("fxmax", args => args.Max(a => NumericHelper.ToLong(a)));
-        _b("fxmin", args => args.Min(a => NumericHelper.ToLong(a)));
-        _b("fxand", FxAnd);
-        _b("fxior", FxIor);
-        _b("fxxor", FxXor);
-        _b("fxnot", args => NumericHelper.ToLong(args[0]) ^ FX_GREATEST);
-        _b("fxlsh", args => (long)(NumericHelper.ToLong(args[0]) << NumericHelper.ToInt(args[1])));
-        _b("fxrshl", args => NumericHelper.ToLong(args[0]) >> NumericHelper.ToInt(args[1]));
-        _b("fxrsha", args => NumericHelper.ToLong(args[0]) >> NumericHelper.ToInt(args[1]));
-        _b("fx=?", FxEqual);
-        _b("fx<?", FxLessThan);
-        _b("fx>?", FxGreaterThan);
-        _b("fx<=?", FxLessThanOrEqual);
-        _b("fx>=?", FxGreaterThanOrEqual);
-        _b("fxbit-count", args => PopCount(NumericHelper.ToLong(args[0])));
-        _b("fxbit-set?", args => (NumericHelper.ToLong(args[0]) >> NumericHelper.ToInt(args[1]) & 1) != 0 ? Const.TRUE : Const.FALSE);
-        _b("fxcopy-bit", FxCopyBit);
-        _b("fxfirst-set-bit", FxFirstSetBit);
-        _b("fxlength", args => BitLength(NumericHelper.ToLong(args[0])));
-        _b("fxif", args => (NumericHelper.ToLong(args[0]) & NumericHelper.ToLong(args[1])) | (~NumericHelper.ToLong(args[0]) & NumericHelper.ToLong(args[2])));
-        _b("fxgcd", PGcd);
-        return Const.VOID;
-    }
 
     // SRFI-144 Flonums
-    private static object? RegisterExtFlonums()
-    {
-        _b("flonum?", args => args[0] is double or float ? Const.TRUE : Const.FALSE);
-        _b("fl+", args => args.Aggregate(0.0, (a, b) => a + NumericHelper.ToDouble(b)));
-        _b("fl-", FlSubtract);
-        _b("fl*", args => args.Aggregate(1.0, (a, b) => a * NumericHelper.ToDouble(b)));
-        _b("fl/", FlDivide);
-        _b("flzero?", args => NumericHelper.ToDouble(args[0]) == 0.0 ? Const.TRUE : Const.FALSE);
-        _b("flpositive?", args => NumericHelper.ToDouble(args[0]) > 0.0 ? Const.TRUE : Const.FALSE);
-        _b("flnegative?", args => NumericHelper.ToDouble(args[0]) < 0.0 ? Const.TRUE : Const.FALSE);
-        _b("flodd?", args => ((long)NumericHelper.ToDouble(args[0]) % 2) != 0 ? Const.TRUE : Const.FALSE);
-        _b("fleven?", args => ((long)NumericHelper.ToDouble(args[0]) % 2) == 0 ? Const.TRUE : Const.FALSE);
-        _b("flfinite?", args => args[0] is double d && double.IsFinite(d) ? Const.TRUE : Const.FALSE);
-        _b("flinfinite?", args => args[0] is double d && double.IsInfinity(d) ? Const.TRUE : Const.FALSE);
-        _b("flnan?", args => args[0] is double d && double.IsNaN(d) ? Const.TRUE : Const.FALSE);
-        _b("flmax", args => args.Max(a => NumericHelper.ToDouble(a)));
-        _b("flmin", args => args.Min(a => NumericHelper.ToDouble(a)));
-        _b("flfloor", args => (double)Math.Floor(NumericHelper.ToDouble(args[0])));
-        _b("flceiling", args => (double)Math.Ceiling(NumericHelper.ToDouble(args[0])));
-        _b("flround", args => (double)Math.Round(NumericHelper.ToDouble(args[0])));
-        _b("fltruncate", args => (double)Math.Truncate(NumericHelper.ToDouble(args[0])));
-        _b("flsqrt", args => Math.Sqrt(NumericHelper.ToDouble(args[0])));
-        _b("flexp", args => Math.Exp(NumericHelper.ToDouble(args[0])));
-        _b("flexpt", args => Math.Pow(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1])));
-        _b("fllog", args => Math.Log(NumericHelper.ToDouble(args[0])));
-        _b("flsin", args => Math.Sin(NumericHelper.ToDouble(args[0])));
-        _b("flcos", args => Math.Cos(NumericHelper.ToDouble(args[0])));
-        _b("fltan", args => Math.Tan(NumericHelper.ToDouble(args[0])));
-        _b("flasin", args => Math.Asin(NumericHelper.ToDouble(args[0])));
-        _b("flacos", args => Math.Acos(NumericHelper.ToDouble(args[0])));
-        _b("flatan", args => Math.Atan(NumericHelper.ToDouble(args[0])));
-        _b("fl=?", FlEqual);
-        _b("fl<?", FlLessThan);
-        _b("fl>?", FlGreaterThan);
-        _b("fl<=?", FlLessThanOrEqual);
-        _b("fl>=?", FlGreaterThanOrEqual);
-        _b("flonum->fixnum", args => NumericHelper.ToLong(args[0]));
-        _b("fixnum->flonum", args => NumericHelper.ToDouble(args[0]));
-        return Const.VOID;
-    }
 
     // SRFI-151 Bitwise (re-register as native for pyb)
-    private static object? RegisterExtBitwise()
-    {
-        _b("integer->booleans", IntegerToBooleans);
-        return Const.VOID;
-    }
 
     // Bitvectors
-    private static object? RegisterExtBitvectors()
-    {
-        _b("bitvector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
-        _b("make-bitvector", MakeBitvector);
-        _b("bitvector-copy", args => new SchemeVector(((SchemeVector)args[0]!).Data.ToList()));
-        _b("bitvector-append", BitvectorAppend);
-        _b("bitvector-length", args => ((SchemeVector)args[0]!).Length);
-        _b("bitvector-ref", args => ((SchemeVector)args[0]!)[NumericHelper.ToInt(args[1])] is Sym s && !ReferenceEquals(s, Const.FALSE) ? Const.TRUE : Const.FALSE);
-        _b("bitvector-set!", args => { ((SchemeVector)args[0]!)[NumericHelper.ToInt(args[1])] = args[2]; return Const.VOID; });
-        _b("list->bitvector", ListToBitvector);
-        _b("bitvector->list", BitvectorToList);
-        return Const.VOID;
-    }
 
     // Number theory & math
-    private static object? RegisterExtNumberTheory()
-    {
-        _b("scheme-gcd", SchemeGcd);
-        _b("factorial", Factorial);
-        _b("fibonacci", Fibonacci);
-        _b("fib-pair", args => FibPair(NumericHelper.ToLong(args[0])));
-        _b("prime?", args => IsPrime(NumericHelper.ToLong(args[0])) ? Const.TRUE : Const.FALSE);
-        _b("factor", args => Factor(NumericHelper.ToLong(args[0])).ToCell());
-        _b("binomial", args => Binomial(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])));
-        _b("permutations", args => args.Length == 1 && args[0] is Cell ? ListPermutations(args[0].Cells()).ToCell() : Permutations(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])).ToCell());
-        _b("combinations", args => args[0] is Cell ? ListCombinations(args[0].Cells(), NumericHelper.ToLong(args[1])).ToCell() : Combinations(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])).ToCell());
-        _b("quick-expt", args => QuickExpt(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])));
-        _b("expt-mod", args => ModPow(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1]), NumericHelper.ToLong(args[2])));
-        _b("log-base", args => Math.Log(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1])));
-        _b("log2", args => Math.Log2(NumericHelper.ToDouble(args[0])));
-        _b("log10", args => Math.Log10(NumericHelper.ToDouble(args[0])));
-        _b("degrees->radians", args => NumericHelper.ToDouble(args[0]) * Math.PI / 180.0);
-        _b("radians->degrees", args => NumericHelper.ToDouble(args[0]) * 180.0 / Math.PI);
-        _b("square", args => NumericHelper.Mul(args[0], args[0]));
-        _b("sinh", args => Math.Sinh(NumericHelper.ToDouble(args[0])));
-        _b("cosh", args => Math.Cosh(NumericHelper.ToDouble(args[0])));
-        _b("tanh", args => Math.Tanh(NumericHelper.ToDouble(args[0])));
-        _b("sech", args => 1.0 / Math.Cosh(NumericHelper.ToDouble(args[0])));
-        _b("csch", args => 1.0 / Math.Sinh(NumericHelper.ToDouble(args[0])));
-        _b("coth", args => 1.0 / Math.Tanh(NumericHelper.ToDouble(args[0])));
-        return Const.VOID;
-    }
 
     private static object? MakeComparatorPrimitive(object?[] args)
     {
@@ -433,9 +246,9 @@ public static partial class PrimitiveRegistry
     private static object? FibPair(long n)
     {
         if (n <= 0) return new Cell(0L, 1L);
-        var pair = FibPair(n / 2);
-        long a = NumericHelper.ToLong(((Cell)pair).Car);
-        long b = NumericHelper.ToLong(((Cell)pair).Cdr);
+        var pair = (Cell)FibPair(n / 2)!;
+        long a = NumericHelper.ToLong(pair.Car);
+        long b = NumericHelper.ToLong(pair.Cdr);
         long c = a * (b * 2 - a);
         long d = a * a + b * b;
         if (n % 2 == 0) return new Cell(c, d);

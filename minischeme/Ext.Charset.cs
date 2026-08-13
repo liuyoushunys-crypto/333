@@ -19,46 +19,6 @@ public static partial class PrimitiveRegistry
             }).ToArray();
         throw new ArgumentException("not a character set");
     }
-    private static object? RegisterExtChars()
-    {
-        // char predicates
-        _b("char-ascii?", args => AsChar(args[0]) < 128 ? Const.TRUE : Const.FALSE);
-        _b("char-control?", args => IsControlChar(AsChar(args[0])) ? Const.TRUE : Const.FALSE);
-        _b("char-iso-control?", args => IsControlChar(AsChar(args[0])) ? Const.TRUE : Const.FALSE);
-        _b("ascii?", args => AsChar(args[0]) < 128 ? Const.TRUE : Const.FALSE);
-        _b("char->name", args => CharName(args[0]));
-        _b("char-ci=?", args => char.ToLowerInvariant((char)AsChar(args[0])) == char.ToLowerInvariant((char)AsChar(args[1])) ? Const.TRUE : Const.FALSE);
-        _b("char-ci<?", args => char.ToLowerInvariant((char)AsChar(args[0])) < char.ToLowerInvariant((char)AsChar(args[1])) ? Const.TRUE : Const.FALSE);
-        _b("char-ci>?", args => char.ToLowerInvariant((char)AsChar(args[0])) > char.ToLowerInvariant((char)AsChar(args[1])) ? Const.TRUE : Const.FALSE);
-        _b("char-ci<=?", args => char.ToLowerInvariant((char)AsChar(args[0])) <= char.ToLowerInvariant((char)AsChar(args[1])) ? Const.TRUE : Const.FALSE);
-        _b("char-ci>=?", args => char.ToLowerInvariant((char)AsChar(args[0])) >= char.ToLowerInvariant((char)AsChar(args[1])) ? Const.TRUE : Const.FALSE);
-
-        // SRFI-14 char-set
-        _b("char-set", args => MakeCharSet(args));
-        _b("char-set?", args => args[0] is bool[] b && b.Length == 256 ? Const.TRUE : Const.FALSE);
-        _b("char-set-contains?", args => CharSetContains(args[0], args[1]) ? Const.TRUE : Const.FALSE);
-        _b("char-set-empty?", args => !CharsetData(args[0]).Any(x => x) ? Const.TRUE : Const.FALSE);
-        _b("char-set->list", args => CharSetToList(args[0]));
-        _b("char-set->string", args => CharSetToString(args[0]));
-        _b("char-set-count", args => (long)CharsetData(args[0]).Count(x => x));
-        _b("char-set-copy", args => (bool[])CharsetData(args[0]).Clone());
-        _b("char-set-union", args => CharSetBinOp(args, true));
-        _b("char-set-intersection", args => CharSetBinOp(args, false));
-        _b("char-set-difference", args => CharSetDiff(args));
-        _b("char-set-xor", args => CharSetXor(args));
-        _b("char-set-complement", args => CharSetComplement(args[0]));
-        _b("char-set-adjoin", args => CharSetAdjoin(args, true));
-        _b("char-set-delete", args => CharSetAdjoin(args, false));
-        _b("char-set-any", args => CharSetAny(args[0], args[1]));
-        _b("char-set-every", args => CharSetEvery(args[0], args[1]));
-        _b("char-set-filter", args => CharSetFilter(args));
-        _b("char-set-fold", args => CharSetFold(args[0], args[1], args[2]));
-        _b("char-set-for-each", args => CharSetForEach(args[0], args[1]));
-        _b("char-set-map", args => CharSetMap(args[0], args[1]));
-        _b("char-set-hash", args => CharSetHash(args));
-        _b("char-set=?", args => CharSetEqual(args));
-        return Const.VOID;
-    }
 
     private static bool IsControlChar(int cp) => cp < 32 || cp == 127;
 

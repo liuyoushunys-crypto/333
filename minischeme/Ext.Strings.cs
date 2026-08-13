@@ -8,63 +8,6 @@ namespace Miniscm.Primitives;
 
 public static partial class PrimitiveRegistry
 {
-    private static object? RegisterExtStrings()
-    {
-        _b("string-take", args => new SchemeString(Str(args[0])[..NumericHelper.ToInt(args[1])]));
-        _b("string-drop", args => new SchemeString(Str(args[0])[NumericHelper.ToInt(args[1])..]));
-        _b("string-take-right", StringTakeRight);
-        _b("string-drop-right", StringDropRight);
-        _b("string-pad", args => StrPad(args, false));
-        _b("string-pad-right", args => StrPad(args, true));
-        _b("string-trim", args => new SchemeString(Str(args[0]).Trim()));
-        _b("string-trim-right", args => new SchemeString(Str(args[0]).TrimEnd()));
-        _b("string-trim-both", args => new SchemeString(Str(args[0]).Trim()));
-        _b("string-trim-left", args => new SchemeString(Str(args[0]).TrimStart()));
-        _b("string-replace", StringReplace);
-        _b("string-split", args => StrSplit(args));
-        _b("string-join", args => StrJoin(args));
-        _b("string-contains", args => StrContains(args[0], args[1]));
-        _b("string-prefix?", args => Str(args[1]).StartsWith(Str(args[0])) ? Const.TRUE : Const.FALSE);
-        _b("string-suffix?", args => Str(args[1]).EndsWith(Str(args[0])) ? Const.TRUE : Const.FALSE);
-        _b("string-prefix-length", args => PrefixLen(args, false));
-        _b("string-suffix-length", args => SuffixLen(args, false));
-        _b("string-prefix-length-ci", args => PrefixLen(args, true));
-        _b("string-suffix-length-ci", args => SuffixLen(args, true));
-        _b("string-count", args => StrCount(args));
-        _b("string-map", args => StrMap(args));
-        _b("string-for-each", StringForEach);
-        _b("string-for-each-index", StringForEachIndex);
-        _b("string-fold", args => StrFold(args, false));
-        _b("string-fold-right", args => StrFold(args, true));
-        _b("string-index", args => StrIndex(args[0], args[1], false, false));
-        _b("string-index-right", args => StrIndex(args[0], args[1], true, false));
-        _b("string-skip", args => StrIndex(args[0], args[1], false, true));
-        _b("string-skip-right", args => StrIndex(args[0], args[1], true, true));
-        _b("string-any", args => StrAnyEvery(args, false));
-        _b("string-every", args => StrAnyEvery(args, true));
-        _b("string-concatenate", args => new SchemeString(string.Concat(args[0].Cells().Select(x => Str(x)))));
-        _b("string-copy!", args => StrCopyBang(args));
-        _b("string-xcopy!", args => StrCopyBang(args));
-        _b("string-delete", args => StrFilter(args, false));
-        _b("string-filter", args => StrFilter(args, true));
-        _b("string-remove", args => StrFilter(args, false));
-        _b("string-reverse", args => new SchemeString(RevStr(Str(args[0]))));
-        _b("string-foldcase", args => new SchemeString(Str(args[0]).ToLowerInvariant()));
-        _b("string-titlecase", args => new SchemeString(TitleCase(Str(args[0]))));
-        _b("string-tokenize", args => Tokenize(args));
-        _b("string-unfold", args => StrUnfold(args));
-        _b("string-tabulate", StringTabulate);
-        _b("string->char-set", args => MakeCharSet(Str(args[0])));
-        _b("string->vector", args => StrToVector(args[0]));
-        _b("vector->string", args => VectorToStr(args[0]));
-        _b("->string", args => args[0] is string or SchemeString ? args[0] : new SchemeString(Printer.Format(args[0])));
-        _b("string-ci<=?", args => string.Compare(Str(args[0]), Str(args[1]), StringComparison.OrdinalIgnoreCase) <= 0 ? Const.TRUE : Const.FALSE);
-        _b("string-ci<?", args => string.Compare(Str(args[0]), Str(args[1]), StringComparison.OrdinalIgnoreCase) < 0 ? Const.TRUE : Const.FALSE);
-        _b("string-ci=?", args => string.Equals(Str(args[0]), Str(args[1]), StringComparison.OrdinalIgnoreCase) ? Const.TRUE : Const.FALSE);
-        _b("string-ci>=?", args => string.Compare(Str(args[0]), Str(args[1]), StringComparison.OrdinalIgnoreCase) >= 0 ? Const.TRUE : Const.FALSE);
-        _b("string-ci>?", args => string.Compare(Str(args[0]), Str(args[1]), StringComparison.OrdinalIgnoreCase) > 0 ? Const.TRUE : Const.FALSE);
-        return Const.VOID;
-    }
 
     private static object? StringTakeRight(object?[] args)
     {

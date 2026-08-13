@@ -784,14 +784,18 @@ public static partial class PrimitiveRegistry
     {
         var port = MakePort("output", new StringBuilder());
         App(proc, port);
-        return new SchemeString(((StringBuilder)((ITuple)port)[2]!).ToString());
+        var portTuple = (ITuple)port!;
+        var output = portTuple[2] as StringBuilder;
+        return new SchemeString(output!.ToString());
     }
 
     static object? CallWithBytevectorOutput(object? proc)
     {
         var port = MakePort("output", new BytePort(Array.Empty<byte>()));
         App(proc, port);
-        return new SchemeBytevector([.. ((BytePort)((ITuple)port)[2]!).Data]);
+        var portTuple = (ITuple)port!;
+        var output = portTuple[2] as BytePort;
+        return new SchemeBytevector([.. output!.Data]);
     }
 
     static object? PCallWithInputFile(object?[] args)
