@@ -27,6 +27,7 @@ public static partial class PrimitiveRegistry
         RegisterExtVectors();
         RegisterExtMisc();
         RegisterExtSchemeCoverage();
+        RegisterScm12Host();
 
         // SRFI-35/36: error conditions
         _b("make-error-condition", args =>

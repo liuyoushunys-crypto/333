@@ -19,14 +19,7 @@ public class Program
         var projectDir = Path.GetFullPath(Path.Combine(baseDir, "..", "..", ".."));
         var scmDir = Path.Combine(projectDir, "scm");
 
-        var _allLibs = new[] {
-            "boot-min2.scm", "boot-core.scm", "boot-sugar.scm",
-            "char-boolean.scm", "numeric.scm",
-            "srfi-1-list.scm", "srfi-13-string.scm", "hof-vector.scm",
-            "number-theory.scm", "gensym-stream.scm",
-            "data-structures-ext.scm", "srfi-14-char-set.scm",
-            "generators.scm", "misc.scm", "fill-gaps.scm",
-        };
+        var _allLibs = new[] { "boot-min2.scm", "boot-core.scm", "boot-sugar.scm" };
         var pyb = Environment.GetEnvironmentVariable("MSCM_PYB") == "1";
         var _libs = _allLibs;//pyb ? _allLibs.Take(3).ToArray() : _allLibs;
         PrimitiveRegistry.InitExt();

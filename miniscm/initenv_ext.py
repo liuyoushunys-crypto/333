@@ -7,6 +7,7 @@ from mtypes import (
 )
 from primitives import *
 from primitives_ext import *
+from scm12_host import register_scm12_host
 
 def initenv_ext():
     be.define('NIL', NIL)
@@ -758,3 +759,4 @@ def initenv_ext():
     builtin('describe', lambda x: sys.stdout.write(str(x) + '\n') or VOID)
     builtin('identity', lambda x: x)
     builtin('flexp2', lambda x: 2.0 ** float(x))
+    register_scm12_host()

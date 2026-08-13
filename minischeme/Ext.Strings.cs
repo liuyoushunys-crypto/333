@@ -338,8 +338,8 @@ public static partial class PrimitiveRegistry
     {
         var pred = args[0];
         var gen = args[1];
-        var seed = args.Length > 2 ? args[2] : Const.FALSE;
-        var fin = args.Length > 3 ? args[3] : null;
+        var step = args.Length > 2 ? args[2] : null;
+        var seed = args.Length > 3 ? args[3] : Const.FALSE;
         var sb = new StringBuilder();
         var s = seed;
         while (true)
@@ -347,7 +347,7 @@ public static partial class PrimitiveRegistry
             if (ReferenceEquals(App(pred, s), Const.TRUE)) break;
             var ch = App(gen, s);
             sb.Append(char.ConvertFromUtf32(AsChar(ch)));
-            if (fin is not null) s = App(fin, s);
+            if (step is not null) s = App(step, s);
             else
             {
                 if (s is Cell c) s = c.Cdr;

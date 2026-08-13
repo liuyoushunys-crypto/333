@@ -544,7 +544,7 @@ public static partial class PrimitiveRegistry
         object? result = Const.NIL;
         for (int i = items.Count - 1; i > 0; i -= 2)
         {
-            var pair = new Cell(items[i - 1], new Cell(items[i], Const.NIL));
+            var pair = new Cell(items[i - 1], items[i]);
             result = new Cell(pair, result);
         }
         return result;

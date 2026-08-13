@@ -1723,11 +1723,11 @@ def string_xcopy_bang(target, tstart, src, sstart=0, send=None):
 
 def string_remove_fn(pred, s):
     s = str(s)
-    return SchemeString(''.join(ch for ch in s if pred(SchemeChar(ch)) is not TRUE))
+    return SchemeString(''.join(ch for ch in s if not scheme_truthy(pred(SchemeChar(ch)))))
 
 def string_filter_fn(pred, s):
     s = str(s)
-    return SchemeString(''.join(ch for ch in s if pred(SchemeChar(ch)) is TRUE))
+    return SchemeString(''.join(ch for ch in s if scheme_truthy(pred(SchemeChar(ch)))))
 
 def string_fold_right_fn(f, init, s):
     acc = init

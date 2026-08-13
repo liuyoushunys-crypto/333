@@ -629,11 +629,10 @@ if __name__=='__main__':
     # if pyb:
     #     pass
     # else:
-    _libs = ['char-boolean.scm','numeric.scm',
-            'srfi-1-list.scm','srfi-13-string.scm','hof-vector.scm',
-            'number-theory.scm','gensym-stream.scm',
-            'data-structures-ext.scm','srfi-14-char-set.scm',
-            'generators.scm','misc.scm','fill-gaps.scm']
+    # The twelve extension libraries are source references for the native host
+    # implementations, not runtime dependencies. Keep an opt-in fallback for
+    # differential testing, but the normal runtime must not load them.
+    _libs = []
     for f in _libs:
         try:
             n=load_file(_BASE+'/scm/'+f)

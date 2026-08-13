@@ -10,6 +10,21 @@ public static partial class PrimitiveRegistry
     private const long FX_GREATEST = long.MaxValue;
     private const long FX_LEAST = long.MinValue;
 
+    private static object MakeComparator(object eq, object lt, object hash)
+        => new Cell(Sym.Intern("comparator"), new Cell(eq, new Cell(lt, new Cell(hash, Const.NIL))));
+
+    private static object? CallComparator(object? comparator, object? a, object? b, int fallback)
+    {
+        if (comparator is Cell c && c.Cdr is Cell fields)
+        {
+            var proc = fallback == 0 ? fields.Car : fields.Cdr is Cell rest ? rest.Car : null;
+            if (proc is not null) return App(proc, a, b);
+        }
+        return fallback == 0
+            ? (NumericHelper.Compare(a, b) == 0 ? Const.TRUE : Const.FALSE)
+            : (NumericHelper.Compare(a, b) < 0 ? Const.TRUE : Const.FALSE);
+    }
+
     // SRFI-128 Comparators
     private static object? RegisterExtComparators()
     {
@@ -24,9 +39,12 @@ public static partial class PrimitiveRegistry
         _b("comparator?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
         _b("comparator-order?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
         _b("comparator-hashable?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
-        _b("integer-comparator", _ => new Cell(Sym.Intern("comparator"), Const.NIL));
-        _b("=?", args => NumericHelper.ToLong(args[1]) == NumericHelper.ToLong(args[2]) ? Const.TRUE : Const.FALSE);
-        _b("<?", args => NumericHelper.ToLong(args[1]) < NumericHelper.ToLong(args[2]) ? Const.TRUE : Const.FALSE);
+        _b("integer-comparator", _ => MakeComparator(
+            (Func<object?[], object?>)(_ => Const.TRUE),
+            (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]) == 0 ? Const.TRUE : Const.FALSE),
+            (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]) < 0 ? Const.TRUE : Const.FALSE)));
+        _b("=?", args => CallComparator(args[0], args[1], args[2], 0));
+        _b("<?", args => CallComparator(args[0], args[1], args[2], -1));
         _b("comparator-test-type", args => (Func<object?[], object?>)(_ => Const.TRUE));
         _b("make-default-comparator", args => new Cell(Sym.Intern("comparator"),
             new Cell((Func<object?[], object?>)(a => (object?)(Const.TRUE)), Const.NIL)));
