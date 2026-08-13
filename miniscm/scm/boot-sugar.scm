@@ -226,12 +226,16 @@
     ((_ expr)
      expr)))
 
-(define (check label actual expected)
-  (if (equal? actual expected)
-      (begin (display "[PASS] ") (display label) (newline))
-      (begin (display "[FAIL] ") (display label)
-             (display "  expected: ") (display expected)
-             (display "  actual: ") (display actual) (newline))))
+(define (check . args)
+  (let* ((two? (= (length args) 2))
+         (label (if two? "check" (car args)))
+         (actual (if two? (car args) (cadr args)))
+         (expected (if two? (cadr args) (caddr args))))
+    (if (equal? actual expected)
+        (begin (display "[PASS] ") (display label) (newline))
+        (begin (display "[FAIL] ") (display label)
+               (display "  expected: ") (display expected)
+               (display "  actual: ") (display actual) (newline)))))
 
 ;; ── check-ec ──
 ;; 推导式测试断言：检查推导中所有元素均符合预期。
