@@ -49,14 +49,14 @@ def _list_ref(cell, i):
 
 def _memq(x, lst):
     for item in lst:
-        if item is x:
+        if item == x:
             return True
     return False
 
 
 def _assq(var, bindings):
     for (v, val) in bindings:
-        if v is var:
+        if v == var:
             return (v, val)
     return None
 
@@ -80,7 +80,7 @@ def sx_match_sym(pat, inp, lits):
     if pat is SYM_UNDERSCORE:
         return []
     if _memq(pat, lits):
-        if isinstance(inp, Sym) and inp is pat:
+        if isinstance(inp, Sym) and inp == pat:
             return []
         return None
     return [(pat, inp)]

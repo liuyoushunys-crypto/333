@@ -132,16 +132,19 @@
 ;; this is show how to build lazy sequences manually
 
 (define (lazy-map f s)
-  (stream-cons (f (car s)) (lazy-map f (cdr (force s)))))
+  (let ((s (if (promise? s) (force s) s)))
+    (stream-cons (f (car s)) (lazy-map f (cdr s)))))
 
 (define (lazy-take n s)
-  (if (zero? n) '()
-      (cons (car s) (lazy-take (- n 1) (cdr (force s))))))
+  (let ((s (if (promise? s) (force s) s)))
+    (if (zero? n) '()
+        (cons (car s) (lazy-take (- n 1) (cdr s))))))
 
 (define (lazy-filter pred s)
-  (if (pred (car s))
-      (stream-cons (car s) (lazy-filter pred (cdr (force s))))
-      (lazy-filter pred (cdr (force s)))))
+  (let ((s (if (promise? s) (force s) s)))
+    (if (pred (car s))
+        (stream-cons (car s) (lazy-filter pred (cdr s)))
+        (lazy-filter pred (cdr s)))))
 
 (define naturals
   (letrec ((go (lambda (n) (stream-cons n (go (+ n 1))))))
@@ -211,9 +214,9 @@
 
 (define-syntax =def
   (syntax-rules ()
-    ((_ (a . b) expr) (let ((lst expr)) (define a (car lst)) (define b (cdr lst))))
-    ((_ (a b) expr) (let ((lst expr)) (define a (car lst)) (define b (cadr lst))))
-    ((_ (a b c) expr) (let ((lst expr)) (define a (car lst)) (define b (cadr lst)) (define c (caddr lst))))
+    ((_ (a b c) expr) (begin (define a (car expr)) (define b (cadr expr)) (define c (caddr expr))))
+    ((_ (a b) expr) (begin (define a (car expr)) (define b (cadr expr))))
+    ((_ (a . b) expr) (begin (define a (car expr)) (define b (cdr expr))))
     ((_ a expr) (define a expr))))
 
 ;; (=def (x y) '(10 20))
@@ -634,16 +637,17 @@
 ;; ═══════════════════════════════════════════════════════════════
 
 (define-macro (for-else . args)
-  (let* ((var (car args))
-         (lst (cadr args))
-         (rest (cddr args))
+  (let* ((binding (car args))
+         (var (car binding))
+         (lst (cadr binding))
+         (rest (cdr args))
          (has-else (and (pair? (car (reverse rest)))
                         (eq? (caar (reverse rest)) 'else)))
          (body (if has-else (reverse (cdr (reverse rest))) rest))
          (else-body (if has-else (cdr (car (reverse rest))) '())))
-    `(let ((found #f))
-       (for-each (lambda (,var) (let ((v (begin ,@body))) (if v (set! found #t)))) ,lst)
-       (if (not found) (begin ,@else-body) (if #f #f)))))
+     `(let ((matched #f))
+        (for-each (lambda (,var) (let ((v (begin ,@body))) (if v (set! matched #t)))) ,lst)
+        (if (not matched) (begin ,@else-body) (if #f #f)))))
 
 ;; (for-else (x '(1 2 3)) (if (even? x) x)
 ;;   (else (display "no even found"))) (newline)

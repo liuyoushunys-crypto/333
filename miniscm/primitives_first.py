@@ -337,7 +337,7 @@ def _sx_expand_call(expr, env=None):
                 return expanded
     return FALSE
 
-# mbody 编译缓存: {id(macro_tuple): compiled}
+# mbody 编译缓存: {macro_tuple: compiled}; 保留宏对象，避免 id 重用命中旧宏。
 # 第一优先级: 原生 syntax-rules 编译器 (native_syntax.py) — 展开时零解释器。
 # 第二优先级: mbody 编译成带 args 参数的 LambdaProc。
 # 失败都回退解释器。调用前设置 _CURRENT_MACRO_DEF_ENV/_CURRENT_EXPAND_ENV 等价。
@@ -438,7 +438,7 @@ def expand_macro(proc, args, env):
     mbody = proc[2]
 
     # 编译缓存路径: 宏体已编译则直接调用, 失败自动回退解释器
-    key = id(proc)
+    key = proc
     try:
         if key not in _MBODY_COMPILE_CACHE:
             _MBODY_COMPILE_CACHE[key] = _compile_mbody(proc)
