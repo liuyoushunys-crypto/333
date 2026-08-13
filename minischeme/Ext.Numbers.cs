@@ -481,7 +481,14 @@ public static partial class PrimitiveRegistry
 
     private static object? ModPow(long b, long e, long m)
     {
-        if (e < 0) throw new SchemeException("expt-mod: negative exponent");
+        if (e < 0)
+        {
+            long a = ((b % m) + m) % m, t = 0, newT = 1, rem = m, newRem = a;
+            while (newRem != 0) { var q = rem / newRem; (t, newT) = (newT, t - q * newT); (rem, newRem) = (newRem, rem - q * newRem); }
+            if (rem != 1) throw new SchemeException("expt-mod: non-invertible base");
+            b = (t % m + m) % m;
+            e = -e;
+        }
         long r = 1;
         b %= m;
         while (e > 0)
