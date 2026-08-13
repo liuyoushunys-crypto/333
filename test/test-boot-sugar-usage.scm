@@ -181,7 +181,7 @@
 (display "-- and=>: conditional apply\n")
 (check (and=> 5 (lambda (x) (* x 2))) 10)
 (check (and=> #f (lambda (x) (* x 2))) #f)
-(check (and=> (memq 3 '(1 2 3)) cdr car) 4)
+(check (and=> (memq 3 '(1 2 3 4)) cdr car) 4)
 (check (and=> 2 (λ (x) (* x 3)) (λ (x) (+ x 1))) 7)
 
 (display "-- swap!: value swap\n")
