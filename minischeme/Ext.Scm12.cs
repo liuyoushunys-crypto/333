@@ -130,12 +130,7 @@ public static partial class PrimitiveRegistry
          _b("string->vector", args => new SchemeVector(S12String(args[0]).ToString().EnumerateRunes().Select(x => (object?)new SchemeChar(x.Value))));
         _b("vector->string", args => new SchemeString(((SchemeVector)args[0]!).Data.Select(AsChar)));
          _b("string-contains", args => { var s = S12String(args[0]).ToString(); var sub = S12String(args[1]).ToString(); var start = args.Length > 2 ? NumericHelper.ToInt(args[2]) : 0; var i = s.IndexOf(sub, start, StringComparison.Ordinal); return i < 0 ? Const.FALSE : (long)s[..i].EnumerateRunes().Count(); });
-        _b("string-split", args =>
-        {
-            var s = S12String(args[0]).ToString(); var sep = args.Length > 1 ? (args[1] is SchemeChar c ? char.ConvertFromUtf32(c.Codepoint) : ToStr(args[1])) : " ";
-            if (sep.Length == 0) throw new SchemeException("string-split: empty separator");
-            return s.Split(sep, StringSplitOptions.None).Select(x => (object?)new SchemeString(x)).ToCell();
-        });
+         _b("string-split", PS12StringSplit);
         _b("string-map", args => S12StringMap(args));
         _b("string-for-each", args => S12StringForEach(args));
         _b("string-any", args => S12StringQuantifier(args, false));
@@ -200,4 +195,10 @@ public static partial class PrimitiveRegistry
     private static object? MappingRef(object?[] a){foreach(var p in a[0].Cells()){var c=(Cell)p!;if(S12Eq(c.Car,a[1]))return c.Cdr;}return a.Length>2?a[2]:Const.FALSE;}
     private static object? MappingSet(object?[] a){var r=new List<object?>{new Cell(a[1],a[2])};foreach(var p in a[0].Cells()){var c=(Cell)p!;if(!S12Eq(c.Car,a[1]))r.Add(c);}return r.ToCell();}
     private static object? MappingDelete(object?[] a)=>a[0].Cells().Where(p=>!S12Eq(((Cell)p!).Car,a[1])).ToCell();
+    private static object? PS12StringSplit(object?[] args)
+    {
+        var s = S12String(args[0]).ToString(); var sep = args.Length > 1 ? (args[1] is SchemeChar c ? char.ConvertFromUtf32(c.Codepoint) : ToStr(args[1])) : " ";
+        if (sep.Length == 0) throw new SchemeException("string-split: empty separator");
+        return s.Split(sep, StringSplitOptions.None).Select(x => (object?)new SchemeString(x)).ToCell();
+    }
 }

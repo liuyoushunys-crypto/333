@@ -68,14 +68,7 @@ public static partial class PrimitiveRegistry
         _b("string-normalize-nfkc", args => new SchemeString(ToStr(args[0])));
         _b("string-normalize-nfkd", args => new SchemeString(ToStr(args[0])));
         _b("string-concatenate-reverse", args => new SchemeString(string.Concat(args[0].Cells().Select(ToStr).Reverse())));
-        _b("substring-count", args =>
-        {
-            var s = ToStr(args[0]); var sub = ToStr(args[1]);
-            if (sub.Length == 0) return 0L;
-            long count = 0;
-            for (var at = 0; (at = s.IndexOf(sub, at, StringComparison.Ordinal)) >= 0; at++) count++;
-            return count;
-        });
+         _b("substring-count", PSubstringCount);
         _b("string-prefix-ci?", args => ToStr(args[1]).StartsWith(ToStr(args[0]), StringComparison.OrdinalIgnoreCase) ? Const.TRUE : Const.FALSE);
         _b("gentemp", _ => Sym.Intern("gentemp"));
         foreach (var p in new[] { "f32", "f64", "s8", "s16", "s32", "s64", "u16", "u32", "u64" })
@@ -99,8 +92,7 @@ public static partial class PrimitiveRegistry
         _b("nan?", args => NumericHelper.ToDouble(args[0]) != NumericHelper.ToDouble(args[0]) ? Const.TRUE : Const.FALSE);
         _b("finite?", args => FiniteP(args[0]) ? Const.TRUE : Const.FALSE);
         _b("infinite?", args => args[0] is double d && double.IsInfinity(d) ? Const.TRUE : Const.FALSE);
-        _b("exact-nonnegative-integer?", args =>
-            args[0] is long l && l >= 0 || args[0] is int i && i >= 0 || args[0] is BigInteger bi && bi >= 0 ? Const.TRUE : Const.FALSE);
+        _b("exact-nonnegative-integer?", ExactNonnegativeIntegerP);
         _b("exact-rational?", args => args[0] is SchemeFraction or int or long or BigInteger ? Const.TRUE : Const.FALSE);
         _b("scheme-lcm", args => PLcm(args));
         _b("atom?", args => args[0] is not Cell ? Const.TRUE : Const.FALSE);
@@ -187,20 +179,7 @@ public static partial class PrimitiveRegistry
         _b("random-seed", args => { SeedRandom(NumericHelper.ToLong(args[0])); return Const.VOID; });
 
         // write-string
-        _b("write-string", args =>
-        {
-            var s = args[0] is SchemeString ss ? ss.ToString() : ToStr(args[0]);
-            object? port = null;
-            int start = 0, end = s.Length;
-            if (args.Length >= 3) { port = args[1]; start = NumericHelper.ToInt(args[2]); end = args.Length > 3 ? NumericHelper.ToInt(args[3]) : s.Length; }
-            else if (args.Length == 2) { port = args[1]; }
-            else if (args.Length == 1) { }
-            var sub = s[start..Math.Min(end, s.Length)];
-            if (port is ITuple t && t.Length > 2 && t[0] is "port" && t[2] is StreamWriter sw) { sw.Write(sub); sw.Flush(); }
-            else if (port is ITuple t2 && t2.Length > 2 && t2[0] is "port" && t2[2] is StringBuilder sb) sb.Append(sub);
-            else Console.Write(sub);
-            return Const.VOID;
-        });
+         _b("write-string", PWriteString);
 
         return Const.VOID;
     }
@@ -239,6 +218,33 @@ public static partial class PrimitiveRegistry
         _b("list-transduce", args => Transduce(args[0], args[1], args[2], args[3], "list"));
         _b("vector-transduce", args => Transduce(args[0], args[1], args[2], args[3], "vector"));
         _b("string-transduce", args => Transduce(args[0], args[1], args[2], args[3], "string"));
+        return Const.VOID;
+    }
+
+    private static object? ExactNonnegativeIntegerP(object?[] args)
+        => args[0] is long l && l >= 0 || args[0] is int i && i >= 0 || args[0] is BigInteger bi && bi >= 0 ? Const.TRUE : Const.FALSE;
+
+    private static object? PSubstringCount(object?[] args)
+    {
+        var s = ToStr(args[0]); var sub = ToStr(args[1]);
+        if (sub.Length == 0) return 0L;
+        long count = 0;
+        for (var at = 0; (at = s.IndexOf(sub, at, StringComparison.Ordinal)) >= 0; at++) count++;
+        return count;
+    }
+
+    private static object? PWriteString(object?[] args)
+    {
+        var s = args[0] is SchemeString ss ? ss.ToString() : ToStr(args[0]);
+        object? port = null;
+        int start = 0, end = s.Length;
+        if (args.Length >= 3) { port = args[1]; start = NumericHelper.ToInt(args[2]); end = args.Length > 3 ? NumericHelper.ToInt(args[3]) : s.Length; }
+        else if (args.Length == 2) { port = args[1]; }
+        else if (args.Length == 1) { }
+        var sub = s[start..Math.Min(end, s.Length)];
+        if (port is ITuple t && t.Length > 2 && t[0] is "port" && t[2] is StreamWriter sw) { sw.Write(sub); sw.Flush(); }
+        else if (port is ITuple t2 && t2.Length > 2 && t2[0] is "port" && t2[2] is StringBuilder sb) sb.Append(sub);
+        else Console.Write(sub);
         return Const.VOID;
     }
 

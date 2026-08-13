@@ -30,21 +30,25 @@ public static partial class PrimitiveRegistry
         _b("vector-reverse", args => VectorReverse(args));
         _b("vector-sort", args => VectorSort(args));
         _b("vector=", args => VectorEqual(args));
-        _b("reverse-list->vector", args =>
-        {
-            var items = args[0].Cells().ToList();
-            items.Reverse();
-            return new SchemeVector(items);
-        });
-        _b("vector-fill!", args =>
-        {
-            var v = (SchemeVector)args[0]!;
-            int start = args.Length > 2 ? NumericHelper.ToInt(args[2]) : 0;
-            int end = args.Length > 3 ? NumericHelper.ToInt(args[3]) : v.Length;
-            for (int i = start; i < end && i < v.Length; i++) v[i] = args[1];
-            return Const.VOID;
-        });
+        _b("reverse-list->vector", ReverseListToVector);
+        _b("vector-fill!", VectorFill);
         _b("vector-count", args => VectorCount(args[0], args[1]));
+        return Const.VOID;
+    }
+
+    private static object? ReverseListToVector(object?[] args)
+    {
+        var items = args[0].Cells().ToList();
+        items.Reverse();
+        return new SchemeVector(items);
+    }
+
+    private static object? VectorFill(object?[] args)
+    {
+        var v = (SchemeVector)args[0]!;
+        int start = args.Length > 2 ? NumericHelper.ToInt(args[2]) : 0;
+        int end = args.Length > 3 ? NumericHelper.ToInt(args[3]) : v.Length;
+        for (int i = start; i < end && i < v.Length; i++) v[i] = args[1];
         return Const.VOID;
     }
 

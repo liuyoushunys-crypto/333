@@ -77,24 +77,25 @@ public static partial class PrimitiveRegistry
         _b("sx-make-macro-binding", args => MinRef.SxMakeMacroBinding(args[0]));
         _b("qs-expand", args => MinRef.QsExpand(args[0]));
         _b("sx-dispatch", args => MinRef.SxDispatch(args[0], args[1], args[2]));
-        _b("sx-expand-call", args =>
+         _b("sx-expand-call", PSxExpandCall);
+        _b("void", args => Const.VOID);
+    }
+    private static object? PSxExpandCall(object?[] args)
+    {
+        if (args.Length >= 1 && args[0] is Cell call)
         {
-            if (args.Length >= 1 && args[0] is Cell call)
+            var env = args.Length > 1 && args[1] is Env e2 ? e2 : Evaluator.GlobalEnv;
+            var op = call.Car;
+            if (op is Sym ops)
             {
-                var env = args.Length > 1 && args[1] is Env e2 ? e2 : Evaluator.GlobalEnv;
-                var op = call.Car;
-                if (op is Sym ops)
+                var proc = env.LookupSilent(ops.Name, null);
+                if (proc is not null)
                 {
-                    var proc = env.LookupSilent(ops.Name, null);
-                    if (proc is not null)
-                    {
-                        var expanded = Evaluator.ExpandMacro(proc, call.Cdr, env);
-                        if (expanded is not null) return expanded;
-                    }
+                    var expanded = Evaluator.ExpandMacro(proc, call.Cdr, env);
+                    if (expanded is not null) return expanded;
                 }
             }
-            return Const.FALSE;
-        });
-        _b("void", args => Const.VOID);
+        }
+        return Const.FALSE;
     }
 }

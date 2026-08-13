@@ -13,15 +13,7 @@ public static partial class PrimitiveRegistry
         _b("cons*", args => ConsStar(args));
         _b("list*", args => ConsStar(args));
         _b("list-copy", args => CopyList(args[0]));
-        _b("iota", args =>
-        {
-            long n = NumericHelper.ToInt(args[0]);
-            long s = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0;
-            long st = args.Length > 2 ? NumericHelper.ToInt(args[2]) : 1;
-            var res = new List<object?>();
-            for (long i = 0; i < n; i++) res.Add(s + i * st);
-            return res.ToCell();
-        });
+        _b("iota", Iota);
         _b("first", args => Nth(args[0], 0));
         _b("second", args => Nth(args[0], 1));
         _b("third", args => Nth(args[0], 2));
@@ -146,6 +138,16 @@ public static partial class PrimitiveRegistry
         _b("list-queue-list", args => ListQueueToList(args[0]));
         _b("list-queue-first", args => ListQueueFirst(args[0]));
         return Const.VOID;
+    }
+
+    private static object? Iota(object?[] args)
+    {
+        long n = NumericHelper.ToInt(args[0]);
+        long s = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0;
+        long st = args.Length > 2 ? NumericHelper.ToInt(args[2]) : 1;
+        var res = new List<object?>();
+        for (long i = 0; i < n; i++) res.Add(s + i * st);
+        return res.ToCell();
     }
 
     private static object? ConsStar(object?[] args)    {

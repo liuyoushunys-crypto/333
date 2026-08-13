@@ -23,6 +23,18 @@ public static partial class PrimitiveRegistry
         return bits.ToCell();
     }
 
+    private static object? ClosePort(object?[] args)
+    {
+        if (args[0] is ITuple it && it.Length > 2 && it[0] is "port" && it[2] is IDisposable d) d.Dispose();
+        return Const.VOID;
+    }
+
+    private static object? RationalExpt(object?[] args)
+    {
+        var value = Math.Pow(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1]));
+        return value == Math.Truncate(value) ? (object?)(long)value : value;
+    }
+
     public static void Init()
     {
         // ── Type predicates ──
@@ -62,32 +74,10 @@ public static partial class PrimitiveRegistry
         _b("make-list", PMakeList);
         _b("member", PMember);
         _b("memv", PMemv);
-        _b("pair-fold", args =>
-        {
-            object? acc = args[1];
-            var cur = args[2];
-            while (cur is Cell c) { acc = App(args[0], cur, acc); cur = c.Cdr; }
-            return acc;
-        });
-        _b("pair-fold-right", args =>
-        {
-            var pairs = new List<object?>();
-            var cur = args[2];
-            while (cur is Cell c) { pairs.Add(cur); cur = c.Cdr; }
-            object? acc = args[1];
-            for (int i = pairs.Count - 1; i >= 0; i--)
-                acc = App(args[0], pairs[i], acc);
-            return acc;
-        });
+         _b("pair-fold", PPairFold);
+         _b("pair-fold-right", PPairFoldRight);
         _b("remove", args => args[1].Cells().Where(x => ReferenceEquals(App(args[0], x), Const.FALSE)).ToCell());
-        _b("split-at", args =>
-        {
-            var first = new List<object?>();
-            var cur = args[0];
-            int n = NumericHelper.ToInt(args[1]);
-            while (cur is Cell c && n-- > 0) { first.Add(c.Car); cur = c.Cdr; }
-            return new Cell(first.ToCell(), new Cell(cur, Const.NIL));
-        });
+         _b("split-at", PSplitAt);
 
         // ── Arithmetic ──
         _b("*", args => args.Aggregate((object?)1L, (acc, x) => NumericHelper.Mul(acc!, x))!);
@@ -151,18 +141,9 @@ public static partial class PrimitiveRegistry
 
         // ── Comparisons ──
         _b("condition?", args => args[0] is SchemeException or ErrorObject ? Const.TRUE : Const.FALSE);
-        _b("condition-message", args =>
-        {
-            if (args[0] is ErrorObject eo) return eo.Message is Sym em ? em.Name : eo.Message;
-            if (args[0] is SchemeException se) return se.Val?.ToString() ?? "";
-            return ToStr(args[0]);
-        });
+         _b("condition-message", PInitConditionMessage);
         _b("condition-type", args => args[0] is ErrorObject eo2 ? eo2.Message : Const.NIL);
-        _b("condition/report-string", args =>
-        {
-            if (args[0] is ErrorObject eo3) return new SchemeString(eo3.Message is Sym em3 ? em3.Name : ToStr(eo3.Message));
-            return new SchemeString("unknown condition");
-        });
+         _b("condition/report-string", PConditionReportString);
         _b("digit-value", PDigitValue);
 
         // ── Strings ──
@@ -179,36 +160,13 @@ public static partial class PrimitiveRegistry
         _b("string-ci>=?", args => string.Compare(ToStr(args[0]), ToStr(args[1]), StringComparison.OrdinalIgnoreCase) >= 0 ? Const.TRUE : Const.FALSE);
         _b("string-ci>?", args => string.Compare(ToStr(args[0]), ToStr(args[1]), StringComparison.OrdinalIgnoreCase) > 0 ? Const.TRUE : Const.FALSE);
         _b("string-contains?", PStringContainsQ);
-        _b("utf8->string", args =>
-        {
-            byte[] data = args[0] is SchemeBytevector bv ? bv.Data : Encoding.UTF8.GetBytes(ToStr(args[0]));
-            int start = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0;
-            int end = args.Length > 2 ? NumericHelper.ToInt(args[2]) : data.Length;
-            if (start < 0) start = 0;
-            if (end > data.Length) end = data.Length;
-            return new SchemeString(Encoding.UTF8.GetString(data, start, end - start));
-        });
+         _b("utf8->string", PUtf8String);
         _b("string-copy", PStringCopy);
         _b("string-downcase", args => new SchemeString(ToStr(args[0]).ToLowerInvariant()));
         _b("string-fill!", PStringFillBang);
         _b("string-length", PStringLength);
-        _b("string-for-each", args =>
-        {
-            var fn = args[0];
-            var s = ToStr(args[1]);
-            foreach (var rune in s.EnumerateRunes())
-                App(fn, new SchemeChar(rune.Value));
-            return Const.VOID;
-        });
-        _b("string-map", args =>
-        {
-            var fn = args[0];
-            var s = ToStr(args[1]);
-            var sb = new StringBuilder();
-            foreach (var rune in s.EnumerateRunes())
-                sb.Append(char.ConvertFromUtf32(AsChar(App(fn, new SchemeChar(rune.Value)))));
-            return new SchemeString(sb.ToString());
-        });
+         _b("string-for-each", PStringForEach);
+         _b("string-map", PStringMap);
         _b("string-ref", PStringRef);
         _b("string-set!", PStringSetBang);
         _b("string-upcase", args => new SchemeString(ToStr(args[0]).ToUpperInvariant()));
@@ -255,14 +213,7 @@ public static partial class PrimitiveRegistry
         _b("bytevector-append", args => new SchemeBytevector(args.SelectMany(a => AsBytevector(a).Data).ToArray()));
         _b("bytevector->u8-list", args => AsBytevector(args[0]).Data.Select(b => (object?)(long)b).ToCell());
          _b("bytevector-copy", args => new SchemeBytevector([.. AsBytevector(args[0]).Data]));
-         _b("bytevector-copy!", args =>
-         {
-             var target = AsBytevector(args[0]); var at = NumericHelper.ToInt(args[1]);
-             var source = AsBytevector(args[2]); var start = args.Length > 3 ? NumericHelper.ToInt(args[3]) : 0;
-             var end = args.Length > 4 ? NumericHelper.ToInt(args[4]) : source.Length;
-             for (var i = start; i < end; i++) target[at++] = source[i];
-             return Const.VOID;
-         });
+          _b("bytevector-copy!", PBytevectorCopyBang);
         _b("bytevector-length", args => AsBytevector(args[0]).Length);
         _b("bytevector-u8-ref", args => (long)AsBytevector(args[0])[NumericHelper.ToInt(args[1])]);
         _b("bytevector-u8-set!", args => { AsBytevector(args[0])[NumericHelper.ToInt(args[1])] = (byte)NumericHelper.ToInt(args[2]); return Const.VOID; });
@@ -327,23 +278,9 @@ public static partial class PrimitiveRegistry
         _b("read-string", PReadString);
         _b("set-port-position!", PSetPortPositionBang);
          _b("with-input-from-file", PWithInputFromFile);
-         _b("with-input-from-string", args =>
-         {
-             var oldIn = Console.In;
-             using var sr = new StringReader(ToStr(args[0]));
-             Console.SetIn(sr);
-             try { return App(args[1]); } finally { Console.SetIn(oldIn); }
-         });
-         _b("call-with-input-string", args =>
-         {
-             var port = MakePort("input", new StringPort(ToStr(args[0])));
-             return App(args[1], port);
-         });
-         _b("call-with-port", args =>
-         {
-             try { return App(args[1], args[0]); }
-             finally { if (args[0] is ITuple it && it.Length > 2 && it[2] is IDisposable d) d.Dispose(); }
-         });
+          _b("with-input-from-string", PWithInputFromString);
+          _b("call-with-input-string", PCallWithInputString);
+          _b("call-with-port", PCallWithPort);
          _b("call-with-string-output", args => CallWithStringOutput(args[0]));
          _b("call-with-string-output-port", args => CallWithStringOutput(args[0]));
          _b("call-with-bytevector-output-port", args => CallWithBytevectorOutput(args[0]));
@@ -396,43 +333,13 @@ public static partial class PrimitiveRegistry
         _b("hash-table-copy", args => new Dictionary<object, object?>((Dictionary<object, object?>)args[0]!));
         _b("hash-table-keys", args => ((Dictionary<object, object?>)args[0]!).Keys.ToList().ToCell());
         _b("hash-table-values", args => ((Dictionary<object, object?>)args[0]!).Values.ToList().ToCell());
-        _b("hash-table->alist", args =>
-        {
-            var items = new List<object?>();
-            foreach (var kv in (Dictionary<object, object?>)args[0]!)
-                items.Add(new Cell(kv.Key, kv.Value));
-            return items.ToCell();
-        });
-        _b("alist->hash-table", args =>
-        {
-            var ht = new Dictionary<object, object?>();
-            var cur = args[0];
-            while (cur is Cell c)
-            {
-                if (c.Car is Cell pair) ht[pair.Car!] = pair.Cdr;
-                cur = c.Cdr;
-            }
-            return ht;
-        });
+         _b("hash-table->alist", PHashTableAlist);
+         _b("alist->hash-table", PAlistHashTable);
          _b("hash-table-for-each", PHashTableWalk);
          _b("hash-table/count", PHashTableCount);
          _b("hash-table/put!", PHashTableSetBang);
-        _b("hash-table-map", args =>
-        {
-            var fn = args[0];
-            var items = new List<object?>();
-            foreach (var kv in (Dictionary<object, object?>)args[1]!)
-                items.Add(JitRuntime.Invoke(fn, [kv.Key, kv.Value], Evaluator.GlobalEnv));
-            return items.ToCell();
-        });
-        _b("hash-table-fold", args =>
-        {
-            var fn = args[0];
-            object? acc = args[1];
-            foreach (var kv in (Dictionary<object, object?>)args[2]!)
-                acc = JitRuntime.Invoke(fn, [acc, kv.Key, kv.Value], Evaluator.GlobalEnv);
-            return acc;
-        });
+         _b("hash-table-map", PHashTableMap);
+         _b("hash-table-fold", PHashTableFold);
         _b("make-hash-table", args => new Dictionary<object, object?>());
         _b("make-eq-hash-table", args => new Dictionary<object, object?>());
         _b("make-equal-hash-table", args => new Dictionary<object, object?>());
@@ -449,11 +356,7 @@ public static partial class PrimitiveRegistry
         _b("binary-port?", args => args[0] is ITuple it && it.Length > 2 && it[0] is "port" && it[2] is BytePort ? Const.TRUE : Const.FALSE);
         _b("input-port-open?", args => IsPort(args[0], "input") ? Const.TRUE : Const.FALSE);
         _b("output-port-open?", args => IsPort(args[0], "output") ? Const.TRUE : Const.FALSE);
-        _b("close-port", args =>
-        {
-            if (args[0] is ITuple it && it.Length > 2 && it[0] is "port" && it[2] is IDisposable d) d.Dispose();
-            return Const.VOID;
-        });
+        _b("close-port", ClosePort);
         _b("delete-file", args => { File.Delete(ToStr(args[0])); return Const.VOID; });
         _b("file-exists?", args => File.Exists(ToStr(args[0])) ? Const.TRUE : Const.FALSE);
         _b("get-environment-variable", args => Environment.GetEnvironmentVariable(ToStr(args[0])) ?? "");
@@ -465,11 +368,7 @@ public static partial class PrimitiveRegistry
         _b("clamp", args => Math.Max(NumericHelper.ToLong(args[1]), Math.Min(NumericHelper.ToLong(args[2]), NumericHelper.ToLong(args[0]))));
         _b("symbol-append", args => Sym.Intern(string.Concat(args.Select(ToStr))));
         _b("immutable-string?", args => args[0] is SchemeString ? Const.TRUE : Const.FALSE);
-        _b("rational-expt", args =>
-        {
-            var value = Math.Pow(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1]));
-            return value == Math.Truncate(value) ? (object?)(long)value : value;
-        });
+        _b("rational-expt", RationalExpt);
         _b("provide", _ => Const.VOID);
         _b("open-input-file", args => MakePort("input", new StreamReader(ToStr(args[0]))));
         _b("open-binary-input-file", args => MakePort("input", new BytePort(File.ReadAllBytes(ToStr(args[0])))));
@@ -539,13 +438,7 @@ public static partial class PrimitiveRegistry
         _b("bitwise-rotate-bit-field", PBitwiseRotateBitField);
         _b("bitwise-shift", PBitwiseShift);
         _b("bitwise-xor", args => args.Aggregate(0L, (a, b) => a ^ NumericHelper.ToLong(b)));
-        _b("booleans->integer", args =>
-        {
-            long r = 0;
-            for (int i = 0; i < args.Length; i++)
-                if (ReferenceEquals(args[i], Const.TRUE)) r |= 1L << i;
-            return r;
-        });
+         _b("booleans->integer", PBooleansInteger);
         _b("copy-bit", PCopyBit);
         _b("first-set-bit", PFirstSetBit);
         _b("integer->bits", args => IntegerToBitsList(NumericHelper.ToInt(args[0]), args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0));
@@ -591,14 +484,149 @@ public static partial class PrimitiveRegistry
         };
         foreach (var (name, chain) in _cxrMap)
         {
-            _b(name, args =>
-            {
-                object? x = args[0];
-                for (int i = chain.Length - 1; i >= 0; i--) x = chain[i](x);
-                return x;
-            });
+             _b(name, args => PCxr(args, chain));
         }
 
     }
 
+    private static object? PPairFold(object?[] args)
+    {
+        object? acc = args[1];
+        var cur = args[2];
+        while (cur is Cell c) { acc = App(args[0], cur, acc); cur = c.Cdr; }
+        return acc;
+    }
+
+    private static object? PPairFoldRight(object?[] args)
+    {
+        var pairs = new List<object?>();
+        var cur = args[2];
+        while (cur is Cell c) { pairs.Add(cur); cur = c.Cdr; }
+        object? acc = args[1];
+        for (int i = pairs.Count - 1; i >= 0; i--) acc = App(args[0], pairs[i], acc);
+        return acc;
+    }
+
+    private static object? PSplitAt(object?[] args)
+    {
+        var first = new List<object?>();
+        var cur = args[0];
+        int n = NumericHelper.ToInt(args[1]);
+        while (cur is Cell c && n-- > 0) { first.Add(c.Car); cur = c.Cdr; }
+        return new Cell(first.ToCell(), new Cell(cur, Const.NIL));
+    }
+
+    private static object? PInitConditionMessage(object?[] args)
+    {
+        if (args[0] is ErrorObject eo) return eo.Message is Sym em ? em.Name : eo.Message;
+        if (args[0] is SchemeException se) return se.Val?.ToString() ?? "";
+        return ToStr(args[0]);
+    }
+
+    private static object? PConditionReportString(object?[] args)
+    {
+        if (args[0] is ErrorObject eo3) return new SchemeString(eo3.Message is Sym em3 ? em3.Name : ToStr(eo3.Message));
+        return new SchemeString("unknown condition");
+    }
+
+    private static object? PUtf8String(object?[] args)
+    {
+        byte[] data = args[0] is SchemeBytevector bv ? bv.Data : Encoding.UTF8.GetBytes(ToStr(args[0]));
+        int start = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0;
+        int end = args.Length > 2 ? NumericHelper.ToInt(args[2]) : data.Length;
+        if (start < 0) start = 0;
+        if (end > data.Length) end = data.Length;
+        return new SchemeString(Encoding.UTF8.GetString(data, start, end - start));
+    }
+
+    private static object? PStringForEach(object?[] args)
+    {
+        var fn = args[0];
+        var s = ToStr(args[1]);
+        foreach (var rune in s.EnumerateRunes()) App(fn, new SchemeChar(rune.Value));
+        return Const.VOID;
+    }
+
+    private static object? PStringMap(object?[] args)
+    {
+        var fn = args[0];
+        var s = ToStr(args[1]);
+        var sb = new StringBuilder();
+        foreach (var rune in s.EnumerateRunes()) sb.Append(char.ConvertFromUtf32(AsChar(App(fn, new SchemeChar(rune.Value)))));
+        return new SchemeString(sb.ToString());
+    }
+
+    private static object? PBytevectorCopyBang(object?[] args)
+    {
+        var target = AsBytevector(args[0]); var at = NumericHelper.ToInt(args[1]);
+        var source = AsBytevector(args[2]); var start = args.Length > 3 ? NumericHelper.ToInt(args[3]) : 0;
+        var end = args.Length > 4 ? NumericHelper.ToInt(args[4]) : source.Length;
+        for (var i = start; i < end; i++) target[at++] = source[i];
+        return Const.VOID;
+    }
+
+    private static object? PWithInputFromString(object?[] args)
+    {
+        var oldIn = Console.In;
+        using var sr = new StringReader(ToStr(args[0]));
+        Console.SetIn(sr);
+        try { return App(args[1]); } finally { Console.SetIn(oldIn); }
+    }
+
+    private static object? PCallWithInputString(object?[] args)
+    {
+        var port = MakePort("input", new StringPort(ToStr(args[0])));
+        return App(args[1], port);
+    }
+
+    private static object? PCallWithPort(object?[] args)
+    {
+        try { return App(args[1], args[0]); }
+        finally { if (args[0] is ITuple it && it.Length > 2 && it[2] is IDisposable d) d.Dispose(); }
+    }
+
+    private static object? PHashTableAlist(object?[] args)
+    {
+        var items = new List<object?>();
+        foreach (var kv in (Dictionary<object, object?>)args[0]!) items.Add(new Cell(kv.Key, kv.Value));
+        return items.ToCell();
+    }
+
+    private static object? PAlistHashTable(object?[] args)
+    {
+        var ht = new Dictionary<object, object?>();
+        var cur = args[0];
+        while (cur is Cell c) { if (c.Car is Cell pair) ht[pair.Car!] = pair.Cdr; cur = c.Cdr; }
+        return ht;
+    }
+
+    private static object? PHashTableMap(object?[] args)
+    {
+        var fn = args[0];
+        var items = new List<object?>();
+        foreach (var kv in (Dictionary<object, object?>)args[1]!) items.Add(JitRuntime.Invoke(fn, [kv.Key, kv.Value], Evaluator.GlobalEnv));
+        return items.ToCell();
+    }
+
+    private static object? PHashTableFold(object?[] args)
+    {
+        var fn = args[0];
+        object? acc = args[1];
+        foreach (var kv in (Dictionary<object, object?>)args[2]!) acc = JitRuntime.Invoke(fn, [acc, kv.Key, kv.Value], Evaluator.GlobalEnv);
+        return acc;
+    }
+
+    private static object? PBooleansInteger(object?[] args)
+    {
+        long r = 0;
+        for (int i = 0; i < args.Length; i++) if (ReferenceEquals(args[i], Const.TRUE)) r |= 1L << i;
+        return r;
+    }
+
+    private static object? PCxr(object?[] args, Func<object?, object?>[] chain)
+    {
+        object? x = args[0];
+        for (int i = chain.Length - 1; i >= 0; i--) x = chain[i](x);
+        return x;
+    }
 }

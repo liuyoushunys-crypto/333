@@ -28,14 +28,7 @@ public static partial class PrimitiveRegistry
     // SRFI-128 Comparators
     private static object? RegisterExtComparators()
     {
-        _b("make-comparator", args =>
-        {
-            var eq = args.Length > 0 ? args[0] : Const.NIL;
-            var lt = args.Length > 1 ? args[1] : Const.NIL;
-            var hf = args.Length > 2 ? args[2] : Const.NIL;
-            var nm = args.Length > 3 ? args[3] : Sym.Intern("custom");
-            return new Cell(Sym.Intern("comparator"), new Cell(eq, new Cell(lt, new Cell(hf, new Cell(nm, Const.NIL)))));
-        });
+        _b("make-comparator", MakeComparatorPrimitive);
         _b("comparator?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
         _b("comparator-order?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
         _b("comparator-hashable?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
@@ -104,26 +97,9 @@ public static partial class PrimitiveRegistry
         _b("fx-width", args => 64L);
         _b("fx-greatest", args => FX_GREATEST);
         _b("fx-least", args => FX_LEAST);
-        _b("fx+", args =>
-        {
-            long r = 0;
-            foreach (var a in args) r = checked((long)(r + NumericHelper.ToLong(a)));
-            return r;
-        });
-        _b("fx-", args =>
-        {
-            if (args.Length == 0) return Const.FALSE;
-            if (args.Length == 1) return checked((long)-NumericHelper.ToLong(args[0]));
-            long r = NumericHelper.ToLong(args[0]);
-            for (int i = 1; i < args.Length; i++) r = checked((long)(r - NumericHelper.ToLong(args[i])));
-            return r;
-        });
-        _b("fx*", args =>
-        {
-            long r = 1;
-            foreach (var a in args) r = checked((long)(r * NumericHelper.ToLong(a)));
-            return r;
-        });
+        _b("fx+", FxAdd);
+        _b("fx-", FxSubtract);
+        _b("fx*", FxMultiply);
         _b("fxdiv", args => NumericHelper.Quotient(args[0], args[1]));
         _b("fxmod", args => NumericHelper.Remainder(args[0], args[1]));
         _b("fxdiv0", args => FloorDiv(args[0], args[1]));
@@ -135,52 +111,22 @@ public static partial class PrimitiveRegistry
         _b("fxeven?", args => (NumericHelper.ToLong(args[0]) & 1) == 0 ? Const.TRUE : Const.FALSE);
         _b("fxmax", args => args.Max(a => NumericHelper.ToLong(a)));
         _b("fxmin", args => args.Min(a => NumericHelper.ToLong(a)));
-        _b("fxand", args =>
-        {
-            long r = FX_GREATEST;
-            foreach (var a in args) r &= NumericHelper.ToLong(a);
-            return r;
-        });
-        _b("fxior", args =>
-        {
-            long r = 0;
-            foreach (var a in args) r |= NumericHelper.ToLong(a);
-            return r;
-        });
-        _b("fxxor", args =>
-        {
-            long r = 0;
-            foreach (var a in args) r ^= NumericHelper.ToLong(a);
-            return r;
-        });
+        _b("fxand", FxAnd);
+        _b("fxior", FxIor);
+        _b("fxxor", FxXor);
         _b("fxnot", args => NumericHelper.ToLong(args[0]) ^ FX_GREATEST);
         _b("fxlsh", args => (long)(NumericHelper.ToLong(args[0]) << NumericHelper.ToInt(args[1])));
         _b("fxrshl", args => NumericHelper.ToLong(args[0]) >> NumericHelper.ToInt(args[1]));
         _b("fxrsha", args => NumericHelper.ToLong(args[0]) >> NumericHelper.ToInt(args[1]));
-        _b("fx=?",
-            args => ChainCmp(args, (a, b) => a == b));
-        _b("fx<?",
-            args => ChainCmp(args, (a, b) => a < b));
-        _b("fx>?",
-            args => ChainCmp(args, (a, b) => a > b));
-        _b("fx<=?",
-            args => ChainCmp(args, (a, b) => a <= b));
-        _b("fx>=?",
-            args => ChainCmp(args, (a, b) => a >= b));
+        _b("fx=?", FxEqual);
+        _b("fx<?", FxLessThan);
+        _b("fx>?", FxGreaterThan);
+        _b("fx<=?", FxLessThanOrEqual);
+        _b("fx>=?", FxGreaterThanOrEqual);
         _b("fxbit-count", args => PopCount(NumericHelper.ToLong(args[0])));
         _b("fxbit-set?", args => (NumericHelper.ToLong(args[0]) >> NumericHelper.ToInt(args[1]) & 1) != 0 ? Const.TRUE : Const.FALSE);
-        _b("fxcopy-bit", args =>
-        {
-            long x = NumericHelper.ToLong(args[0]);
-            int i = NumericHelper.ToInt(args[1]);
-            bool b = args.Length > 2 && Truthy(args[2]);
-            return b ? (x | (1L << i)) : (x & ~(1L << i));
-        });
-        _b("fxfirst-set-bit", args =>
-        {
-            long x = NumericHelper.ToLong(args[0]);
-            return x == 0 ? -1L : (long)BitOperations.TrailingZeroCount((ulong)x);
-        });
+        _b("fxcopy-bit", FxCopyBit);
+        _b("fxfirst-set-bit", FxFirstSetBit);
         _b("fxlength", args => BitLength(NumericHelper.ToLong(args[0])));
         _b("fxif", args => (NumericHelper.ToLong(args[0]) & NumericHelper.ToLong(args[1])) | (~NumericHelper.ToLong(args[0]) & NumericHelper.ToLong(args[2])));
         _b("fxgcd", PGcd);
@@ -192,23 +138,9 @@ public static partial class PrimitiveRegistry
     {
         _b("flonum?", args => args[0] is double or float ? Const.TRUE : Const.FALSE);
         _b("fl+", args => args.Aggregate(0.0, (a, b) => a + NumericHelper.ToDouble(b)));
-        _b("fl-", args =>
-        {
-            if (args.Length == 0) return Const.FALSE;
-            if (args.Length == 1) return -NumericHelper.ToDouble(args[0]);
-            double r = NumericHelper.ToDouble(args[0]);
-            for (int i = 1; i < args.Length; i++) r -= NumericHelper.ToDouble(args[i]);
-            return r;
-        });
+        _b("fl-", FlSubtract);
         _b("fl*", args => args.Aggregate(1.0, (a, b) => a * NumericHelper.ToDouble(b)));
-        _b("fl/", args =>
-        {
-            if (args.Length == 0) return Const.FALSE;
-            if (args.Length == 1) return 1.0 / NumericHelper.ToDouble(args[0]);
-            double r = NumericHelper.ToDouble(args[0]);
-            for (int i = 1; i < args.Length; i++) r /= NumericHelper.ToDouble(args[i]);
-            return r;
-        });
+        _b("fl/", FlDivide);
         _b("flzero?", args => NumericHelper.ToDouble(args[0]) == 0.0 ? Const.TRUE : Const.FALSE);
         _b("flpositive?", args => NumericHelper.ToDouble(args[0]) > 0.0 ? Const.TRUE : Const.FALSE);
         _b("flnegative?", args => NumericHelper.ToDouble(args[0]) < 0.0 ? Const.TRUE : Const.FALSE);
@@ -233,16 +165,11 @@ public static partial class PrimitiveRegistry
         _b("flasin", args => Math.Asin(NumericHelper.ToDouble(args[0])));
         _b("flacos", args => Math.Acos(NumericHelper.ToDouble(args[0])));
         _b("flatan", args => Math.Atan(NumericHelper.ToDouble(args[0])));
-        _b("fl=?",
-            args => ChainCmp(args, (a, b) => a == b));
-        _b("fl<?",
-            args => ChainCmp(args, (a, b) => a < b));
-        _b("fl>?",
-            args => ChainCmp(args, (a, b) => a > b));
-        _b("fl<=?",
-            args => ChainCmp(args, (a, b) => a <= b));
-        _b("fl>=?",
-            args => ChainCmp(args, (a, b) => a >= b));
+        _b("fl=?", FlEqual);
+        _b("fl<?", FlLessThan);
+        _b("fl>?", FlGreaterThan);
+        _b("fl<=?", FlLessThanOrEqual);
+        _b("fl>=?", FlGreaterThanOrEqual);
         _b("flonum->fixnum", args => NumericHelper.ToLong(args[0]));
         _b("fixnum->flonum", args => NumericHelper.ToDouble(args[0]));
         return Const.VOID;
@@ -251,14 +178,7 @@ public static partial class PrimitiveRegistry
     // SRFI-151 Bitwise (re-register as native for pyb)
     private static object? RegisterExtBitwise()
     {
-        _b("integer->booleans", args =>
-        {
-            long n = NumericHelper.ToLong(args[0]);
-            var bits = new List<object?>();
-            while (n != 0) { bits.Add((n & 1) != 0 ? Const.TRUE : Const.FALSE); n >>= 1; }
-            if (bits.Count == 0) bits.Add(Const.FALSE);
-            return bits.ToCell();
-        });
+        _b("integer->booleans", IntegerToBooleans);
         return Const.VOID;
     }
 
@@ -266,66 +186,23 @@ public static partial class PrimitiveRegistry
     private static object? RegisterExtBitvectors()
     {
         _b("bitvector?", args => args[0] is SchemeVector ? Const.TRUE : Const.FALSE);
-        _b("make-bitvector", args =>
-        {
-            int n = NumericHelper.ToInt(args[0]);
-            object? fill = args.Length > 1 ? args[1] : Const.FALSE;
-            var data = new List<object?>();
-            for (int i = 0; i < n; i++) data.Add(fill);
-            return new SchemeVector(data);
-        });
+        _b("make-bitvector", MakeBitvector);
         _b("bitvector-copy", args => new SchemeVector(((SchemeVector)args[0]!).Data.ToList()));
-        _b("bitvector-append", args =>
-        {
-            var all = new List<object?>();
-            foreach (var bv in args) all.AddRange(((SchemeVector)bv!).Data);
-            return new SchemeVector(all);
-        });
+        _b("bitvector-append", BitvectorAppend);
         _b("bitvector-length", args => ((SchemeVector)args[0]!).Length);
         _b("bitvector-ref", args => ((SchemeVector)args[0]!)[NumericHelper.ToInt(args[1])] is Sym s && !ReferenceEquals(s, Const.FALSE) ? Const.TRUE : Const.FALSE);
         _b("bitvector-set!", args => { ((SchemeVector)args[0]!)[NumericHelper.ToInt(args[1])] = args[2]; return Const.VOID; });
-        _b("list->bitvector", args =>
-        {
-            var data = new List<object?>();
-            foreach (var x in args[0].Cells()) data.Add(ReferenceEquals(x, Const.TRUE) ? Const.TRUE : Const.FALSE);
-            return new SchemeVector(data);
-        });
-        _b("bitvector->list", args =>
-        {
-            var data = new List<object?>();
-            foreach (var x in ((SchemeVector)args[0]!).Data) data.Add(ReferenceEquals(x, Const.FALSE) ? Const.FALSE : Const.TRUE);
-            return data.ToCell();
-        });
+        _b("list->bitvector", ListToBitvector);
+        _b("bitvector->list", BitvectorToList);
         return Const.VOID;
     }
 
     // Number theory & math
     private static object? RegisterExtNumberTheory()
     {
-        _b("scheme-gcd", args =>
-        {
-            if (args.Length == 0) return 0L;
-            bool anyFrac = args.Any(a => a is SchemeFraction);
-            if (anyFrac) return SchemeGcdFrac(args);
-            long r = NumericHelper.ToLong(args[0]);
-            for (int i = 1; i < args.Length; i++) r = Gcd(r, NumericHelper.ToLong(args[i]));
-            return r;
-        });
-        _b("factorial", args =>
-        {
-            long n = NumericHelper.ToLong(args[0]);
-            long r = 1;
-            for (long i = 2; i <= n; i++) r *= i;
-            return r;
-        });
-        _b("fibonacci", args =>
-        {
-            long n = NumericHelper.ToLong(args[0]);
-            if (n < 0) return 0L;
-            long a = 0, b = 1;
-            for (long i = 0; i < n; i++) { var t = a + b; a = b; b = t; }
-            return a;
-        });
+        _b("scheme-gcd", SchemeGcd);
+        _b("factorial", Factorial);
+        _b("fibonacci", Fibonacci);
         _b("fib-pair", args => FibPair(NumericHelper.ToLong(args[0])));
         _b("prime?", args => IsPrime(NumericHelper.ToLong(args[0])) ? Const.TRUE : Const.FALSE);
         _b("factor", args => Factor(NumericHelper.ToLong(args[0])).ToCell());
@@ -349,12 +226,174 @@ public static partial class PrimitiveRegistry
         return Const.VOID;
     }
 
+    private static object? MakeComparatorPrimitive(object?[] args)
+    {
+        var eq = args.Length > 0 ? args[0] : Const.NIL;
+        var lt = args.Length > 1 ? args[1] : Const.NIL;
+        var hf = args.Length > 2 ? args[2] : Const.NIL;
+        var nm = args.Length > 3 ? args[3] : Sym.Intern("custom");
+        return new Cell(Sym.Intern("comparator"), new Cell(eq, new Cell(lt, new Cell(hf, new Cell(nm, Const.NIL)))));
+    }
+
+    private static object? FxAdd(object?[] args)
+    {
+        long r = 0;
+        foreach (var a in args) r = checked((long)(r + NumericHelper.ToLong(a)));
+        return r;
+    }
+
+    private static object? FxSubtract(object?[] args)
+    {
+        if (args.Length == 0) return Const.FALSE;
+        if (args.Length == 1) return checked((long)-NumericHelper.ToLong(args[0]));
+        long r = NumericHelper.ToLong(args[0]);
+        for (int i = 1; i < args.Length; i++) r = checked((long)(r - NumericHelper.ToLong(args[i])));
+        return r;
+    }
+
+    private static object? FxMultiply(object?[] args)
+    {
+        long r = 1;
+        foreach (var a in args) r = checked((long)(r * NumericHelper.ToLong(a)));
+        return r;
+    }
+
+    private static object? FxAnd(object?[] args)
+    {
+        long r = FX_GREATEST;
+        foreach (var a in args) r &= NumericHelper.ToLong(a);
+        return r;
+    }
+
+    private static object? FxIor(object?[] args)
+    {
+        long r = 0;
+        foreach (var a in args) r |= NumericHelper.ToLong(a);
+        return r;
+    }
+
+    private static object? FxXor(object?[] args)
+    {
+        long r = 0;
+        foreach (var a in args) r ^= NumericHelper.ToLong(a);
+        return r;
+    }
+
+    private static object? FxCopyBit(object?[] args)
+    {
+        long x = NumericHelper.ToLong(args[0]);
+        int i = NumericHelper.ToInt(args[1]);
+        bool b = args.Length > 2 && Truthy(args[2]);
+        return b ? (x | (1L << i)) : (x & ~(1L << i));
+    }
+
+    private static object? FxFirstSetBit(object?[] args)
+    {
+        long x = NumericHelper.ToLong(args[0]);
+        return x == 0 ? -1L : (long)BitOperations.TrailingZeroCount((ulong)x);
+    }
+
+    private static object? FlSubtract(object?[] args)
+    {
+        if (args.Length == 0) return Const.FALSE;
+        if (args.Length == 1) return -NumericHelper.ToDouble(args[0]);
+        double r = NumericHelper.ToDouble(args[0]);
+        for (int i = 1; i < args.Length; i++) r -= NumericHelper.ToDouble(args[i]);
+        return r;
+    }
+
+    private static object? FlDivide(object?[] args)
+    {
+        if (args.Length == 0) return Const.FALSE;
+        if (args.Length == 1) return 1.0 / NumericHelper.ToDouble(args[0]);
+        double r = NumericHelper.ToDouble(args[0]);
+        for (int i = 1; i < args.Length; i++) r /= NumericHelper.ToDouble(args[i]);
+        return r;
+    }
+
+    private static object? IntegerToBooleans(object?[] args)
+    {
+        long n = NumericHelper.ToLong(args[0]);
+        var bits = new List<object?>();
+        while (n != 0) { bits.Add((n & 1) != 0 ? Const.TRUE : Const.FALSE); n >>= 1; }
+        if (bits.Count == 0) bits.Add(Const.FALSE);
+        return bits.ToCell();
+    }
+
+    private static object? MakeBitvector(object?[] args)
+    {
+        int n = NumericHelper.ToInt(args[0]);
+        object? fill = args.Length > 1 ? args[1] : Const.FALSE;
+        var data = new List<object?>();
+        for (int i = 0; i < n; i++) data.Add(fill);
+        return new SchemeVector(data);
+    }
+
+    private static object? BitvectorAppend(object?[] args)
+    {
+        var all = new List<object?>();
+        foreach (var bv in args) all.AddRange(((SchemeVector)bv!).Data);
+        return new SchemeVector(all);
+    }
+
+    private static object? ListToBitvector(object?[] args)
+    {
+        var data = new List<object?>();
+        foreach (var x in args[0].Cells()) data.Add(ReferenceEquals(x, Const.TRUE) ? Const.TRUE : Const.FALSE);
+        return new SchemeVector(data);
+    }
+
+    private static object? BitvectorToList(object?[] args)
+    {
+        var data = new List<object?>();
+        foreach (var x in ((SchemeVector)args[0]!).Data) data.Add(ReferenceEquals(x, Const.FALSE) ? Const.FALSE : Const.TRUE);
+        return data.ToCell();
+    }
+
+    private static object? SchemeGcd(object?[] args)
+    {
+        if (args.Length == 0) return 0L;
+        bool anyFrac = args.Any(a => a is SchemeFraction);
+        if (anyFrac) return SchemeGcdFrac(args);
+        long r = NumericHelper.ToLong(args[0]);
+        for (int i = 1; i < args.Length; i++) r = Gcd(r, NumericHelper.ToLong(args[i]));
+        return r;
+    }
+
+    private static object? Factorial(object?[] args)
+    {
+        long n = NumericHelper.ToLong(args[0]);
+        long r = 1;
+        for (long i = 2; i <= n; i++) r *= i;
+        return r;
+    }
+
+    private static object? Fibonacci(object?[] args)
+    {
+        long n = NumericHelper.ToLong(args[0]);
+        if (n < 0) return 0L;
+        long a = 0, b = 1;
+        for (long i = 0; i < n; i++) { var t = a + b; a = b; b = t; }
+        return a;
+    }
+
     private static object? ChainCmp(object?[] args, Func<long, long, bool> cmp)
     {
         for (int i = 1; i < args.Length; i++)
             if (!cmp(NumericHelper.ToLong(args[i - 1]), NumericHelper.ToLong(args[i]))) return Const.FALSE;
         return Const.TRUE;
     }
+
+    private static object? FxEqual(object?[] args) => ChainCmp(args, (a, b) => a == b);
+    private static object? FxLessThan(object?[] args) => ChainCmp(args, (a, b) => a < b);
+    private static object? FxGreaterThan(object?[] args) => ChainCmp(args, (a, b) => a > b);
+    private static object? FxLessThanOrEqual(object?[] args) => ChainCmp(args, (a, b) => a <= b);
+    private static object? FxGreaterThanOrEqual(object?[] args) => ChainCmp(args, (a, b) => a >= b);
+    private static object? FlEqual(object?[] args) => ChainCmp(args, (a, b) => a == b);
+    private static object? FlLessThan(object?[] args) => ChainCmp(args, (a, b) => a < b);
+    private static object? FlGreaterThan(object?[] args) => ChainCmp(args, (a, b) => a > b);
+    private static object? FlLessThanOrEqual(object?[] args) => ChainCmp(args, (a, b) => a <= b);
+    private static object? FlGreaterThanOrEqual(object?[] args) => ChainCmp(args, (a, b) => a >= b);
 
     private static object? SchemeGcdFrac(object?[] args)
     {

@@ -48,56 +48,20 @@ public static partial class PrimitiveRegistry
         Evaluator.GlobalEnv.Define("char-set:symbol", MakeCharSet("!$%&*+-./:<=>?@^_~"));
 
         // SRFI-35/36: error conditions
-        _b("make-error-condition", args =>
-        {
-            var t = args.Length > 0 ? args[0] : Const.NIL;
-            var m = args.Length > 1 ? args[1] : Const.NIL;
-            return ("condition", t, m);
-        });
-        _b("make-condition-type", args =>
-        {
-            var name = args.Length > 0 ? args[0] : Const.FALSE;
-            var parent = args.Length > 1 ? args[1] : Const.FALSE;
-            return ("condition-type", name, parent);
-        });
-        _b("make-condition", args =>
-        {
-            var type = args.Length > 0 ? args[0] : Const.FALSE;
-            var fields = args.Length > 1 ? args[1..] : [];
-            return ("condition", type, fields.ToList().ToCell());
-        });
+         _b("make-error-condition", PMakeErrorCondition);
+         _b("make-condition-type", PMakeConditionType);
+         _b("make-condition", PMakeCondition);
         _b("condition?", args => args[0] is ErrorObject or SchemeException || (args[0] is ITuple t && t.Length > 0 && (t[0] is "condition" or "condition-type")) ? Const.TRUE : Const.FALSE);
-        _b("condition-ref", args =>
-        {
-            if (args[0] is ITuple t && t.Length > 2 && t[0] is "condition")
-            {
-                var fields = ((object?)t[2]).Cells();
-                for (var i = 0; i + 1 < fields.Count; i += 2)
-                    if (JitRuntime.Equal2(fields[i], args[1]) == Const.TRUE) return fields[i + 1];
-            }
-            return Const.FALSE;
-        });
+         _b("condition-ref", PConditionRef);
         _b("make-io-error", args => ("condition", Sym.Intern("i/o-error"), args.ToList().ToCell()));
         _b("io-error?", args => args[0] is ITuple t && t.Length > 1 && t[1] is Sym s && s.Name == "i/o-error" ? Const.TRUE : Const.FALSE);
-        _b("condition-message", args =>
-        {
-            if (args[0] is ITuple ct && ct.Length > 2)
-                return ct[2];
-            if (args[0] is ErrorObject eo)
-                return eo.Message is Sym em ? em.Name : eo.Message;
-            if (args[0] is SchemeException se) return se.Val?.ToString() ?? "";
-            return ToStr(args[0]);
-        });
+         _b("condition-message", PConditionMessage);
         _b("error-message", args => Evaluator.GlobalEnv.LookupSilent("condition-message", null) is object fn ? App(fn, args[0]) : ToStr(args[0]));
         _b("extract-condition", args => Const.FALSE);
         _b("record?", args => Const.FALSE);
 
         // describe: 打印对象到 stdout
-        _b("describe", args =>
-        {
-            Console.WriteLine(Printer.Format(args[0]));
-            return Const.VOID;
-        });
+         _b("describe", PDescribe);
 
         // SRFI-144: flonum / fixnum conversions
         _b("fixnum->flonum", args => NumericHelper.ToDouble(args[0]));
@@ -114,38 +78,19 @@ public static partial class PrimitiveRegistry
         // SRFI-143: fixnum bitwise / arithmetic
         _b("fxbit-count", args => PopCount(NumericHelper.ToLong(args[0])));
         _b("fxbit-set?", args => (NumericHelper.ToLong(args[0]) >> NumericHelper.ToInt(args[1]) & 1) != 0 ? Const.TRUE : Const.FALSE);
-        _b("fxcopy-bit", args =>
-        {
-            long x = NumericHelper.ToLong(args[0]);
-            int i = NumericHelper.ToInt(args[1]);
-            bool b = args.Length > 2 && Truthy(args[2]);
-            return b ? x : (x | (1L << i));
-        });
+         _b("fxcopy-bit", PFxCopyBit);
         _b("fxdiv0", args => FloorDiv(args[0], args[1]));
-        _b("fxfirst-set-bit", args =>
-        {
-            long x = NumericHelper.ToLong(args[0]);
-            return x == 0 ? -1L : (long)(BitOperations.TrailingZeroCount((ulong)x));
-        });
+         _b("fxfirst-set-bit", PFxFirstSetBit);
         _b("fxgcd", PGcd);
         _b("fxif", args => (NumericHelper.ToLong(args[0]) & NumericHelper.ToLong(args[1])) | (~NumericHelper.ToLong(args[0]) & NumericHelper.ToLong(args[2])));
         _b("fxlength", args => BitLength(NumericHelper.ToLong(args[0])));
         _b("fxmod0", args => NumericHelper.Modulo(args[0], args[1]));
 
         // SRFI-189: maybe values
-        _b("maybe->values", args =>
-        {
-            if (args[0] is Cell mc) return new Cell(mc.Car, Const.TRUE);
-            return new Cell(Const.FALSE, Const.FALSE);
-        });
+         _b("maybe->values", PMaybeValues);
 
         // random seed
-        _b("random-seed", args =>
-        {
-            var seed = NumericHelper.ToInt(args[0]);
-            _extRandomState = seed;
-            return Const.VOID;
-        });
+         _b("random-seed", PRandomSeed);
     }
 
     private static long _extRandomState = Environment.TickCount;
@@ -168,5 +113,46 @@ public static partial class PrimitiveRegistry
         var ux = x < 0 ? (ulong)(~x) : (ulong)x;
         return (long)(64 - BitOperations.LeadingZeroCount(ux));
     }
+
+    private static object? PMakeErrorCondition(object?[] args) => ("condition", args.Length > 0 ? args[0] : Const.NIL, args.Length > 1 ? args[1] : Const.NIL);
+    private static object? PMakeConditionType(object?[] args) => ("condition-type", args.Length > 0 ? args[0] : Const.FALSE, args.Length > 1 ? args[1] : Const.FALSE);
+    private static object? PMakeCondition(object?[] args)
+    {
+        var type = args.Length > 0 ? args[0] : Const.FALSE;
+        var fields = args.Length > 1 ? args[1..] : [];
+        return ("condition", type, fields.ToList().ToCell());
+    }
+    private static object? PConditionRef(object?[] args)
+    {
+        if (args[0] is ITuple t && t.Length > 2 && t[0] is "condition")
+        {
+            var fields = ((object?)t[2]).Cells();
+            for (var i = 0; i + 1 < fields.Count; i += 2)
+                if (JitRuntime.Equal2(fields[i], args[1]) == Const.TRUE) return fields[i + 1];
+        }
+        return Const.FALSE;
+    }
+    private static object? PConditionMessage(object?[] args)
+    {
+        if (args[0] is ITuple ct && ct.Length > 2) return ct[2];
+        if (args[0] is ErrorObject eo) return eo.Message is Sym em ? em.Name : eo.Message;
+        if (args[0] is SchemeException se) return se.Val?.ToString() ?? "";
+        return ToStr(args[0]);
+    }
+    private static object? PDescribe(object?[] args) { Console.WriteLine(Printer.Format(args[0])); return Const.VOID; }
+    private static object? PFxCopyBit(object?[] args)
+    {
+        long x = NumericHelper.ToLong(args[0]);
+        int i = NumericHelper.ToInt(args[1]);
+        bool b = args.Length > 2 && Truthy(args[2]);
+        return b ? x : (x | (1L << i));
+    }
+    private static object? PFxFirstSetBit(object?[] args)
+    {
+        long x = NumericHelper.ToLong(args[0]);
+        return x == 0 ? -1L : (long)BitOperations.TrailingZeroCount((ulong)x);
+    }
+    private static object? PMaybeValues(object?[] args) => args[0] is Cell mc ? new Cell(mc.Car, Const.TRUE) : new Cell(Const.FALSE, Const.FALSE);
+    private static object? PRandomSeed(object?[] args) { _extRandomState = NumericHelper.ToInt(args[0]); return Const.VOID; }
 
 }

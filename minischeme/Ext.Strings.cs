@@ -12,32 +12,15 @@ public static partial class PrimitiveRegistry
     {
         _b("string-take", args => new SchemeString(Str(args[0])[..NumericHelper.ToInt(args[1])]));
         _b("string-drop", args => new SchemeString(Str(args[0])[NumericHelper.ToInt(args[1])..]));
-        _b("string-take-right", args =>
-        {
-            var s = Str(args[0]);
-            int n = NumericHelper.ToInt(args[1]);
-            return n == 0 ? new SchemeString("") : new SchemeString(s[^Math.Min(n, s.Length)..]);
-        });
-        _b("string-drop-right", args =>
-        {
-            var s = Str(args[0]);
-            int n = NumericHelper.ToInt(args[1]);
-            return n == 0 ? new SchemeString(s) : new SchemeString(s[..^Math.Min(n, s.Length)]);
-        });
+        _b("string-take-right", StringTakeRight);
+        _b("string-drop-right", StringDropRight);
         _b("string-pad", args => StrPad(args, false));
         _b("string-pad-right", args => StrPad(args, true));
         _b("string-trim", args => new SchemeString(Str(args[0]).Trim()));
         _b("string-trim-right", args => new SchemeString(Str(args[0]).TrimEnd()));
         _b("string-trim-both", args => new SchemeString(Str(args[0]).Trim()));
         _b("string-trim-left", args => new SchemeString(Str(args[0]).TrimStart()));
-        _b("string-replace", args =>
-        {
-            var s = Str(args[0]);
-            var rep = Str(args[1]);
-            int start = NumericHelper.ToInt(args[2]);
-            int end = NumericHelper.ToInt(args[3]);
-            return new SchemeString(s[..start] + rep + s[end..]);
-        });
+        _b("string-replace", StringReplace);
         _b("string-split", args => StrSplit(args));
         _b("string-join", args => StrJoin(args));
         _b("string-contains", args => StrContains(args[0], args[1]));
@@ -49,20 +32,8 @@ public static partial class PrimitiveRegistry
         _b("string-suffix-length-ci", args => SuffixLen(args, true));
         _b("string-count", args => StrCount(args));
         _b("string-map", args => StrMap(args));
-        _b("string-for-each", args =>
-        {
-            var fn = args[0];
-            var s = Str(args[1]);
-            foreach (var rune in s.EnumerateRunes()) App(fn, new SchemeChar(rune.Value));
-            return Const.VOID;
-        });
-        _b("string-for-each-index", args =>
-        {
-            var fn = args[0];
-            var s = Str(args[1]);
-            for (int i = 0; i < s.Length; i++) App(fn, (long)i);
-            return Const.VOID;
-        });
+        _b("string-for-each", StringForEach);
+        _b("string-for-each-index", StringForEachIndex);
         _b("string-fold", args => StrFold(args, false));
         _b("string-fold-right", args => StrFold(args, true));
         _b("string-index", args => StrIndex(args[0], args[1], false, false));
@@ -82,14 +53,7 @@ public static partial class PrimitiveRegistry
         _b("string-titlecase", args => new SchemeString(TitleCase(Str(args[0]))));
         _b("string-tokenize", args => Tokenize(args));
         _b("string-unfold", args => StrUnfold(args));
-        _b("string-tabulate", args =>
-        {
-            int n = NumericHelper.ToInt(args[0]);
-            var fn = args[1];
-            var sb = new StringBuilder();
-            for (int i = 0; i < n; i++) sb.Append(char.ConvertFromUtf32(AsChar(App(fn, (long)i))));
-            return new SchemeString(sb.ToString());
-        });
+        _b("string-tabulate", StringTabulate);
         _b("string->char-set", args => MakeCharSet(Str(args[0])));
         _b("string->vector", args => StrToVector(args[0]));
         _b("vector->string", args => VectorToStr(args[0]));
@@ -100,6 +64,54 @@ public static partial class PrimitiveRegistry
         _b("string-ci>=?", args => string.Compare(Str(args[0]), Str(args[1]), StringComparison.OrdinalIgnoreCase) >= 0 ? Const.TRUE : Const.FALSE);
         _b("string-ci>?", args => string.Compare(Str(args[0]), Str(args[1]), StringComparison.OrdinalIgnoreCase) > 0 ? Const.TRUE : Const.FALSE);
         return Const.VOID;
+    }
+
+    private static object? StringTakeRight(object?[] args)
+    {
+        var s = Str(args[0]);
+        int n = NumericHelper.ToInt(args[1]);
+        return n == 0 ? new SchemeString("") : new SchemeString(s[^Math.Min(n, s.Length)..]);
+    }
+
+    private static object? StringDropRight(object?[] args)
+    {
+        var s = Str(args[0]);
+        int n = NumericHelper.ToInt(args[1]);
+        return n == 0 ? new SchemeString(s) : new SchemeString(s[..^Math.Min(n, s.Length)]);
+    }
+
+    private static object? StringReplace(object?[] args)
+    {
+        var s = Str(args[0]);
+        var rep = Str(args[1]);
+        int start = NumericHelper.ToInt(args[2]);
+        int end = NumericHelper.ToInt(args[3]);
+        return new SchemeString(s[..start] + rep + s[end..]);
+    }
+
+    private static object? StringForEach(object?[] args)
+    {
+        var fn = args[0];
+        var s = Str(args[1]);
+        foreach (var rune in s.EnumerateRunes()) App(fn, new SchemeChar(rune.Value));
+        return Const.VOID;
+    }
+
+    private static object? StringForEachIndex(object?[] args)
+    {
+        var fn = args[0];
+        var s = Str(args[1]);
+        for (int i = 0; i < s.Length; i++) App(fn, (long)i);
+        return Const.VOID;
+    }
+
+    private static object? StringTabulate(object?[] args)
+    {
+        int n = NumericHelper.ToInt(args[0]);
+        var fn = args[1];
+        var sb = new StringBuilder();
+        for (int i = 0; i < n; i++) sb.Append(char.ConvertFromUtf32(AsChar(App(fn, (long)i))));
+        return new SchemeString(sb.ToString());
     }
 
     private static string Str(object? x) => x is SchemeString ss ? ss.ToString() : ToStr(x);

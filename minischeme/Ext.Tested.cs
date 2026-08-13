@@ -111,10 +111,7 @@ public static partial class PrimitiveRegistry
         _b("make-operator-parser", _ => (Func<object?[], object?>)(a => a.Length == 0 ? Const.FALSE : a[0]));
         _b("parse", a => (long)(a[0] is SchemeChar c0 ? c0.Codepoint - '0' : NumericHelper.ToLong(a[0])) * 10 + (a[1] is SchemeChar c1 ? c1.Codepoint - '0' : NumericHelper.ToLong(a[1])));
         _b("char", a => a[0] is SchemeChar ? a[0] : new SchemeChar((int)NumericHelper.ToLong(a[0])));
-        _b("csv-read", a => {
-            var port = a[0]; var text = port is ITuple t && t.Length > 2 && t[2] is StringPort sp ? sp.Data : "";
-            return text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => line.Split(',').Select(x => (object?)new SchemeString(x)).ToCell()).ToCell();
-        });
+         _b("csv-read", PCsvRead);
         _b("sxml?", a => a[0] is Cell ? Const.TRUE : Const.FALSE);
         _b("recursive-equality?", a => Const.TRUE);
         _b("sort", a => a.Length > 1 && a[0] is Cell && a[1] is not Cell
@@ -125,11 +122,7 @@ public static partial class PrimitiveRegistry
         _b("int-vector", a => new SchemeVector(a));
         _b("int-vector?", a => a[0] is SchemeVector ? Const.TRUE : Const.FALSE);
         _b("m4-zero", _ => new SchemeVector(Enumerable.Repeat<object?>(0L, 16)));
-        _b("group-by", a => {
-            var yes = new List<object?>(); var no = new List<object?>();
-            foreach (var x in a[1].Cells()) (Truthy(App(a[0], x)) ? yes : no).Add(x);
-            return new Cell(yes.ToCell(), new Cell(no.ToCell(), Const.NIL));
-        });
+         _b("group-by", PGroupBy);
         _b("|>", a => a.Length == 3 ? NumericHelper.Mul(NumericHelper.Add(a[0], a[1]), a[2]) : a.Length == 0 ? Const.NIL : a[0]);
     }
 
@@ -141,5 +134,18 @@ public static partial class PrimitiveRegistry
         if (bits > 0) sb.Append(alphabet[(buffer << (5 - bits)) & 31]);
         while (sb.Length % 8 != 0) sb.Append('=');
         return sb.ToString();
+    }
+
+    private static object? PCsvRead(object?[] a)
+    {
+        var port = a[0]; var text = port is ITuple t && t.Length > 2 && t[2] is StringPort sp ? sp.Data : "";
+        return text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(line => line.Split(',').Select(x => (object?)new SchemeString(x)).ToCell()).ToCell();
+    }
+
+    private static object? PGroupBy(object?[] a)
+    {
+        var yes = new List<object?>(); var no = new List<object?>();
+        foreach (var x in a[1].Cells()) (Truthy(App(a[0], x)) ? yes : no).Add(x);
+        return new Cell(yes.ToCell(), new Cell(no.ToCell(), Const.NIL));
     }
 }
