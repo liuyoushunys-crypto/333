@@ -22,7 +22,6 @@ public class Program
         var _allLibs = new[] { "boot-min2.scm", "boot-core.scm", "boot-sugar.scm" };
         var pyb = Environment.GetEnvironmentVariable("MSCM_PYB") == "1";
         var _libs = _allLibs;//pyb ? _allLibs.Take(3).ToArray() : _allLibs;
-        PrimitiveRegistry.InitExt();
         if (Directory.Exists(scmDir))
         {
             foreach (var lib in _libs)
@@ -42,6 +41,10 @@ public class Program
                 catch { }
             }
         }
+
+        // Install native extensions after Scheme libraries load so their
+        // provisional definitions cannot replace the runtime contract.
+        PrimitiveRegistry.InitExt();
 
         if (args.Length > 0)
         {

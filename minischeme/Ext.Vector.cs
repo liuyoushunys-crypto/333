@@ -129,7 +129,12 @@ public static partial class PrimitiveRegistry
         {
             var r = App(fn, (long)i, s);
             if (r is Cell c) { result.Add(c.Car); s = c.Cdr; }
-            else if (r is SchemeVector v && v.Length >= 2) { result.Add(v[0]); s = v[1]; }
+            else if (r is SchemeVector v && v.Length >= 2)
+            {
+                // The host represents multiple values as a vector.
+                result.Add(v[0]);
+                s = v.Length == 2 ? v[1] : v.Data.Skip(1).ToCell();
+            }
             else if (r is System.Runtime.CompilerServices.ITuple t && t.Length >= 2)
             {
                 result.Add(t[0]);

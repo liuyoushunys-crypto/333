@@ -34,6 +34,7 @@ public static partial class PrimitiveRegistry
         _b("fx-width", _ => 64L);
         _b("fx-greatest", _ => long.MaxValue);
         _b("fx-least", _ => long.MinValue);
+        _b("void?", args => args[0] is Void ? Const.TRUE : Const.FALSE);
         _b("delay-force", args => args[0]);
         _b("bimap-forward", args => ((SchemeBimap)args[0]!).Forward.TryGetValue(args[1]!, out var value) ? value : Const.FALSE);
         _b("bimap-reverse", args => ((SchemeBimap)args[0]!).Reverse.TryGetValue(args[1]!, out var value) ? value : Const.FALSE);

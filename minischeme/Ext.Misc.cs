@@ -100,7 +100,7 @@ public static partial class PrimitiveRegistry
         _b("exact-nonnegative-integer?", args =>
             args[0] is long l && l >= 0 || args[0] is int i && i >= 0 || args[0] is BigInteger bi && bi >= 0 ? Const.TRUE : Const.FALSE);
         _b("exact-rational?", args => args[0] is SchemeFraction or int or long or BigInteger ? Const.TRUE : Const.FALSE);
-        _b("scheme-lcm", args => SchemeLcm(args));
+        _b("scheme-lcm", args => PLcm(args));
         _b("atom?", args => args[0] is not Cell ? Const.TRUE : Const.FALSE);
         _b("default-object?", args => args[0] is Void ? Const.TRUE : Const.FALSE);
         _b("symbol=?", args => SymbolEqual(args));
