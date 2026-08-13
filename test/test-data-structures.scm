@@ -8,9 +8,11 @@
 (define gen3 (list->generator '(a b c)))
 (check "generator->list from list" (generator->list gen3) '(a b c))
 
+(define g4 (list->generator '(1 2 3 4)))
 (define g5 (generator-filter odd? g4))
   (check "generator-filter" (not (not (procedure? generator-filter))) #t)
 
+(define g6 (list->generator '(1 2 3 4)))
 (define g7 (generator-take g6 3))
   (check "generator-take" (not (not (procedure? generator-take))) #t)
 
@@ -25,6 +27,7 @@
 (check "stream-take" (generator->list (list->generator (stream-take nats 3))) '(0 1 2))
 (check "naturals stream" (not (not (procedure? stream-car))) #t)
 
+(define q (make-list-queue '(1 2 3)))
 ;;──────────────────── SRFI-117 List Queues ────────────────────
 
   (check "list-queue?" (not (not (procedure? list-queue?))) #t)
@@ -344,4 +347,3 @@
 (test-equal "boolean=?" (boolean=? #t #t #t) #t)
 
 (test-end "scheme_builtins_base_ext — 杂项谓词和工具")
-
