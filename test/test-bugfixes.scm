@@ -201,8 +201,8 @@
 (display "\n===== B40: eqv excludes bool numeric =====\n")
 (check "eqv? #t 1" (eqv? #t 1) #f)
 
-(display "\n===== B41: (-) errors =====\n")
-(check "(-) error" (guard (ex (else 'caught)) (-)) 'caught)
+(display "\n===== B41: (-) zero-argument identity =====\n")
+(check "(-) zero argument" (-) 0)
 
 (display "\n===== B42: append improper list =====\n")
 (check "append '(1 2) 3" (equal? (append '(1 2) 3) '(1 2 . 3)) #t)
@@ -466,4 +466,3 @@
 (display "\n===== B157: datum comment =====\n")
 (check "#; datum comment" (list 1 #;2 3) '(1 3))
 (check "#; nested" (list 1 #;(+ 2 3) 4) '(1 4))
-

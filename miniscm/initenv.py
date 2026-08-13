@@ -444,7 +444,11 @@ def initenv():
     builtin('make-hash-table', make_ht)
     builtin('hash-table?', lambda x: TRUE if isinstance(x, dict) else FALSE)
     builtin('hash-table-size', lambda ht: len(ht))
-    builtin('hash-table-set!', lambda ht, k, v: (ht.__setitem__(k, v), VOID)[-1])
+    def hash_table_set(ht, *pairs):
+        if len(pairs) % 2: raise SchemeException('hash-table-set!: expected key/value pairs')
+        for i in range(0, len(pairs), 2): ht[pairs[i]] = pairs[i + 1]
+        return VOID
+    builtin('hash-table-set!', hash_table_set)
     builtin('hash-table-ref', lambda ht, k, *default: ht[k] if k in ht else (default[0] if default else FALSE))
     builtin('hash-table-ref/default', hash_table_ref_default)
     builtin('hash-table-exists?', lambda ht, k: TRUE if k in ht else FALSE)

@@ -152,7 +152,14 @@ public static partial class PrimitiveRegistry
         if (args.Length < 2) return Const.TRUE;
         var first = args[0];
         for (int i = 1; i < args.Length; i++)
-            if (NumericHelper.Compare(first, args[i]) != 0) return Const.FALSE;
+        {
+            var other = args[i];
+            var firstBool = first is Sym fs && (fs.Name == "#t" || fs.Name == "#f");
+            var otherBool = other is Sym os && (os.Name == "#t" || os.Name == "#f");
+            if (firstBool != otherBool) return Const.FALSE;
+            if (firstBool ? !ReferenceEquals(first, other) : NumericHelper.Compare(first, other) != 0)
+                return Const.FALSE;
+        }
         return Const.TRUE;
     }
 
