@@ -6,6 +6,7 @@ using System.Text;
 using Miniscm.Types;
 using Miniscm.Eval;
 using Void = Miniscm.Types.Void;
+using Miniscm.Compiler;
 
 namespace Miniscm.Primitives;
 
@@ -2019,4 +2020,756 @@ public static partial class PrimitiveRegistry
         while (n > 0) { result.Insert(0, digits[(int)(n % radix)]); n /= radix; }
         return result.ToString();
     }
+
+
+    // ── initenv_ext.py 对齐补齐 ──
+    // miniscm/initenv_ext.py（注册自 primitives_ext.py）中，
+    // minischeme 运行时（含 scm 库）仍未定义的 builtin。
+    // 由 Program.cs 在 scm 库加载后调用 InitExt() 注册。
+
+    private static long _extRandomState = Environment.TickCount;
+
+    private static bool Truthy(object? v)
+    {
+        if (v is Sym s) return !ReferenceEquals(s, Const.FALSE);
+        if (v is Nil) return false;
+        return true;
+    }
+
+    private static long PopCount(long x)
+    {
+        return BitOperations.PopCount((ulong)x);
+    }
+
+    private static long BitLength(long x)
+    {
+        if (x == 0) return 0;
+        var ux = x < 0 ? (ulong)(~x) : (ulong)x;
+        return (long)(64 - BitOperations.LeadingZeroCount(ux));
+    }
+
+    private static object? PMakeErrorCondition(object?[] args) => ("condition", args.Length > 0 ? args[0] : Const.NIL, args.Length > 1 ? args[1] : Const.NIL);
+    private static object? PMakeConditionType(object?[] args) => ("condition-type", args.Length > 0 ? args[0] : Const.FALSE, args.Length > 1 ? args[1] : Const.FALSE);
+    private static object? PMakeCondition(object?[] args)
+    {
+        var type = args.Length > 0 ? args[0] : Const.FALSE;
+        var fields = args.Length > 1 ? args[1..] : [];
+        return ("condition", type, fields.ToList().ToCell());
+    }
+    private static object? PConditionRef(object?[] args)
+    {
+        if (args[0] is ITuple t && t.Length > 2 && t[0] is "condition")
+        {
+            var fields = ((object?)t[2]).Cells();
+            for (var i = 0; i + 1 < fields.Count; i += 2)
+                if (JitRuntime.Equal2(fields[i], args[1]) == Const.TRUE) return fields[i + 1];
+        }
+        return Const.FALSE;
+    }
+    private static object? PConditionMessage(object?[] args)
+    {
+        if (args[0] is ITuple ct && ct.Length > 2) return ct[2];
+        if (args[0] is ErrorObject eo) return eo.Message is Sym em ? em.Name : eo.Message;
+        if (args[0] is SchemeException se) return se.Val?.ToString() ?? "";
+        return ToStr(args[0]);
+    }
+    private static object? PDescribe(object?[] args) { Console.WriteLine(Printer.Format(args[0])); return Const.VOID; }
+    private static object? PFxCopyBit(object?[] args)
+    {
+        long x = NumericHelper.ToLong(args[0]);
+        int i = NumericHelper.ToInt(args[1]);
+        bool b = args.Length > 2 && Truthy(args[2]);
+        return b ? x : (x | (1L << i));
+    }
+    private static object? PFxFirstSetBit(object?[] args)
+    {
+        long x = NumericHelper.ToLong(args[0]);
+        return x == 0 ? -1L : (long)BitOperations.TrailingZeroCount((ulong)x);
+    }
+    private static object? PMaybeValues(object?[] args) => args[0] is Cell mc ? new Cell(mc.Car, Const.TRUE) : new Cell(Const.FALSE, Const.FALSE);
+    private static object? PRandomSeed(object?[] args) { _extRandomState = NumericHelper.ToInt(args[0]); return Const.VOID; }
+
+
+
+    static object? GenNext(object? g)
+    {
+        if (g is Func<object?> f) return f();
+        if (g is Func<object?[], object?> fa) return fa(System.Array.Empty<object?>());
+        throw new Exception("not a generator");
+    }
+
+    // generator: (generator v ...) — 生成返回各值的 thunk
+    static object? PGenerator(object?[] args)
+    {
+        var vals = args.ToList();
+        int idx = 0;
+        return (Func<object?>)(() => idx < vals.Count ? vals[idx++] : Const.EOF);
+    }
+
+    // make-generator: (make-generator gen) — 恒等
+    static object? PMakeGenerator(object?[] args) => args[0];
+
+    // list->generator: 列表转 generator
+    static object? PListGenerator(object?[] args)
+    {
+        var items = new List<object?>();
+        object? cur = args[0];
+        while (cur is Cell c) { items.Add(c.Car); cur = c.Cdr; }
+        int idx = 0;
+        return (Func<object?>)(() => idx < items.Count ? items[idx++] : Const.EOF);
+    }
+
+    // vector->generator
+    static object? PVectorGenerator(object?[] args)
+    {
+        var items = args[0] is SchemeVector sv ? sv.Data.ToList() : new List<object?>();
+        int idx = 0;
+        return (Func<object?>)(() => idx < items.Count ? items[idx++] : Const.EOF);
+    }
+
+    // string->generator
+    static object? PStringGenerator(object?[] args)
+    {
+        var items = ToStr(args[0]).EnumerateRunes().Select(r => (object?)new SchemeChar(r.Value)).ToList();
+        int idx = 0;
+        return (Func<object?>)(() => idx < items.Count ? items[idx++] : Const.EOF);
+    }
+
+    // generator->list
+    static object? PGeneratorToList(object?[] args)
+    {
+        var results = new List<object?>();
+        while (true) { var v = GenNext(args[0]); if (v is Eof) break; results.Add(v); }
+        return results.ToCell();
+    }
+
+    // generator->vector
+    static object? PGeneratorToVector(object?[] args)
+    {
+        var results = new List<object?>();
+        while (true) { var v = GenNext(args[0]); if (v is Eof) break; results.Add(v); }
+        return new SchemeVector(results);
+    }
+
+    // generator->string
+    static object? PGeneratorToString(object?[] args)
+    {
+        var sb = new StringBuilder();
+        while (true) { var v = GenNext(args[0]); if (v is Eof) break; sb.Append(char.ConvertFromUtf32(AsChar(v))); }
+        return new SchemeString(sb.ToString());
+    }
+
+    // make-range-generator: (make-range-generator start end [step])
+    static object? PMakeRangeGenerator(object?[] args)
+    {
+        var start = NumericHelper.ToLong(args[0]);
+        var end = NumericHelper.ToLong(args[1]);
+        var step = args.Length > 2 ? NumericHelper.ToLong(args[2]) : 1;
+        long cur = start;
+        return (Func<object?>)(() =>
+        {
+            if (step > 0 ? cur < end : cur > end) { var v = cur; cur += step; return v; }
+            return Const.EOF;
+        });
+    }
+
+    // make-iota-generator: (make-iota-generator n [step [start]])
+    static object? PMakeIotaGenerator(object?[] args)
+    {
+        var n = NumericHelper.ToLong(args[0]);
+        var step = args.Length > 1 ? NumericHelper.ToLong(args[1]) : 1;
+        var start = args.Length > 2 ? NumericHelper.ToLong(args[2]) : 0;
+        long cnt = 0;
+        return (Func<object?>)(() => cnt < n ? (start + cnt++ * step) : Const.EOF);
+    }
+
+    // generator-map: (generator-map fn g)
+    static object? PGeneratorMap(object?[] args)
+    {
+        var fn = args[0];
+        var g = args[1];
+        return (Func<object?>)(() =>
+        {
+            var v = GenNext(g);
+            return v is Eof ? Const.EOF : App(fn, v);
+        });
+    }
+
+    // generator-filter: (generator-filter pred g)
+    static object? PGeneratorFilter(object?[] args)
+    {
+        var pred = args[0];
+        var g = args[1];
+        return (Func<object?>)(() =>
+        {
+            while (true)
+            {
+                var v = GenNext(g);
+                if (v is Eof) return Const.EOF;
+                if (Truthy(App(pred, v))) return v;
+            }
+        });
+    }
+
+    // generator-take: (generator-take g n)
+    static object? PGeneratorTake(object?[] args)
+    {
+        var g = args[0];
+        var n = NumericHelper.ToLong(args[1]);
+        long cnt = 0;
+        return (Func<object?>)(() =>
+        {
+            if (cnt >= n) return Const.EOF;
+            var v = GenNext(g);
+            if (v is Eof) return Const.EOF;
+            cnt++;
+            return v;
+        });
+    }
+
+    // generator-count: (generator-count pred g)
+    static object? PGeneratorCount(object?[] args)
+    {
+        var pred = args[0];
+        var g = args[1];
+        long cnt = 0;
+        while (true) { var v = GenNext(g); if (v is Eof) break; if (Truthy(App(pred, v))) cnt++; }
+        return cnt;
+    }
+
+    // generator-find: (generator-find pred g)
+    static object? PGeneratorFind(object?[] args)
+    {
+        var pred = args[0];
+        var g = args[1];
+        while (true) { var v = GenNext(g); if (v is Eof) return Const.EOF; if (Truthy(App(pred, v))) return v; }
+    }
+
+    // generator-for-each: (generator-for-each fn g)
+    static object? PGeneratorForEach(object?[] args)
+    {
+        var fn = args[0];
+        var g = args[1];
+        while (true) { var v = GenNext(g); if (v is Eof) break; App(fn, v); }
+        return Const.VOID;
+    }
+
+
+    private static object IntegerBits(long n)
+    {
+        if (n == 0) return new Cell(0L, Nil.Instance);
+        var bits = new List<object?>();
+        var value = Math.Abs(n);
+        while (value != 0) { bits.Add(value & 1); value >>= 1; }
+        return bits.ToCell()!;
+    }
+
+    private static object? ClosePort(object?[] args)
+    {
+        if (args[0] is ITuple it && it.Length > 2 && it[0] is "port" && it[2] is IDisposable d) d.Dispose();
+        return Const.VOID;
+    }
+
+    private static object? RationalExpt(object?[] args)
+    {
+        var value = Math.Pow(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1]));
+        return value == Math.Truncate(value) ? (object?)(long)value : value;
+    }
+
+
+    private static object? PPairFold(object?[] args)
+    {
+        object? acc = args[1];
+        var cur = args[2];
+        while (cur is Cell c) { acc = App(args[0], cur, acc); cur = c.Cdr; }
+        return acc;
+    }
+
+    private static object? PPairFoldRight(object?[] args)
+    {
+        var pairs = new List<object?>();
+        var cur = args[2];
+        while (cur is Cell c) { pairs.Add(cur); cur = c.Cdr; }
+        object? acc = args[1];
+        for (int i = pairs.Count - 1; i >= 0; i--) acc = App(args[0], pairs[i], acc);
+        return acc;
+    }
+
+    private static object? PSplitAt(object?[] args)
+    {
+        var first = new List<object?>();
+        var cur = args[0];
+        int n = NumericHelper.ToInt(args[1]);
+        while (cur is Cell c && n-- > 0) { first.Add(c.Car); cur = c.Cdr; }
+        return new Cell(first.ToCell(), new Cell(cur, Const.NIL));
+    }
+
+    private static object? PInitConditionMessage(object?[] args)
+    {
+        if (args[0] is ErrorObject eo) return eo.Message is Sym em ? em.Name : eo.Message;
+        if (args[0] is SchemeException se) return se.Val?.ToString() ?? "";
+        return ToStr(args[0]);
+    }
+
+    private static object? PConditionReportString(object?[] args)
+    {
+        if (args[0] is ErrorObject eo3) return new SchemeString(eo3.Message is Sym em3 ? em3.Name : ToStr(eo3.Message));
+        return new SchemeString("unknown condition");
+    }
+
+    private static object? PUtf8String(object?[] args)
+    {
+        byte[] data = args[0] is SchemeBytevector bv ? bv.Data : Encoding.UTF8.GetBytes(ToStr(args[0]));
+        int start = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 0;
+        int end = args.Length > 2 ? NumericHelper.ToInt(args[2]) : data.Length;
+        if (start < 0) start = 0;
+        if (end > data.Length) end = data.Length;
+        return new SchemeString(Encoding.UTF8.GetString(data, start, end - start));
+    }
+
+    private static object? PStringForEach(object?[] args)
+    {
+        var fn = args[0];
+        var s = ToStr(args[1]);
+        foreach (var rune in s.EnumerateRunes()) App(fn, new SchemeChar(rune.Value));
+        return Const.VOID;
+    }
+
+    private static object? PStringMap(object?[] args)
+    {
+        var fn = args[0];
+        var s = ToStr(args[1]);
+        var sb = new StringBuilder();
+        foreach (var rune in s.EnumerateRunes()) sb.Append(char.ConvertFromUtf32(AsChar(App(fn, new SchemeChar(rune.Value)))));
+        return new SchemeString(sb.ToString());
+    }
+
+    private static object? PBytevectorCopyBang(object?[] args)
+    {
+        var target = AsBytevector(args[0]); var at = NumericHelper.ToInt(args[1]);
+        var source = AsBytevector(args[2]); var start = args.Length > 3 ? NumericHelper.ToInt(args[3]) : 0;
+        var end = args.Length > 4 ? NumericHelper.ToInt(args[4]) : source.Length;
+        for (var i = start; i < end; i++) target[at++] = source[i];
+        return Const.VOID;
+    }
+
+    private static object? PWithInputFromString(object?[] args)
+    {
+        var oldIn = Console.In;
+        using var sr = new StringReader(ToStr(args[0]));
+        Console.SetIn(sr);
+        try { return App(args[1]); } finally { Console.SetIn(oldIn); }
+    }
+
+    private static object? PCallWithInputString(object?[] args)
+    {
+        var port = MakePort("input", new StringPort(ToStr(args[0])));
+        return App(args[1], port);
+    }
+
+    private static object? PCallWithPort(object?[] args)
+    {
+        try { return App(args[1], args[0]); }
+        finally { if (args[0] is ITuple it && it.Length > 2 && it[2] is IDisposable d) d.Dispose(); }
+    }
+
+    private static object? PHashTableAlist(object?[] args)
+    {
+        var items = new List<object?>();
+        foreach (var kv in (Dictionary<object, object?>)args[0]!) items.Add(new Cell(kv.Key, kv.Value));
+        return items.ToCell();
+    }
+
+    private static object? PAlistHashTable(object?[] args)
+    {
+        var ht = new Dictionary<object, object?>();
+        var cur = args[0];
+        while (cur is Cell c) { if (c.Car is Cell pair) ht[pair.Car!] = pair.Cdr; cur = c.Cdr; }
+        return ht;
+    }
+
+    private static object? PHashTableMap(object?[] args)
+    {
+        var fn = args[0];
+        var items = new List<object?>();
+        foreach (var kv in (Dictionary<object, object?>)args[1]!) items.Add(JitRuntime.Invoke(fn, [kv.Key, kv.Value], Evaluator.GlobalEnv));
+        return items.ToCell();
+    }
+
+    private static object? PHashTableFold(object?[] args)
+    {
+        var fn = args[0];
+        object? acc = args[1];
+        foreach (var kv in (Dictionary<object, object?>)args[2]!) acc = JitRuntime.Invoke(fn, [acc, kv.Key, kv.Value], Evaluator.GlobalEnv);
+        return acc;
+    }
+
+    private static object? PBooleansInteger(object?[] args)
+    {
+        long r = 0;
+        for (int i = 0; i < args.Length; i++) if (ReferenceEquals(args[i], Const.TRUE)) r |= 1L << i;
+        return r;
+    }
+
+    private static object? PCxr(object?[] args, Func<object?, object?>[] chain)
+    {
+        object? x = args[0];
+        for (int i = chain.Length - 1; i >= 0; i--) x = chain[i](x);
+        return x;
+    }
+
+
+
+    static object? PEqvQ(object?[] args)
+    {
+        var a = args[0];
+        var b = args[1];
+        if (ReferenceEquals(a, b)) return Const.TRUE;
+        if (a is null || b is null) return Const.FALSE;
+        // 数值：跨类型同值（如 int 1 vs long 1）也 #t，但 exact/inexact 混合必须 #f
+        if (a is int or long or BigInteger or SchemeFraction or double or float or Complex
+            && b is int or long or BigInteger or SchemeFraction or double or float or Complex)
+        {
+            if (a is Complex || b is Complex)
+            {
+                if (a.GetType() != b.GetType()) return Const.FALSE;
+                return a.Equals(b) ? Const.TRUE : Const.FALSE;
+            }
+            var ta = NumericHelper.Classify(a);
+            var tb = NumericHelper.Classify(b);
+            var exactA = ta <= NumericHelper.NumType.Fraction;
+            var exactB = tb <= NumericHelper.NumType.Fraction;
+            if (exactA != exactB) return Const.FALSE;
+            return NumericHelper.Compare(a, b) == 0 ? Const.TRUE : Const.FALSE;
+        }
+        if (a.GetType() == b.GetType())
+        {
+            if (a is string s) return s == (string)b ? Const.TRUE : Const.FALSE;
+            if (a is SchemeChar sc) return sc.Codepoint == ((SchemeChar)b).Codepoint ? Const.TRUE : Const.FALSE;
+        }
+        return Const.FALSE;
+    }
+
+
+    static object? PListTail(object?[] args)
+    {
+        var n = NumericHelper.ToInt(args[1]);
+        object? cur = args[0];
+        for (int i = 0; i < n; i++) cur = cur is Cell c ? c.Cdr : Const.NIL;
+        return cur;
+    }
+
+
+    static object? PAppend(object?[] args)
+    {
+        if (args.Length == 0) return Const.NIL;
+        object? result = args[^1];
+        for (int i = args.Length - 2; i >= 0; i--)
+        {
+            var lst = args[i];
+            if (lst is Cell cc)
+            {
+                var items = new List<object?> { cc.Car };
+                var cur = cc.Cdr;
+                while (cur is Cell c) { items.Add(c.Car); cur = c.Cdr; }
+                for (int j = items.Count - 1; j >= 0; j--)
+                    result = new Cell(items[j], result);
+            }
+        }
+        return result;
+    }
+
+
+    static object? PReverse(object?[] args)
+    {
+        var items = new List<object?>();
+        object? cur = args[0];
+        while (cur is Cell c) { items.Add(c.Car); cur = c.Cdr; }
+        if (cur is not Nil) throw new Exception("reverse: not a proper list");
+        return CellHelper.ToCell(items.AsEnumerable().Reverse());
+    }
+
+
+    static object? PListQ(object?[] args)
+    {
+        var x = args[0];
+        if (x is Nil) return Const.TRUE;
+        if (x is not Cell) return Const.FALSE;
+        object? slow = x, fast = x;
+        while (fast is Cell fc && fc.Cdr is Cell fcc)
+        {
+            slow = ((Cell)slow!).Cdr;
+            fast = fcc.Cdr;
+            if (ReferenceEquals(slow, fast)) return Const.FALSE;
+        }
+        // Loop exited because fast's cdr is not a Cell. A proper list ends
+        // with the empty list (fast may be Nil or a single Cell whose cdr
+        // is Nil); a dotted list ends with a non-Nil atom.
+        return (fast is Nil) || (fast is Cell last && last.Cdr is Nil)
+            ? Const.TRUE : Const.FALSE;
+    }
+
+
+    static object? PListCopy(object?[] args)
+    {
+        if (args[0] is Nil) return Const.NIL;
+        if (args[0] is not Cell first) return args[0];
+        var head = new Cell(first.Car, Const.NIL);
+        var tail = head;
+        object? cur = first.Cdr;
+        while (cur is Cell c)
+        {
+            var n = new Cell(c.Car, Const.NIL);
+            tail.Cdr = n;
+            tail = n;
+            cur = c.Cdr;
+        }
+        if (cur is not Nil) tail.Cdr = cur;  // 保留点对尾
+        return head;
+    }
+
+
+    static object? PMemq(object?[] args)
+    {
+        object? cur = args[1];
+        while (cur is Cell c) { if (ReferenceEquals(c.Car, args[0]) || c.Car?.Equals(args[0]) == true) return cur; cur = c.Cdr; }
+        return Const.FALSE;
+    }
+
+
+    static object? PMinus(object?[] args)
+    {
+        if (args.Length == 0) return 0L;
+        if (args.Length == 1) return NumericHelper.Negate(args[0]);
+        return args.Skip(1).Aggregate((object?)args[0], (acc, x) => NumericHelper.Sub(acc!, x))!;
+    }
+
+
+    static object? PNumberString(object?[] args)
+    {
+        var radix = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 10;
+        if (radix == 10) return Printer.Format(args[0]);
+        var n = NumericHelper.ToBigInt(args[0]);
+        if (n < 0) return "-" + ToRadixString(-n, radix);
+        return ToRadixString(n, radix);
+    }
+
+
+    static object? PEq(object?[] args)
+    {
+        if (args.Length < 2) return Const.TRUE;
+        var first = args[0];
+        for (int i = 1; i < args.Length; i++)
+        {
+            var other = args[i];
+            var firstBool = first is Sym fs && (fs.Name == "#t" || fs.Name == "#f");
+            var otherBool = other is Sym os && (os.Name == "#t" || os.Name == "#f");
+            if (firstBool != otherBool) return Const.FALSE;
+            if (firstBool ? !ReferenceEquals(first, other) : NumericHelper.Compare(first, other) != 0)
+                return Const.FALSE;
+        }
+        return Const.TRUE;
+    }
+
+
+    static object? PLt(object?[] args)
+    {
+        if (args.Length < 2) return Const.TRUE;
+        for (int i = 1; i < args.Length; i++)
+            if (NumericHelper.Compare(args[i - 1], args[i]) >= 0) return Const.FALSE;
+        return Const.TRUE;
+    }
+
+
+    static object? PGt(object?[] args)
+    {
+        if (args.Length < 2) return Const.TRUE;
+        for (int i = 1; i < args.Length; i++)
+            if (NumericHelper.Compare(args[i - 1], args[i]) <= 0) return Const.FALSE;
+        return Const.TRUE;
+    }
+
+
+    static object? PLe(object?[] args)
+    {
+        if (args.Length < 2) return Const.TRUE;
+        for (int i = 1; i < args.Length; i++)
+            if (NumericHelper.Compare(args[i - 1], args[i]) > 0) return Const.FALSE;
+        return Const.TRUE;
+    }
+
+
+    static object? PGe(object?[] args)
+    {
+        if (args.Length < 2) return Const.TRUE;
+        for (int i = 1; i < args.Length; i++)
+            if (NumericHelper.Compare(args[i - 1], args[i]) < 0) return Const.FALSE;
+        return Const.TRUE;
+    }
+
+
+    static object? PMap(object?[] args)
+    {
+        var fn = args[0];
+        var results = new List<object?>();
+        if (args.Length == 2)
+        {
+            object? cur = args[1];
+            while (cur is Cell c) { results.Add(App(fn, c.Car)); cur = c.Cdr; }
+        }
+        else
+        {
+            var lists = new List<object?>[args.Length - 1];
+            for (int i = 0; i < lists.Length; i++) lists[i] = args[i + 1].Cells();
+            int minLen = lists.Min(l => l.Count);
+            for (int i = 0; i < minLen; i++)
+            {
+                var callArgs = new object?[lists.Length];
+                for (int j = 0; j < lists.Length; j++) callArgs[j] = lists[j][i];
+                results.Add(App(fn, callArgs));
+            }
+        }
+        return results.ToCell();
+    }
+
+
+    static object? PForEach(object?[] args)
+    {
+        var fn = args[0];
+        if (args.Length == 2)
+        {
+            object? cur = args[1];
+            while (cur is Cell c) { App(fn, c.Car); cur = c.Cdr; }
+        }
+        else
+        {
+            var lists = new List<object?>[args.Length - 1];
+            for (int i = 0; i < lists.Length; i++) lists[i] = args[i + 1].Cells();
+            int minLen = lists.Min(l => l.Count);
+            for (int i = 0; i < minLen; i++)
+            {
+                var callArgs = new object?[lists.Length];
+                for (int j = 0; j < lists.Length; j++) callArgs[j] = lists[j][i];
+                App(fn, callArgs);
+            }
+        }
+        return Const.VOID;
+    }
+
+
+    static object? PFilter(object?[] args)
+    {
+        var pred = args[0];
+        var results = new List<object?>();
+        object? cur = args[1];
+        while (cur is Cell c) { if (App(pred, c.Car) is Sym s && s != Const.FALSE) results.Add(c.Car); cur = c.Cdr; }
+        return results.ToCell();
+    }
+
+
+    static object? PDisplay(object?[] args)
+    {
+        var obj = args[0];
+        object? port = null;
+        if (args.Length > 1 && args[1] is ITuple t && t.Length >= 3 && t[0] is string s0 && s0 == "port" && (t[1] is "output" || t[1] is "input"))
+            port = t[2];
+        if (port is StreamWriter sw) { sw.Write(Printer.ToDisplayString(obj)); sw.Flush(); }
+        else if (port is StringBuilder sb) { sb.Append(Printer.ToDisplayString(obj)); }
+        else Console.Write(Printer.ToDisplayString(obj));
+        return Const.VOID;
+    }
+
+
+    static object? PWriteChar(object?[] args)
+    {
+        var cp = AsChar(args[0]);
+        var cs = char.ConvertFromUtf32(cp);
+        object? port = null;
+        if (args.Length > 1 && args[1] is ITuple t && t.Length >= 3 && t[0] is string s0 && s0 == "port" && (t[1] is "output" || t[1] is "input"))
+            port = t[2];
+        if (port is StreamWriter sw) { sw.Write(cs); sw.Flush(); }
+        else if (port is StringBuilder sb) { sb.Append(cs); }
+        else Console.Write(cs);
+        return Const.VOID;
+    }
+
+
+    static object? PWrite(object?[] args)
+    {
+        var obj = args[0];
+        object? port = null;
+        if (args.Length > 1 && args[1] is ITuple t && t.Length >= 3 && t[0] is string s0 && s0 == "port" && (t[1] is "output" || t[1] is "input"))
+            port = t[2];
+        if (port is StreamWriter sw) { sw.Write(Printer.Format(obj)); sw.Flush(); }
+        else if (port is StringBuilder sb) { sb.Append(Printer.Format(obj)); }
+        else Console.Write(Printer.Format(obj));
+        return Const.VOID;
+    }
+
+    static object? PPrint(object?[] args)
+    {
+        var value = args.Length > 0 ? args[0] : Const.VOID;
+        var port = args.Length > 1 ? args[1] : null;
+        var text = Printer.Format(value);
+        if (port is ITuple t && t.Length > 2 && t[0] is "port")
+        {
+            if (t[2] is StreamWriter sw) { sw.WriteLine(text); sw.Flush(); }
+            else if (t[2] is StringBuilder sb) sb.AppendLine(text);
+            else if (t[2] is BytePort bp) { foreach (var b in Encoding.UTF8.GetBytes(text + "\n")) bp.Append(b); }
+        }
+        else Console.WriteLine(text);
+        return Const.VOID;
+    }
+
+
+    static object? PError(object?[] args)
+    {
+        var irrList = args.Skip(1).ToList();
+        throw new SchemeException(new ErrorObject(args[0], irrList.ToCell()));
+    }
+
+
+    static object? PSxDefmacro(object?[] args)
+    {
+        if (args.Length >= 3 && args[0] is Sym nameSym && args[1] is not null && args[2] is not null)
+        {
+            // (sx-defmacro name pattern body) — Scheme 端宏注册桥接原语。
+            // 微解释器无 C# define-macro 特殊形式, my-definemacro 经此注册
+            // "macro" 元组到全局环境。pattern 固定为 rest 符号 args,
+            // 真正的模式解构与宏体求值在 Scheme (sx-macro-expand)。
+            var defEnv = args.Length > 3 && args[3] is Env de ? de : Evaluator.GlobalEnv;
+            Evaluator.GlobalEnv.Data[nameSym.Name] = ("macro", args[1], args[2], defEnv, true);
+            return nameSym;
+        }
+        throw new Exception("sx-defmacro: expected (sx-defmacro name pattern body [env])");
+    }
+
+    static object? PSxDefinedQ(object?[] args)
+    {
+        var name = (args[0] as Sym)?.Name ?? args[0]?.ToString() ?? "";
+        var env = args.Length > 1 && args[1] is Env e2 ? e2 : Evaluator.GlobalEnv;
+        return env.LookupSilent(name, null) is not null ? Const.TRUE : Const.FALSE;
+    }
+
+
+
+    private static object? PSxExpandCall(object?[] args)
+    {
+        if (args.Length >= 1 && args[0] is Cell call)
+        {
+            var env = args.Length > 1 && args[1] is Env e2 ? e2 : Evaluator.GlobalEnv;
+            var op = call.Car;
+            if (op is Sym ops)
+            {
+                var proc = env.LookupSilent(ops.Name, null);
+                if (proc is not null)
+                {
+                    var expanded = Evaluator.ExpandMacro(proc, call.Cdr, env);
+                    if (expanded is not null) return expanded;
+                }
+            }
+        }
+        return Const.FALSE;
+    }
+
 }
