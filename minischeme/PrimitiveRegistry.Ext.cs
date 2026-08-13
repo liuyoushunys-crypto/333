@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using Miniscm.Types;
 using Miniscm.Eval;
+using Miniscm.Compiler;
 using Void = Miniscm.Types.Void;
 
 namespace Miniscm.Primitives;
@@ -49,6 +50,31 @@ public static partial class PrimitiveRegistry
             var m = args.Length > 1 ? args[1] : Const.NIL;
             return ("condition", t, m);
         });
+        _b("make-condition-type", args =>
+        {
+            var name = args.Length > 0 ? args[0] : Const.FALSE;
+            var parent = args.Length > 1 ? args[1] : Const.FALSE;
+            return ("condition-type", name, parent);
+        });
+        _b("make-condition", args =>
+        {
+            var type = args.Length > 0 ? args[0] : Const.FALSE;
+            var fields = args.Length > 1 ? args[1..] : [];
+            return ("condition", type, fields.ToList().ToCell());
+        });
+        _b("condition?", args => args[0] is ITuple t && t.Length > 0 && (t[0] is "condition" or "condition-type") ? Const.TRUE : Const.FALSE);
+        _b("condition-ref", args =>
+        {
+            if (args[0] is ITuple t && t.Length > 2 && t[0] is "condition")
+            {
+                var fields = ((object?)t[2]).Cells();
+                for (var i = 0; i + 1 < fields.Count; i += 2)
+                    if (JitRuntime.Equal2(fields[i], args[1]) == Const.TRUE) return fields[i + 1];
+            }
+            return Const.FALSE;
+        });
+        _b("make-io-error", args => ("condition", Sym.Intern("i/o-error"), args.ToList().ToCell()));
+        _b("io-error?", args => args[0] is ITuple t && t.Length > 1 && t[1] is Sym s && s.Name == "i/o-error" ? Const.TRUE : Const.FALSE);
         _b("condition-message", args =>
         {
             if (args[0] is ITuple ct && ct.Length > 2)
