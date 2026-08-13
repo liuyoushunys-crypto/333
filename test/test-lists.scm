@@ -239,14 +239,14 @@
 (check "list-find-index" (list-find-index (lambda (x) (> x 2)) '(1 2 3 4)) 2)
 (check "list-flatten" (list-flatten '(1 (2 (3) 4) 5)) '(1 2 3 4 5))
 (check "list-head 3" (list-head '(1 2 3 4) 2) '(1 2))
-(check "list-partition" (list-partition even? '(1 2 3 4 5 6)) '((2 4 6) (1 3 5)) '(2 4 6) (1 3 5)))
+(check "list-partition" (list-partition even? '(1 2 3 4 5 6)) '((2 4 6) (1 3 5)))
 (check "list-queue (list-q)" (not (not (procedure? list-queue))) #t)
 (check "list-queue-list" (not (not (procedure? list-queue-list))) #t)
 (check "list-remove" (list-remove even? '(1 2 3 4 5)) '(1 3 5))
 (check "list-set!" (let ((l (list 1 2 3))) (list-set! l 1 'x) l) '(1 x 3))
 (check "list-stable-sort" (list-stable-sort < '(3 1 4 1 5)) '(1 1 3 4 5))
 (check "list-tail" (list-tail '(1 2 3 4) 2) '(3 4))
-(check "list-zip" (list-zip '(1 2) '(a b)) '((1 a) (2 b)) '(1 a) (2 b)))
+(check "list-zip" (list-zip '(1 2) '(a b)) '((1 a) (2 b)))
 (define lset (list 1 2 3))
 (define lset2 (list 2 3 4))
 (check "list= by = " (list= = '(1 2) '(1 2)) #t)
@@ -456,4 +456,3 @@
 (test-equal "cadddr" (cadddr '(1 2 3 4)) 4)
 
 (test-end "scheme_builtins_base — CxR 组合")
-
