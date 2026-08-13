@@ -10,22 +10,8 @@
 ;;    (infix 2 + 3 * 4) → 14
 ;; ═══════════════════════════════════════════════════════════════
 
-(define-syntax infix
-  (syntax-rules (+ - * /)
-    ((_ a + b) (+ a b))
-    ((_ a - b) (- a b))
-    ((_ a * b) (* a b))
-    ((_ a / b) (/ a b))
-    ((_ a + b + c ...) (infix (infix a + b) + c ...))
-    ((_ a - b - c ...) (infix (infix a - b) - c ...))
-    ((_ a * b * c ...) (infix (infix a * b) * c ...))
-    ((_ a / b / c ...) (infix (infix a / b) / c ...))
-    ((_ a + b * c) (+ a (* b c)))
-    ((_ a * b + c) (+ (* a b) c))
-    ((_ a + b - c) (+ a (- b c)))
-    ((_ a - b + c) (+ (- a b) c))
-    ((_ a * b / c) (* a (/ b c)))
-    ((_ a / b * c) (* (/ a b) c))))
+(define-macro (infix . terms)
+  `(infix-impl (quote ,terms)))
 
 ;; (display (infix 2 + 3 * 4)) (newline)    ;; 14
 ;; (display (infix 10 - 3 - 2)) (newline)    ;; 5

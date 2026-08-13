@@ -208,8 +208,27 @@ def register_scm12_host():
     builtin('json-encode', lambda x: SchemeString(json.dumps(_json_value(x), separators=(',', ':'))))
     builtin('%bits->integer', lambda x: sum((1 << i) for i,b in enumerate(cell_iter(x)) if scheme_truthy(b)))
     builtin('vector-cumulate', _vector_cumulate); builtin('vector-index-right', _vector_index_right); builtin('vector-skip-right', _vector_skip_right); builtin('vector-append-subvectors', _vector_append_subvectors)
-    builtin('tmap', lambda f: lambda g: (lambda: _map_value(f, g()))); builtin('tfilter', lambda p: lambda g: _filter_value(p,g)); builtin('ttake', lambda n: lambda g: _gen_take(int(n),g)); builtin('tdrop', lambda n: lambda g: drop_gen(int(n),g)); builtin('tconcatenate', lambda: lambda *g: be.data['generator-append'](*g))
-    builtin('list-transduce', lambda x,r,i,l: _lst([r(x, i, v) for v in cell_iter(l)])); builtin('vector-transduce', lambda x,r,i,v: _vec_fold(lambda j,a,z:r(x,a,z),i,v)); builtin('string-transduce', lambda x,r,i,s: _vec_fold(lambda j,a,z:r(x,a,z),i,SchemeVector([cs_char(c) for c in str(s)])))
+    def rcons(acc, value):
+        items = list(cell_iter(acc)) if isinstance(acc, Cell) else []
+        return _lst(items + [value])
+    def tmap(f):
+        return lambda reducer: lambda acc, value: _scheme_call(reducer, [acc, _scheme_call(f, [value])])
+    def tfilter(pred):
+        return lambda reducer: lambda acc, value: _scheme_call(reducer, [acc, value]) if scheme_truthy(_scheme_call(pred, [value])) else acc
+    def list_transduce(xform, reducer, init, values):
+        step = _scheme_call(xform, [reducer])
+        acc = init
+        for value in cell_iter(values):
+            acc = _scheme_call(step, [acc, value])
+        return acc
+    builtin('rcons', rcons)
+    builtin('tmap', tmap); builtin('tfilter', tfilter)
+    builtin('ttake', lambda n: lambda reducer: lambda acc, value: _scheme_call(reducer, [acc, value]) if int(n) > 0 else acc)
+    builtin('tdrop', lambda n: lambda reducer: lambda acc, value: _scheme_call(reducer, [acc, value]))
+    builtin('tconcatenate', lambda: lambda reducer: reducer)
+    builtin('list-transduce', list_transduce)
+    builtin('vector-transduce', lambda x,r,i,v: list_transduce(x, r, i, _lst(v.data if hasattr(v, 'data') else v)))
+    builtin('string-transduce', lambda x,r,i,s: list_transduce(x, r, i, _lst([cs_char(c) for c in str(s)])))
 
 
 def _gen_fold(f, acc, g):

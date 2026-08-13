@@ -23,6 +23,18 @@ public static partial class PrimitiveRegistry
     private static object? TestCall(object? p, params object?[] args) => App(p, args);
     private static bool TestTrue(object? x) => Truthy(x);
 
+    private static object? Everywhere(object? proc, object? x)
+    {
+        if (x is Cell c) return new Cell(Everywhere(proc, c.Car), Everywhere(proc, c.Cdr));
+        if (x is SchemeVector sv)
+        {
+            var nv = new SchemeVector(sv.Data.Count);
+            for (int i = 0; i < sv.Data.Count; i++) nv[i] = Everywhere(proc, sv.Data[i]);
+            return nv;
+        }
+        return App(proc, x);
+    }
+
     private static void RegisterTestedApis()
     {
         _b("ephemeron?", a => a[0] is SchemeEphemeron ? Const.TRUE : Const.FALSE);
@@ -90,11 +102,11 @@ public static partial class PrimitiveRegistry
         Evaluator.GlobalEnv.Define("red", new SchemeColor(1, 0, 0));
         _b("option", a => new SchemeOption(a[0], a.Length > 1 ? a[1] : Const.FALSE, a.Length > 2 ? a[2] : Const.FALSE));
         _b("option?", a => a[0] is SchemeOption ? Const.TRUE : Const.FALSE);
-        _b("everywhere", a => a.Length > 1 ? a[1] : Const.NIL);
+        _b("everywhere", a => Everywhere(a[0], a.Length > 1 ? a[1] : Const.NIL));
         _b("set-at", a => { var xs = a[0].Cells().ToList(); xs[NumericHelper.ToInt(a[1])] = a[2]; return xs.ToCell(); });
         _b("box-eval", a => a[0] is ValueTuple<string, object?> b ? b.Item2 : a[0]);
-        _b("assoc-map", a => a.Length == 0 ? Const.NIL : a[0]);
-        _b("assoc-map?", a => a[0] is Cell ? Const.TRUE : Const.FALSE);
+        _b("assoc-map", a => new Cell(new Cell(a[0], a.Length > 1 ? a[1] : Const.NIL), Const.NIL));
+        _b("assoc-map?", a => a.Length > 0 && a[0] is Cell ? Const.TRUE : Const.FALSE);
         _b("base32-encode", a => new SchemeString(Base32(a[0] is SchemeBytevector bv ? bv.Data : a[0].Cells().Select(NumericHelper.ToInt).Select(x => (byte)x).ToArray())));
         _b("make-operator-parser", _ => (Func<object?[], object?>)(a => a.Length == 0 ? Const.FALSE : a[0]));
         _b("parse", a => (long)(a[0] is SchemeChar c0 ? c0.Codepoint - '0' : NumericHelper.ToLong(a[0])) * 10 + (a[1] is SchemeChar c1 ? c1.Codepoint - '0' : NumericHelper.ToLong(a[1])));

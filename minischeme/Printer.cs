@@ -29,7 +29,7 @@ public static class Printer
         if (x is bool b) return b ? "#t" : "#f";
         if (x is Void) return "#<void>";
         if (x is Eof) return "#<eof>";
-        if (x is SchemeString ss) return $"\"{ss}\"".Replace("\\", "\\\\").Replace("\"", "\\\"");
+        if (x is SchemeString ss) return $"\"{ss.ToString().Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
         if (x is SchemeChar sc) return sc.ToString();
         if (x is SchemeVector sv) return sv.ToString();
         if (x is SchemeBytevector sb) return sb.ToString();

@@ -9,6 +9,7 @@ public static partial class PrimitiveRegistry
     static object? GenNext(object? g)
     {
         if (g is Func<object?> f) return f();
+        if (g is Func<object?[], object?> fa) return fa(System.Array.Empty<object?>());
         throw new Exception("not a generator");
     }
 

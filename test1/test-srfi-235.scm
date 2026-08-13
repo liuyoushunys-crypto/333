@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "update" (1 2 4) (update (list 1 2 3) 2 (lambda (x) (+ x 1))))
+(%test-equal "update" '(1 2 4) (update (list 1 2 3) 2 (lambda (x) (+ x 1))))

@@ -24,7 +24,11 @@ public static class JitRuntime
         while (true)
         {
             if (procVal is Func<object?[], object?> fn)
-                return fn(argsVal);
+            {
+                var r = fn(argsVal);
+                while (r is TailCall tc) r = Evaluator.EvalCore(tc.Expr, tc.Env);
+                return r;
+            }
             if (procVal is CompiledLambda cv)
             {
                 var r = cv.Invoke(cv.Env, argsVal);
@@ -348,9 +352,22 @@ public static class JitRuntime
         if (a is string sa2 && b is SchemeString ssb2) return sa2 == ssb2.ToString() ? Const.TRUE : Const.FALSE;
         if (a is SchemeString ssa3 && b is SchemeString ssb3) return ssa3.ToString() == ssb3.ToString() ? Const.TRUE : Const.FALSE;
         if (a is string sa3 && b is string sb3) return sa3 == sb3 ? Const.TRUE : Const.FALSE;
+        if (a is SchemeBytevector bva && b is SchemeBytevector bvb)
+            return bva.Data.AsSpan().SequenceEqual(bvb.Data) ? Const.TRUE : Const.FALSE;
         if (ScalarEquals(a, b)) return Const.TRUE;
         if (a is SchemeChar sca && b is SchemeChar scb) return sca.Codepoint == scb.Codepoint ? Const.TRUE : Const.FALSE;
         if (a is Sym syma && b is Sym symb) return syma.Name == symb.Name ? Const.TRUE : Const.FALSE;
+        if (a is System.Collections.IDictionary dictA && b is System.Collections.IDictionary dictB)
+        {
+            if (dictA.Count != dictB.Count) return Const.FALSE;
+            foreach (System.Collections.DictionaryEntry entry in dictA)
+            {
+                if (!dictB.Contains(entry.Key)) return Const.FALSE;
+                if (Equal2(entry.Value, dictB[entry.Key]) != Const.TRUE) return Const.FALSE;
+            }
+            return Const.TRUE;
+        }
+        if (a is not null && a.Equals(b)) return Const.TRUE;
         return Const.FALSE;
     }
 

@@ -2354,6 +2354,8 @@ def write_u8(b, *p):
                 port[3].write(bytes([byte_val]))
             except TypeError:
                 port[3].write(chr(byte_val & 0xff))
+        elif isinstance(port, tuple) and port[0] == 'byte-port':
+            port[1].append(byte_val)
         else:
             if hasattr(sys.stdout, 'buffer'):
                 sys.stdout.buffer.write(bytes([byte_val]))
@@ -2449,6 +2451,11 @@ def peek_u8_fn(*p):
         if not s:
             return EOF
         return ord(s[0]) & 0xFF
+    if isinstance(port, tuple) and port[0] == 'bin-str-port' and isinstance(port[1], list):
+        data, pos = port[1]
+        if pos >= len(data):
+            return EOF
+        return data[pos]
     return EOF
 
 # initenv_ext() is now in initenv_ext.py

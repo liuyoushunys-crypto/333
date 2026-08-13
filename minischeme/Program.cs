@@ -46,6 +46,10 @@ public class Program
         // provisional definitions cannot replace the runtime contract.
         PrimitiveRegistry.InitExt();
 
+        // Load supplementary SRFI/extension definitions LAST so they can
+        // override any conflicting native builtins (e.g. list-transduce).
+        LoadBootLib(Path.Combine(scmDir, "boot-srfi.scm"));
+
         if (args.Length > 0)
         {
             foreach (var path in args)
@@ -134,5 +138,21 @@ public class Program
             }
             catch { }
         }
+    }
+
+    private static void LoadBootLib(string path)
+    {
+        if (!File.Exists(path)) return;
+        try
+        {
+            var src = File.ReadAllText(path);
+            var exprs = Parser.ReadAll(src);
+            foreach (var expr in exprs)
+            {
+                try { Evaluator.Eval(expr, Evaluator.GlobalEnv); }
+                catch { }
+            }
+        }
+        catch { }
     }
 }

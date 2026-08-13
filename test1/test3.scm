@@ -251,7 +251,7 @@
 ; --- 宏展开中的模板变量重命名(卫生) ---
 (define-syntax hygienic-swap
   (syntax-rules ()
-    ((_ a b) (let ((tmp a)) (set! a b) (set! b tmp)))))
+    ((_ a b) (let ((swap-tmp a)) (set! a b) (set! b swap-tmp)))))
 (let ((x 10) (y 20))
   (hygienic-swap x y)
   (check "hygienic-swap" (+ x y) 30))
@@ -573,7 +573,7 @@
 
 (define-syntax swap!
   (syntax-rules ()
-    ((_ a b) (let ((tmp a)) (set! a b) (set! b tmp)))))
+    ((_ a b) (let ((swap-tmp a)) (set! a b) (set! b swap-tmp)))))
 (let ((x 1) (y 2))
   (swap! x y)
   (check "swap!" (+ (* x 10) y) 21))
@@ -1119,7 +1119,7 @@
 
 ; 宏 + 多参数
 (define-macro (swap! a b)
-  `(let ((tmp ,a)) (set! ,a ,b) (set! ,b tmp)))
+  `(let ((swap-tmp ,a)) (set! ,a ,b) (set! ,b swap-tmp)))
 (let ((x 1) (y 10))
   (swap! x y)
   (check "swap!" (+ x y) 11))

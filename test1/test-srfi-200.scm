@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "sorted-by" (1 2 3) (sorted-by < '(3 1 2)))
+(%test-equal "sorted-by" '(1 2 3) (sorted-by < '(3 1 2)))

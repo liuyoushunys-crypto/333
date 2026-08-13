@@ -300,9 +300,10 @@
 
 ;; =============================================================================
 ;; 18. 空列表 & 边界值
+(define-syntax my-when
   (syntax-rules ()
-    ((_ test body1 body2 ...) (if test (begin body1 body2 ...))))
-(check "my-when true" (my-when #t 42) 42)
+    ((_ test body1 body2 ...) (if test (begin body1 body2 ...)))))
+(check "my-when true" (c #t 42) 42)
 (check "my-when false" (my-when #f 42) (if #f 42))
 
 (define-syntax swap!

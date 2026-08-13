@@ -188,7 +188,12 @@ public static class Evaluator
         return Eval(cur, env);
     }
 
-    public static object? Eval(object? expr, Env env) => EvalCore(expr, env);
+    public static object? Eval(object? expr, Env env)
+    {
+        var r = EvalCore(expr, env);
+        while (r is TailCall tc) r = EvalCore(tc.Expr, tc.Env);
+        return r;
+    }
 
     internal static object? EvalCore(object? expr, Env env)
     {

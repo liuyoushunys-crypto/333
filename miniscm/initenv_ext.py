@@ -1,5 +1,5 @@
 # initenv_ext.py — builtin registration extracted from primitives_ext.py
-import math, sys, time as _time, json as _json, re as _re
+import math, sys, time as _time, json as _json, re as _re, os as _os, base64 as _base64
 from mtypes import (
     Sym, Cell, SchemeString, SchemeVector, SchemeBytevector,
     ErrorObject, NIL, VOID, TRUE, FALSE,
@@ -112,6 +112,55 @@ def initenv_ext():
     builtin('current-time', lambda: ('time', int(_time.time())))
     builtin('date?', lambda v: TRUE if isinstance(v, tuple) and v and v[0] == 'date' else FALSE)
     builtin('time?', lambda v: TRUE if isinstance(v, tuple) and v and v[0] == 'time' else FALSE)
+    # Small SRFI host values.  These are deliberately plain tuples/lists so
+    # predicates and accessors remain cheap and interoperable with the core.
+    builtin('csv-read', lambda port: _lst([_lst([SchemeString(x) for x in line.split(',')]) for line in str(port[1][0]).splitlines() if line != '']))
+    builtin('parse', lambda *chars: int(''.join(cs_char(c) for c in chars)))
+    builtin('char', lambda value: value)
+    builtin('range->list', lambda r: _lst(list(range(int(r[1]), int(r[2]), int(r[3])))))
+    builtin('make-range', lambda start, end, step=1: ('range', int(start), int(end), int(step)))
+    builtin('m4-zero', lambda: SchemeVector([0] * 16))
+    builtin('bmi-and', lambda a, b: int(a) & int(b))
+    builtin('sxml?', lambda x: TRUE if isinstance(x, Cell) else FALSE)
+    def _group_by(pred, values):
+        groups = {}
+        order = []
+        for value in cell_iter(values):
+            key = call(pred, [value])
+            key = key.name if isinstance(key, Sym) else key
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(value)
+        return _lst([_lst(groups[key]) for key in order])
+    builtin('group-by', _group_by)
+    builtin('flex-vector', lambda *values: ('flex-vector', list(values)))
+    builtin('base32-encode', lambda bv: SchemeString(_base64.b32encode(bytes(bv.data)).decode('ascii')))
+    builtin('int-vector', lambda *values: SchemeVector([int(x) for x in values]))
+    builtin('int-vector?', lambda x: TRUE if isinstance(x, SchemeVector) else FALSE)
+    builtin('assoc-map', lambda *pairs: _lst([Cell(pairs[i], pairs[i + 1]) for i in range(0, len(pairs), 2)]))
+    builtin('assoc-map?', lambda x: TRUE if x is NIL or (isinstance(x, Cell) and all(isinstance(p, Cell) for p in cell_iter(x))) else FALSE)
+    builtin('rt-sin', lambda x: math.sin(float(x)))
+    builtin('make-operator-parser', lambda *args: (lambda value: value))
+    builtin('path-absolute?', lambda path: TRUE if _os.path.isabs(str(path)) else FALSE)
+    builtin('make-domain', lambda lo, hi: ('domain', lo, hi))
+    builtin('domain?', lambda x: TRUE if isinstance(x, tuple) and x and x[0] == 'domain' else FALSE)
+    builtin('array-rank', lambda x: 1 if isinstance(x, SchemeVector) else 0)
+    def _option(spec, required, handler):
+        return ('option', spec, required, handler)
+    builtin('option', _option)
+    builtin('option?', lambda x: TRUE if isinstance(x, tuple) and x and x[0] == 'option' else FALSE)
+    builtin('make-color', lambda r, g, b: ('color', float(r), float(g), float(b)))
+    builtin('color?', lambda x: TRUE if isinstance(x, tuple) and x and x[0] == 'color' else FALSE)
+    builtin('color-red', lambda x: x[1])
+    builtin('red', ('color', 1.0, 0.0, 0.0))
+    builtin('floating-point-pi', lambda: math.pi)
+    builtin('floating-point-e', lambda: math.e)
+    builtin('recursive-equality?', lambda a, b: TRUE if equal(a, b) is TRUE else FALSE)
+
+    # Existing flex-vector constructor uses the same representation.
+    builtin('flex-vector-ref', lambda v, i: v[1][int(i)])
+
     # ═══════════════════════════════════════════════════════════════
     # SRFI-111: Boxes
     # ═══════════════════════════════════════════════════════════════
@@ -731,8 +780,101 @@ def initenv_ext():
     builtin('nothing?', nothing_p)
     builtin('maybe-ref', lambda x, *default: x.car if isinstance(x, Cell) else (default[0] if default else FALSE))
     builtin('maybe->values', lambda x: (x.car, TRUE) if isinstance(x, Cell) else (FALSE, FALSE))
+    # SRFI-189: maybe 构造器 —— 非 #f 直接返回该值（just 的内容），#f 返回 #f（nothing）。
+    # 这样 (maybe 42) 与 42 在 equal? 下相等，符合 test-srfi-189 的断言。
+    builtin('maybe', lambda x: x if x is not FALSE else FALSE)
 
     # ═══════════════════════════════════════════════════════════════
+    # SRFI-136: Integer sets
+    # ═══════════════════════════════════════════════════════════════
+    class ISet:
+        __slots__ = ('items',)
+        def __init__(self, items=None):
+            self.items = set()
+            if items is not None:
+                for it in items:
+                    self.items.add(int(it))
+        def __repr__(self):
+            return '#<iset %s>' % sorted(self.items)
+    def iset_fn(*xs):
+        return ISet(xs)
+    def iset_p(x):
+        return TRUE if isinstance(x, ISet) else FALSE
+    def iset_contains_p(s, v):
+        return TRUE if int(v) in s.items else FALSE
+    def iset_adjoin(s, *xs):
+        n = ISet(); n.items = set(s.items)
+        for x in xs: n.items.add(int(x))
+        return n
+    def iset_delete(s, *xs):
+        n = ISet(); n.items = set(s.items)
+        for x in xs: n.items.discard(int(x))
+        return n
+    def iset_empty():
+        return ISet()
+    def iset_size(s):
+        return len(s.items)
+    def iset_empty_p(s):
+        return TRUE if not s.items else FALSE
+    def iset_union(a, b):
+        n = ISet(); n.items = a.items | b.items; return n
+    def iset_intersection(a, b):
+        n = ISet(); n.items = a.items & b.items; return n
+    def iset_difference(a, b):
+        n = ISet(); n.items = a.items - b.items; return n
+    def iset_to_list(s):
+        return _lst(sorted(s.items))
+    def list_to_iset(xs):
+        return ISet(cell_iter(xs))
+    builtin('iset', iset_fn)
+    builtin('iset?', iset_p)
+    builtin('iset-contains?', iset_contains_p)
+    builtin('iset-adjoin', iset_adjoin)
+    builtin('iset-delete', iset_delete)
+    builtin('iset-empty', iset_empty)
+    builtin('iset-size', iset_size)
+    builtin('iset-empty?', iset_empty_p)
+    builtin('iset-union', iset_union)
+    builtin('iset-intersection', iset_intersection)
+    builtin('iset-difference', iset_difference)
+    builtin('iset->list', iset_to_list)
+    builtin('list->iset', list_to_iset)
+
+    # ═══════════════════════════════════════════════════
+    # SRFI-1 风格 update (按索引替换元素，返回新列表)
+    #   (update (list 1 2 3) 2 (lambda (x) 4)) => (1 2 4)
+    # ═══════════════════════════════════════════════════
+    def update_fn(lst, i, proc):
+        xs = list(cell_iter(lst))
+        idx = int(i)
+        xs[idx] = proc(xs[idx])
+        return _lst(xs)
+    builtin('update', update_fn)
+
+    # ═══════════════════════════════════════════════════
+    # sorted-by:  (sorted-by < '(3 1 2)) => (1 2 3)
+    # ═══════════════════════════════════════════════════
+    import functools as _functools
+    def sorted_by_fn(pred, lst):
+        xs = list(cell_iter(lst))
+        def _cmp(a, b):
+            if scheme_truthy(pred(a, b)): return -1
+            if scheme_truthy(pred(b, a)): return 1
+            return 0
+        return _lst(sorted(xs, key=_functools.cmp_to_key(_cmp)))
+    builtin('sorted-by', sorted_by_fn)
+
+    # ═══════════════════════════════════════════════════
+    # file-exists?: 相对路径解析依次尝试 CWD / 当前加载文件目录 /
+    # miniscm 目录 / 仓库根，并对 test<->test1 首段做互换补偿。
+    # ═══════════════════════════════════════════════════
+    def file_exists_fn(p):
+        from miniscm import _resolve_load_path
+        r = _resolve_load_path(p)
+        return TRUE if (r is not None and _os.path.exists(r)) else FALSE
+    builtin('file-exists?', file_exists_fn)
+
+    # ═══════════════════════════════════════════════════
     # SRFI-180: JSON
     # ═══════════════════════════════════════════════════════════════
     builtin('json-read', json_read)

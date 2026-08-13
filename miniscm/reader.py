@@ -7,7 +7,7 @@
 from fractions import Fraction
 import re
 from mtypes import (
-    TRUE, FALSE, NIL, Sym, Cell, SchemeVector,
+    TRUE, FALSE, NIL, Sym, Cell, SchemeVector, SchemeBytevector,
     SchemeString,
     SYM_QUOTE, SYM_QQ, SYM_UNQUOTE, SYM_UNSPLICE,
     SYM_SYNTAX, SYM_QS, SYM_USYNTAX, SYM_USPLICES,
@@ -39,7 +39,9 @@ _TOKEN_RE = re.compile(r"""
     | """ + _TRIPLE_SQ + r"""[\s\S]*?""" + _TRIPLE_SQ + r""" 
     | "(?:[^"\\]|\\.)*"                      # 匹配标准 Scheme 转义双引号字符串
     | \#\\(?:[a-zA-Z]+|.)                    # 匹配 Scheme 字符字面量 #\space or #\a
+    | \#vu8\(|\#u8\(                         # 匹配字节向量前缀 #u8( / #vu8(
     | \#\(                                   # 匹配 Vector 向量符号前缀
+    | \#[xXoObBdD][0-9a-zA-Z]+               # 匹配 #x/#o/#b/#d 进制前缀数 (#x1F/#o17/#b101/#d42)
     | \#\{[^}]*\}                            # 匹配 #{...} 中缀表达式容器
     | [\(\)]                                 # 匹配左右标准括号
     | \#\'|\#\`|\#,@|\#,|\'|`|,@|,           # 匹配各种宏缩写糖前缀如 #', #`, #, 等
@@ -139,6 +141,11 @@ def _atom(tok):
        返回值类型：TRUE/FALSE(Sym)、char元组(str)、str、int/float/complex/Fraction、Sym"""
     if tok=='#t': return TRUE
     if tok=='#f': return FALSE
+    # 进制前缀数 #x/#o/#b/#d 必须优先于字符字面量判定（#\x 才是字符）
+    if len(tok) > 1 and tok[1] in 'xXoObBdD':
+        pn = parse_number_scheme(tok)
+        if isinstance(pn,(int,float,complex)): return pn
+        if pn is not FALSE and pn.__class__.__name__=='Fraction': return pn
     # 字符字面量：##\a, #\space 等命名字符
     if tok.startswith('#'):
         # 字符串形式的字符（带引号）：#"a"（# 后紧跟引号）
@@ -168,11 +175,9 @@ def _atom(tok):
         return SchemeString(''.join(r))
     # 数值解析尝试：int/float/complex/Fraction；失败则作为符号
     # 如果 token 以字母开头，一定是符号，跳过数值解析
+    # （注意：#x/#o/#b/#d 进制前缀由 parse_number_scheme 处理，裸标识符
+    #  如 x10/d5/b3 必须保持为符号，不能误判为十六/八/二进制数）
     if tok and tok[0].isalpha():
-        if len(tok) > 1 and tok[0] in 'bBoOxXdD':
-            prefix = '#' + tok[0].lower() + tok[1:]
-            pn = parse_number_scheme(prefix)
-            if isinstance(pn, int): return pn
         return Sym(tok)
     pn=parse_number_scheme(tok)
     if isinstance(pn,(int,float,complex)): return pn
@@ -220,6 +225,17 @@ def parse_reader(reader):
             else:
                 break
         return vec
+    if t == "#u8(" or t == "#vu8(":
+        items = parse_list_reader(reader)
+        bv = SchemeBytevector([])
+        cur = items
+        while cur is not NIL:
+            if isinstance(cur, Cell):
+                bv.data.append(cur.car)
+                cur = cur.cdr
+            else:
+                break
+        return bv
     if t.startswith('#{') and t.endswith('}'):
         # 优化：提取 #{...} 内容直接交给中缀解析通道
         inner = t[2:-1].strip()
