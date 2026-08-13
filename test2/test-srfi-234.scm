@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "file-exists?" #t (file-exists? "test1/test-full.scm"))
+(%test-equal "file-exists?" #t (file-exists? "test5/test-full.scm"))
