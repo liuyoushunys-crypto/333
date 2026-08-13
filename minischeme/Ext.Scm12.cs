@@ -56,6 +56,8 @@ public static partial class PrimitiveRegistry
         var q = new SchemeListQueue();
         if (args.Length == 1 && args[0] is Cell)
             q.Items.AddRange(args[0].Cells());
+        else if (args.Length == 1 && args[0] is Nil)
+            return q;
         else
             q.Items.AddRange(args);
         return q;
@@ -125,9 +127,9 @@ public static partial class PrimitiveRegistry
         _b("symbol=?", args => args.Length < 2 || args.All(x => x is Sym) && args.Skip(1).All(x => ((Sym)x!).Name == ((Sym)args[0]!).Name) ? Const.TRUE : Const.FALSE);
         _b("char-name", args => args[0] is SchemeChar c ? _charName(c.Codepoint) : Const.FALSE);
         _b("string-foldcase", args => new SchemeString(S12String(args[0]).ToString().ToLowerInvariant()));
-        _b("string->vector", args => new SchemeVector(S12String(args[0]).Data.Select(x => (object?)new SchemeChar(x))));
+         _b("string->vector", args => new SchemeVector(S12String(args[0]).ToString().EnumerateRunes().Select(x => (object?)new SchemeChar(x.Value))));
         _b("vector->string", args => new SchemeString(((SchemeVector)args[0]!).Data.Select(AsChar)));
-        _b("string-contains", args => { var s = S12String(args[0]).ToString(); var sub = S12String(args[1]).ToString(); var start = args.Length > 2 ? NumericHelper.ToInt(args[2]) : 0; var i = s.IndexOf(sub, start, StringComparison.Ordinal); return i < 0 ? Const.FALSE : i; });
+         _b("string-contains", args => { var s = S12String(args[0]).ToString(); var sub = S12String(args[1]).ToString(); var start = args.Length > 2 ? NumericHelper.ToInt(args[2]) : 0; var i = s.IndexOf(sub, start, StringComparison.Ordinal); return i < 0 ? Const.FALSE : (long)s[..i].EnumerateRunes().Count(); });
         _b("string-split", args =>
         {
             var s = S12String(args[0]).ToString(); var sep = args.Length > 1 ? (args[1] is SchemeChar c ? char.ConvertFromUtf32(c.Codepoint) : ToStr(args[1])) : " ";
@@ -187,9 +189,9 @@ public static partial class PrimitiveRegistry
         _b("random-source-pseudo-randomize!", args => { ((SchemeRandomSource)args[0]!).State = NumericHelper.ToLong(args[1]) * 12345 + NumericHelper.ToLong(args[2]); return Const.VOID; });
     }
 
-    private static object? S12StringMap(object?[] args){var strings=args[1..].Select(S12String).ToList();var n=strings.Min(x=>x.Length);var chars=new List<int>();for(int i=0;i<n;i++)chars.Add(AsChar(App(args[0],strings.Select(x=>(object?)new SchemeChar(x.Data[i])).ToArray())));return new SchemeString(chars);}
-    private static object? S12StringForEach(object?[] args){var strings=args[1..].Select(S12String).ToList();var n=strings.Min(x=>x.Length);for(int i=0;i<n;i++)App(args[0],strings.Select(x=>(object?)new SchemeChar(x.Data[i])).ToArray());return Const.VOID;}
-    private static object? S12StringQuantifier(object?[] args,bool every){var s=S12String(args[1]);object? last=Const.TRUE;for(int i=0;i<s.Length;i++){var r=App(args[0],new SchemeChar(s.Data[i]));if(every){if(!Truthy(r))return Const.FALSE;last=r;}else if(Truthy(r))return r;}return every?last:Const.FALSE;}
+    private static object? S12StringMap(object?[] args){var strings=args[1..].Select(x=>S12String(x).ToString().EnumerateRunes().ToList()).ToList();var n=strings.Min(x=>x.Count);var chars=new List<int>();for(int i=0;i<n;i++)chars.Add(AsChar(App(args[0],strings.Select(x=>(object?)new SchemeChar(x[i].Value)).ToArray())));return new SchemeString(chars);}
+    private static object? S12StringForEach(object?[] args){var strings=args[1..].Select(x=>S12String(x).ToString().EnumerateRunes().ToList()).ToList();var n=strings.Min(x=>x.Count);for(int i=0;i<n;i++)App(args[0],strings.Select(x=>(object?)new SchemeChar(x[i].Value)).ToArray());return Const.VOID;}
+    private static object? S12StringQuantifier(object?[] args,bool every){var s=S12String(args[1]).ToString();object? last=Const.TRUE;foreach(var rune in s.EnumerateRunes()){var r=App(args[0],new SchemeChar(rune.Value));if(every){if(!Truthy(r))return Const.FALSE;last=r;}else if(Truthy(r))return r;}return every?last:Const.FALSE;}
     private static object? S12Trim(object?[] args,int mode){var s=S12String(args[0]).ToString();return new SchemeString(mode==0?s.Trim():mode==1?s.TrimEnd():s.Trim());}
     private static string _charName(int cp)=>cp switch{' '=>"space",'\n'=>"newline",'\t'=>"tab",'\r'=>"return",'\0'=>"null",'\a'=>"alarm",'\b'=>"backspace",'\x1b'=>"escape",'\x7f'=>"delete",_=>char.ConvertFromUtf32(cp)};
     private static long S12RandomStep(SchemeRandomSource s){s.State=(1103515245L*s.State+12345)&0x7fffffff;return s.State;}

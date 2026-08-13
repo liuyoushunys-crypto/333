@@ -29,6 +29,17 @@ public static partial class PrimitiveRegistry
         RegisterExtSchemeCoverage();
         RegisterScm12Host();
 
+        // SRFI-143 exposes these as procedures; the host library also uses
+        // the same names for constants, so install the callable contract last.
+        _b("fx-width", _ => 64L);
+        _b("fx-greatest", _ => long.MaxValue);
+        _b("fx-least", _ => long.MinValue);
+        _b("delay-force", args => args[0]);
+        _b("bimap-forward", args => ((SchemeBimap)args[0]!).Forward.TryGetValue(args[1]!, out var value) ? value : Const.FALSE);
+        _b("bimap-reverse", args => ((SchemeBimap)args[0]!).Reverse.TryGetValue(args[1]!, out var value) ? value : Const.FALSE);
+        _b("for-all", args => PEvery(args));
+        Evaluator.GlobalEnv.Define("char-set:symbol", MakeCharSet("$%&*+-./:<=>?@^_~"));
+
         // SRFI-35/36: error conditions
         _b("make-error-condition", args =>
         {
@@ -45,6 +56,9 @@ public static partial class PrimitiveRegistry
             if (args[0] is SchemeException se) return se.Val?.ToString() ?? "";
             return ToStr(args[0]);
         });
+        _b("error-message", args => Evaluator.GlobalEnv.LookupSilent("condition-message", null) is object fn ? App(fn, args[0]) : ToStr(args[0]));
+        _b("extract-condition", args => Const.FALSE);
+        _b("record?", args => Const.FALSE);
 
         // describe: 打印对象到 stdout
         _b("describe", args =>
@@ -123,12 +137,4 @@ public static partial class PrimitiveRegistry
         return (long)(64 - BitOperations.LeadingZeroCount(ux));
     }
 
-    private static long FloorDiv(object? a, object? b)
-    {
-        var ia = NumericHelper.ToBigInt(a);
-        var ib = NumericHelper.ToBigInt(b);
-        var r = ia / ib;
-        if (ia % ib != 0 && (ia < 0) != (ib < 0)) r -= 1;
-        return (long)r;
-    }
 }

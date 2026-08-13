@@ -20,7 +20,7 @@ def initenv_ext():
     builtin('string->keyword', lambda x: Sym(':' + str(x).lstrip(':')))
     builtin('keyword->string', lambda x: SchemeString(str(x).lstrip(':')))
     builtin('srfi-available?', lambda n: TRUE)
-    builtin('stream?', lambda x: FALSE)
+    builtin('stream?', lambda x: TRUE if isinstance(x, Cell) and (callable(x.cdr) or isinstance(x.cdr, Promise) or x.cdr is NIL) else FALSE)
     builtin('string-normalize-nfc', lambda x: SchemeString(str(x)))
     builtin('string-normalize-nfd', lambda x: SchemeString(str(x)))
     builtin('string-normalize-nfkc', lambda x: SchemeString(str(x)))
@@ -417,7 +417,7 @@ def initenv_ext():
     builtin('char-set:punctuation', char_set_make([SchemeChar(c) for c in ".,;:!?-'\"()[]{}\\/@#$%^&*+=<>|~"]))
     builtin('char-set:graphic', char_set_binop((be.data['char-set:letter'], be.data['char-set:digit'], be.data['char-set:punctuation']), lambda a, b: a or b))
     builtin('char-set:printing', ucs_range_char_set(32, 127))
-    builtin('char-set:symbol', char_set_make([SchemeChar(c) for c in "$%&*+-./:<=>?@^_~"]))
+    builtin('char-set:symbol', char_set_make([SchemeChar(c) for c in "!$%&*+-./:<=>?@^_~"]))
     builtin('char-set:hex-digit', char_set_make([SchemeChar(c) for c in '0123456789abcdefABCDEF']))
     builtin('char-set:blank', char_set_make([SchemeChar(' '), SchemeChar('\t')]))
     builtin('char-set:iso-control', char_set_adjoin(ucs_range_char_set(0, 32), [SchemeChar(chr(127))]))
@@ -477,6 +477,14 @@ def initenv_ext():
 
     builtin('hash-table-map', hash_table_map)
     builtin('hash-table-fold', hash_table_fold)
+    builtin('hash-table-update!', hash_table_update)
+    builtin('hash-table-walk', hash_table_walk)
+    builtin('hash-table-count', hash_table_count)
+    builtin('hash-table-put!', lambda ht, key, value: ht.__setitem__(key, value) or VOID)
+    def hash_table_merge_bang(dst, src):
+        dst.update(src)
+        return dst
+    builtin('hash-table-merge!', hash_table_merge_bang)
 
     # ═══════════════════════════════════════════════════════════════
     # SRFI-1: List operations
@@ -671,6 +679,8 @@ def initenv_ext():
     builtin('raise-continuable', lambda c: do_raise(c))
     builtin('make-error-condition', lambda t, m: ('condition', t, m))
     builtin('condition-message', lambda c: c[2] if isinstance(c, tuple) and len(c) > 2 else str(c))
+    builtin('make-io-error', lambda message=SchemeString(''): ('condition', Sym('io-error'), message))
+    builtin('io-error?', lambda c: TRUE if isinstance(c, tuple) and len(c) > 1 and c[1] == Sym('io-error') else FALSE)
 
     # ═══════════════════════════════════════════════════════════════
     # Maybe monad

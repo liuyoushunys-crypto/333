@@ -254,7 +254,15 @@ public static partial class PrimitiveRegistry
         _b("bytevector", args => new SchemeBytevector(args.Select(NumericHelper.ToInt)));
         _b("bytevector-append", args => new SchemeBytevector(args.SelectMany(a => AsBytevector(a).Data).ToArray()));
         _b("bytevector->u8-list", args => AsBytevector(args[0]).Data.Select(b => (object?)(long)b).ToCell());
-        _b("bytevector-copy", args => new SchemeBytevector([.. AsBytevector(args[0]).Data]));
+         _b("bytevector-copy", args => new SchemeBytevector([.. AsBytevector(args[0]).Data]));
+         _b("bytevector-copy!", args =>
+         {
+             var target = AsBytevector(args[0]); var at = NumericHelper.ToInt(args[1]);
+             var source = AsBytevector(args[2]); var start = args.Length > 3 ? NumericHelper.ToInt(args[3]) : 0;
+             var end = args.Length > 4 ? NumericHelper.ToInt(args[4]) : source.Length;
+             for (var i = start; i < end; i++) target[at++] = source[i];
+             return Const.VOID;
+         });
         _b("bytevector-length", args => AsBytevector(args[0]).Length);
         _b("bytevector-u8-ref", args => (long)AsBytevector(args[0])[NumericHelper.ToInt(args[1])]);
         _b("bytevector-u8-set!", args => { AsBytevector(args[0])[NumericHelper.ToInt(args[1])] = (byte)NumericHelper.ToInt(args[2]); return Const.VOID; });
@@ -305,9 +313,11 @@ public static partial class PrimitiveRegistry
         _b("current-error-port", args => MakePort("output", Console.Error));
         _b("current-input-port", args => MakePort("input", Console.In));
         _b("current-output-port", PCurrentOutputPort);
-        _b("get-output-string", PGetOutputString);
+         _b("get-output-string", PGetOutputString);
+         _b("get-output-bytevector", PGetOutputBytevector);
         _b("open-input-string", args => MakePort("input", new StringPort(ToStr(args[0]))));
-        _b("open-input-bytevector", args => MakePort("input", new BytePort(AsBytevector(args[0]).Data)));
+         _b("open-input-bytevector", args => MakePort("input", new BytePort(AsBytevector(args[0]).Data)));
+         _b("open-output-bytevector", _ => MakePort("output", new BytePort(Array.Empty<byte>())));
         _b("open-output-string", args => MakePort("output", new StringBuilder()));
         _b("peek-char", PPeekChar);
         _b("port-position", PPortPosition);
@@ -316,7 +326,27 @@ public static partial class PrimitiveRegistry
         _b("read-line", PReadLine);
         _b("read-string", PReadString);
         _b("set-port-position!", PSetPortPositionBang);
-        _b("with-input-from-file", PWithInputFromFile);
+         _b("with-input-from-file", PWithInputFromFile);
+         _b("with-input-from-string", args =>
+         {
+             var oldIn = Console.In;
+             using var sr = new StringReader(ToStr(args[0]));
+             Console.SetIn(sr);
+             try { return App(args[1]); } finally { Console.SetIn(oldIn); }
+         });
+         _b("call-with-input-string", args =>
+         {
+             var port = MakePort("input", new StringPort(ToStr(args[0])));
+             return App(args[1], port);
+         });
+         _b("call-with-port", args =>
+         {
+             try { return App(args[1], args[0]); }
+             finally { if (args[0] is ITuple it && it.Length > 2 && it[2] is IDisposable d) d.Dispose(); }
+         });
+         _b("call-with-string-output", args => CallWithStringOutput(args[0]));
+         _b("call-with-string-output-port", args => CallWithStringOutput(args[0]));
+         _b("call-with-bytevector-output-port", args => CallWithBytevectorOutput(args[0]));
         _b("with-output-to-file", PWithOutputToFile);
 
         // ── Exceptions ──
@@ -354,7 +384,11 @@ public static partial class PrimitiveRegistry
         _b("hash-table-count", PHashTableCount);
         _b("hash-table-delete!", PHashTableDeleteBang);
         _b("hash-table-ref", PHashTableRef);
-        _b("hash-table-set!", PHashTableSetBang);
+         _b("hash-table-set!", PHashTableSetBang);
+         _b("hash-table-put!", PHashTableSetBang);
+         _b("hash-table-update!", PHashTableUpdateBang);
+         _b("hash-table-merge!", PHashTableMergeBang);
+         _b("hash-table-walk", PHashTableWalk);
         _b("hash-table?", args => args[0] is Dictionary<object, object?> ? Const.TRUE : Const.FALSE);
         _b("hash-table-size", args => (long)((Dictionary<object, object?>)args[0]!).Count);
         _b("hash-table-exists?", args => ((Dictionary<object, object?>)args[0]!).ContainsKey(args[1]!) ? Const.TRUE : Const.FALSE);
@@ -380,13 +414,9 @@ public static partial class PrimitiveRegistry
             }
             return ht;
         });
-        _b("hash-table-for-each", args =>
-        {
-            var fn = args[0];
-            foreach (var kv in (Dictionary<object, object?>)args[1]!)
-                JitRuntime.Invoke(fn, [kv.Key, kv.Value], Evaluator.GlobalEnv);
-            return Const.VOID;
-        });
+         _b("hash-table-for-each", PHashTableWalk);
+         _b("hash-table/count", PHashTableCount);
+         _b("hash-table/put!", PHashTableSetBang);
         _b("hash-table-map", args =>
         {
             var fn = args[0];
@@ -443,7 +473,8 @@ public static partial class PrimitiveRegistry
         _b("provide", _ => Const.VOID);
         _b("open-input-file", args => MakePort("input", new StreamReader(ToStr(args[0]))));
         _b("open-binary-input-file", args => MakePort("input", new BytePort(File.ReadAllBytes(ToStr(args[0])))));
-        _b("open-output-file", args => MakePort("output", new StreamWriter(ToStr(args[0]))));
+         _b("open-output-file", args => MakePort("output", new StreamWriter(ToStr(args[0]))));
+         _b("open-binary-output-file", args => MakePort("output", new BytePort(Array.Empty<byte>(), ToStr(args[0]))));
         _b("port-open?", args => IsPort(args[0], null) ? Const.TRUE : Const.FALSE);
         _b("input-port-open?", args => IsPort(args[0], "input") ? Const.TRUE : Const.FALSE);
         _b("output-port-open?", args => IsPort(args[0], "output") ? Const.TRUE : Const.FALSE);

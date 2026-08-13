@@ -11,7 +11,7 @@ import random
 import time
 from functools import cmp_to_key
 
-from mtypes import Cell, SchemeChar, SchemeString, SchemeVector, NIL, VOID, TRUE, FALSE, EOF, Sym, _lst, builtin, be
+from mtypes import Cell, SchemeChar, SchemeString, SchemeVector, NIL, VOID, TRUE, FALSE, EOF, Sym, _lst, _pr, builtin, be
 from primitives import cell_iter, cells, scheme_truthy, cs_char, char_val, call as _scheme_call
 
 
@@ -59,6 +59,12 @@ class Bimap:
         for pair in cell_iter(init): self.set(pair.car, pair.cdr)
     def set(self, key, value):
         self.forward[key], self.reverse[value] = value, key
+
+    def forward_ref(self, key, default=FALSE):
+        return self.forward.get(key, default)
+
+    def reverse_ref(self, value, default=FALSE):
+        return self.reverse.get(value, default)
 
 
 class Deque:
@@ -126,7 +132,7 @@ def _register_record_hosts():
     builtin('%make-binary-heap', lambda vec=NIL, n=0, cmp=lambda a,b: a < b: BinaryHeap(cmp, vec)); builtin('make-binary-heap', lambda *a: BinaryHeap(a[0] if a else (lambda x, y: x < y), a[1] if len(a) > 1 else NIL)); builtin('binary-heap?', lambda x: TRUE if isinstance(x, BinaryHeap) else FALSE)
     builtin('binary-heap-vec', lambda h: SchemeVector(h.items)); builtin('set-binary-heap-vec!', lambda h, v: setattr(h, 'items', list(v.data)) or VOID); builtin('binary-heap-n', lambda h: len(h.items)); builtin('set-binary-heap-n!', lambda h, n: setattr(h, 'items', h.items[:int(n)]) or VOID); builtin('binary-heap-cmp', lambda h: h.cmp)
     builtin('binary-heap-insert!', lambda h, x: h.insert(x) or h); builtin('binary-heap-min', lambda h: h.items[0]); builtin('binary-heap-remove-min!', lambda h: builtin_remove_heap(h)); builtin('binary-heap-delete-min!', lambda h: builtin_remove_heap(h)); builtin('binary-heap-size', lambda h: len(h.items)); builtin('binary-heap-empty?', lambda h: TRUE if not h.items else FALSE)
-    builtin('make-bimap', lambda init: Bimap(init)); builtin('bimap?', lambda x: TRUE if isinstance(x, Bimap) else FALSE); builtin('bimap-forward', lambda b, k: b.forward[k]); builtin('bimap-forward/default', lambda b, k, d: b.forward.get(k, d)); builtin('bimap-reverse', lambda b, v: b.reverse[v]); builtin('bimap-set!', lambda b, k, v: b.set(k, v) or VOID); builtin('bimap-contains?', lambda b, k: TRUE if k in b.forward else FALSE)
+    builtin('make-bimap', lambda init: Bimap(init)); builtin('bimap?', lambda x: TRUE if isinstance(x, Bimap) else FALSE); builtin('bimap-forward', lambda b, k: b.forward_ref(k)); builtin('bimap-forward/default', lambda b, k, d: b.forward_ref(k, d)); builtin('bimap-reverse', lambda b, v: b.reverse_ref(v)); builtin('bimap-set!', lambda b, k, v: b.set(k, v) or VOID); builtin('bimap-contains?', lambda b, k: TRUE if k in b.forward else FALSE)
     builtin('%make-bimap', lambda f, r: Bimap(NIL)); builtin('%bimap-forward', lambda b: b.forward); builtin('%bimap-forward-set!', lambda b, x: setattr(b, 'forward', x) or VOID); builtin('%bimap-rev', lambda b: b.reverse); builtin('%bimap-rev-set!', lambda b, x: setattr(b, 'reverse', x) or VOID)
     builtin('make-deque', lambda *x: Deque(x)); builtin('deque?', lambda x: TRUE if isinstance(x, Deque) else FALSE); builtin('deque-empty?', lambda d: TRUE if not d.items else FALSE); builtin('deque-add-front', lambda d, x: d.items.insert(0, x) or d); builtin('deque-add-back', lambda d, x: d.items.append(x) or d); builtin('deque-front', lambda d: d.items[0]); builtin('deque-back', lambda d: d.items[-1]); builtin('deque-remove-front', lambda d: d.items.pop(0)); builtin('deque-remove-back', lambda d: d.items.pop()); builtin('deque-length', lambda d: len(d.items)); builtin('deque->list', lambda d: _lst(d.items))
     builtin('%make-deque', lambda fl, f, bl, b: Deque(list(cell_iter(f)) + list(reversed(cell_iter(b))))); builtin('%deque-fl', lambda d: len(d.items)); builtin('%deque-f', lambda d: _lst(d.items)); builtin('%deque-bl', lambda d: 0); builtin('%deque-b', lambda d: NIL)
@@ -182,15 +188,15 @@ def register_scm12_host():
         for _ in range(n):
             if g() is EOF: break
         return g
-    builtin('generator-drop', lambda n,g: drop_gen(int(n), g))
-    builtin('generator-fold', lambda f,init,g: _gen_fold(f,init,g)); builtin('generator-take', lambda n,g: _gen_take(int(n),g))
+    builtin('generator-drop', lambda g,n: drop_gen(int(n), g))
+    builtin('generator-fold', lambda f,init,g: _gen_fold(f,init,g)); builtin('generator-take', lambda g,n: _gen_take(int(n),g))
     builtin('vector-fold', lambda f,init,v,*more: _vec_fold(f,init,v)); builtin('vector-fold-right', lambda f,init,v: _vec_fold_right(f,init,v))
     builtin('vector-map!', lambda f,v: _vec_map_bang(f,v)); builtin('reverse-list->vector', lambda x: SchemeVector(cells(x)[::-1]))
-    builtin('integer->booleans', lambda n: _lst([TRUE if b else FALSE for b in reversed([(int(n)>>i)&1 for i in range(max(1,int(n).bit_length()))])]))
+    builtin('integer->booleans', lambda n: _lst([TRUE if (int(n) >> i) & 1 else FALSE for i in range(max(1, int(n).bit_length()))]))
     builtin('string-delete', lambda p,s: SchemeString(''.join(c for c in str(s) if not scheme_truthy(_scheme_call(p, [SchemeChar(c)]))))); builtin('string-filter', lambda p,s: SchemeString(''.join(c for c in str(s) if scheme_truthy(_scheme_call(p, [SchemeChar(c)])))))
     builtin('bitwise-or', lambda *x: _bit_fold(lambda a,b: a | b, x)); builtin('logior', be.data['bitwise-or']); builtin('bitwise-ior', be.data['bitwise-or'])
     builtin('logand', lambda *x: _bit_fold(lambda a,b: a & b, x)); builtin('logxor', lambda *x: _bit_fold(lambda a,b: a ^ b, x)); builtin('lognot', lambda x: ~int(x))
-    builtin('arithmetic-shift-right', lambda n,c: int(n) >> int(c)); builtin('object->string', lambda x: SchemeString(str(x))); builtin('integer->string/radix', lambda n,r: SchemeString(format(int(n), 'x' if int(r)==16 else 'b' if int(r)==2 else 'o' if int(r)==8 else 'd')))
+    builtin('arithmetic-shift-right', lambda n,c: int(n) >> int(c)); builtin('object->string', lambda x: SchemeString(_pr(x))); builtin('integer->string/radix', lambda n,r: SchemeString(format(int(n), 'x' if int(r)==16 else 'b' if int(r)==2 else 'o' if int(r)==8 else 'd')))
     builtin('with-exception-handler/k', lambda handler, thunk: thunk())
     builtin('loop-n', lambda n: _loop_n(int(n)))
     builtin('test-begin', lambda *name: VOID); builtin('test-end', lambda *name: VOID)

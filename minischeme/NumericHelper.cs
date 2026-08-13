@@ -51,7 +51,7 @@ public static class NumericHelper
         int i => new BigInteger(i),
         long l => new BigInteger(l),
         BigInteger bi => bi,
-        SchemeFraction f => f.Num / f.Den,
+        SchemeFraction f when f.Den == 1 => f.Num,
         _ => new BigInteger(NumericHelper.ToLong(x))
     };
 
@@ -272,6 +272,14 @@ public static class NumericHelper
 
     public static object? Quotient(object? a, object? b)
     {
+        if (a is SchemeFraction || b is SchemeFraction)
+        {
+            var left = ToFraction(a); var right = ToFraction(b);
+            var den = left.Den * right.Num;
+            if (den == 0) throw new DivideByZeroException();
+            var q = BigInteger.Divide(left.Num * right.Den, den);
+            return q <= long.MaxValue && q >= long.MinValue ? (long)q : q;
+        }
         var ia = ToBigInt(a); var ib = ToBigInt(b);
         var r = ia / ib;
         return r <= long.MaxValue && r >= long.MinValue ? (long)r : r;
@@ -279,6 +287,8 @@ public static class NumericHelper
 
     public static object? Remainder(object? a, object? b)
     {
+        if (a is SchemeFraction || b is SchemeFraction)
+            return Sub(a, Mul(Quotient(a, b), b));
         var ia = ToBigInt(a); var ib = ToBigInt(b);
         var r = ia % ib;
         return r <= long.MaxValue && r >= long.MinValue ? (long)r : r;
@@ -286,6 +296,8 @@ public static class NumericHelper
 
     public static object? Modulo(object? a, object? b)
     {
+        if (a is SchemeFraction || b is SchemeFraction)
+            return Remainder(a, b);
         var ia = ToBigInt(a); var ib = ToBigInt(b);
         var r = ((ia % ib) + ib) % ib;
         return r <= long.MaxValue && r >= long.MinValue ? (long)r : r;

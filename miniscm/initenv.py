@@ -1,5 +1,5 @@
 # initenv.py — builtin registration extracted from primitives.py
-import math, os, sys, time
+import math, os, sys, time, io
 from mtypes import (
     Sym, Cell, SchemeString, SchemeChar, SchemeVector, SchemeBytevector,
     Promise, SyntaxObject, SchemeException, ErrorObject, NIL, VOID,
@@ -80,8 +80,17 @@ def _with_file(path, thunk, mode, redirect):
             else: sys.stdout = old
     return r
 
+def _with_string_input(value, thunk):
+    old = sys.stdin
+    _redirect_in(io.StringIO(value))
+    try:
+        return call(thunk, [])
+    finally:
+        _redirect_in(old)
+
 def initenv():
     builtin('NIL', lambda: NIL)
+    builtin('stream-null', NIL)
     builtin('pi', math.pi)
     builtin('*', mul)
     builtin('/', div)
@@ -286,7 +295,7 @@ def initenv():
     builtin('string-downcase', lambda s: SchemeString(str(s).lower()))
     builtin('string-upcase', lambda s: SchemeString(str(s).upper()))
     builtin('list->string', lambda lst: SchemeString(''.join(c[1] if isinstance(c,tuple) else (c.char if hasattr(c,'char') else str(c)) for c in _plist(lst))))
-    builtin('string->utf8', lambda s, *span: SchemeBytevector(str(s).encode('utf-8')[int(span[0]) if span else 0:int(span[1]) if len(span) > 1 else None]))
+    builtin('string->utf8', lambda s, *span: SchemeBytevector(str(s)[int(span[0]) if span else 0:int(span[1]) if len(span) > 1 else None].encode('utf-8')))
     builtin('utf8->string', lambda s, *span: SchemeString(bytes(s.data)[int(span[0]) if span else 0:int(span[1]) if len(span) > 1 else None].decode('utf-8')) if hasattr(s,'data') else s)
     builtin('format', format_dispatch)
 
@@ -336,7 +345,11 @@ def initenv():
     builtin('flush-output-port', lambda *a: VOID)
     builtin('call-with-input-string', lambda s, proc: proc(('str-port', [str(s), 0])))
     builtin('call-with-port', lambda p, proc: proc(p))
-    builtin('call-with-string-output', lambda proc: (lambda p: (proc(p), p[1][0])[1])(('str-port', [''])))
+    builtin('call-with-output-string', lambda proc: (lambda p: (proc(p), SchemeString(p[1][0]))[1])(('str-port', [''])))
+    builtin('call-with-string-output', lambda proc: (lambda p: (proc(p), SchemeString(p[1][0]))[1])(('str-port', [''])))
+    builtin('call-with-string-output-port', lambda proc: (lambda p: (proc(p), SchemeString(p[1][0]))[1])(('str-port', [''])))
+    builtin('call-with-bytevector-output-port', lambda proc: (lambda p: (proc(p), SchemeBytevector(p[1]))[1])(('byte-port', bytearray())))
+    builtin('with-input-from-string', lambda s, thunk: _with_string_input(str(s), thunk))
     builtin('delay-force', lambda p: p)
     builtin('close-input-port', lambda p: p[3].close() if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3 else VOID)
     builtin('close-output-port', lambda p: p[3].close() if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3 else VOID)
@@ -419,7 +432,12 @@ def initenv():
     # proc 接收 yield 函数; 每次调用生成器返回下一个 yield 值, proc 结束后返回 eof
     builtin('make-coroutine-generator', make_coroutine_generator)
     builtin('make-compound-condition', lambda *a: ErrorObject('compound', _lst(list(a)) if a else NIL))
-    builtin('condition?', lambda x: TRUE if isinstance(x,(SchemeException,ErrorObject)) else FALSE)
+    builtin('condition?', lambda x: TRUE if isinstance(x,(SchemeException,ErrorObject)) or (isinstance(x, tuple) and x and x[0] == 'condition') else FALSE)
+    builtin('make-condition-type', lambda name, parent, predicate, fields: ('condition-type', name, [f for f in _plist(fields)]))
+    builtin('make-condition', lambda typ, *fields: ('condition', typ, dict(zip((f.name if isinstance(f, Sym) else str(f) for f in typ[2]), fields[1::2]))))
+    builtin('condition-ref', lambda c, field: (c[2].get(field.name if isinstance(field, Sym) else str(field), next(iter(c[2].values()), FALSE)) if isinstance(c, tuple) and len(c) > 2 and isinstance(c[2], dict) else FALSE))
+    builtin('make-io-error', lambda message, *a: ErrorObject(message, _lst(a)))
+    builtin('io-error?', lambda x: TRUE if isinstance(x, ErrorObject) else FALSE)
     # weak-box：基于 Cell 实现
     builtin('make-weak-box', lambda *a: Cell(Sym('weak'), a[0] if a else NIL))
     builtin('weak-box?', lambda x: isinstance(x, Cell) and x.car is Sym('weak'))
@@ -472,12 +490,25 @@ def initenv():
     builtin('exit', lambda *a: (_sys_exit(int(a[0]) if a else 0)) or VOID)
     builtin('hash-table-contains?', lambda ht, k: TRUE if k in ht else FALSE)
     builtin('hash-table-count', lambda ht: len(ht))
+    builtin('hash-table/count', lambda ht: len(ht))
+    builtin('hash-table/put!', lambda ht, k, v: ht.__setitem__(k, v) or VOID)
+    builtin('hash-table/update!', lambda ht, k, f, default=FALSE: ht.__setitem__(k, f(ht.get(k, default))) or VOID)
+    builtin('hash-table/walk', lambda f, ht: ([f(k, v) for k, v in list(ht.items())] and VOID))
+    def hash_table_merge_slash(dst, src):
+        dst.update(src)
+        return dst
+    builtin('hash-table/merge!', hash_table_merge_slash)
     builtin('string-contains?', lambda s, sub: TRUE if str(sub) in str(s) else FALSE)
     builtin('bytevector-copy', lambda bv: SchemeBytevector(list(bv.data)) if hasattr(bv, 'data') else SchemeBytevector(list(bv)))
     builtin('bytevector->u8-list', lambda bv: _lst([int(b) for b in (bv.data if hasattr(bv, 'data') else bv)]))
     builtin('u8-list->bytevector', lambda lst: SchemeBytevector([int(x) for x in _cells(lst)]))
     builtin('with-input-from-file', lambda path, thunk: _with_file(path, thunk, 'r', _redirect_in))
     builtin('with-output-to-file', lambda path, thunk: _with_file(path, thunk, 'w', _redirect_out))
+    builtin('print', lambda x: (be.data['display'](x), VOID)[1])
+    builtin('pretty-print', lambda x: (write_proc(x), VOID)[1])
+    builtin('write-simple', write_proc)
+    builtin('write-shared', write_proc)
+    builtin('write-with-shared-structure', write_proc)
 
 
 

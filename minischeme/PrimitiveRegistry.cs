@@ -768,6 +768,27 @@ public static partial class PrimitiveRegistry
         return "";
     }
 
+    static object? PGetOutputBytevector(object?[] args)
+    {
+        if (args[0] is ITuple it && it.Length >= 3 && it[0] is "port" && it[2] is BytePort bp)
+            return new SchemeBytevector([.. bp.Data]);
+        return new SchemeBytevector(Array.Empty<byte>());
+    }
+
+    static object? CallWithStringOutput(object? proc)
+    {
+        var port = MakePort("output", new StringBuilder());
+        App(proc, port);
+        return new SchemeString(((StringBuilder)((ITuple)port)[2]!).ToString());
+    }
+
+    static object? CallWithBytevectorOutput(object? proc)
+    {
+        var port = MakePort("output", new BytePort(Array.Empty<byte>()));
+        App(proc, port);
+        return new SchemeBytevector([.. ((BytePort)((ITuple)port)[2]!).Data]);
+    }
+
     static object? PCallWithInputFile(object?[] args)
     {
         var path = ToStr(args[0]);
@@ -1074,6 +1095,30 @@ public static partial class PrimitiveRegistry
         return Const.VOID;
     }
 
+    static object? PHashTableUpdateBang(object?[] args)
+    {
+        var ht = (Dictionary<object, object?>)args[0]!;
+        var key = args[1]!;
+        if (!ht.TryGetValue(key, out var value)) value = args.Length > 3 ? args[3] : Const.FALSE;
+        ht[key] = App(args[2], value);
+        return Const.VOID;
+    }
+
+    static object? PHashTableMergeBang(object?[] args)
+    {
+        var target = (Dictionary<object, object?>)args[0]!;
+        for (var i = 1; i < args.Length; i++)
+            foreach (var pair in (Dictionary<object, object?>)args[i]!) target[pair.Key] = pair.Value;
+        return target;
+    }
+
+    static object? PHashTableWalk(object?[] args)
+    {
+        var fn = args[0];
+        foreach (var pair in (Dictionary<object, object?>)args[1]!) App(fn, pair.Key, pair.Value);
+        return Const.VOID;
+    }
+
     static object? PHashTableDeleteBang(object?[] args)
     {
         var ht = (Dictionary<object, object?>)args[0]!;
@@ -1298,7 +1343,7 @@ public static partial class PrimitiveRegistry
     {
         var n = NumericHelper.ToLong(args[0]);
         var i = NumericHelper.ToInt(args[1]);
-        var v = NumericHelper.ToLong(args[2]);
+        var v = args[2] is Sym s && s.Name == "#t" ? 1L : args[2] is Sym ? 0L : NumericHelper.ToLong(args[2]);
         return v != 0 ? (n | (1L << i)) : (n & ~(1L << i));
     }
 
@@ -1306,7 +1351,7 @@ public static partial class PrimitiveRegistry
     {
         var n = NumericHelper.ToLong(args[0]);
         var i = NumericHelper.ToInt(args[1]);
-        var v = NumericHelper.ToLong(args[2]);
+        var v = args[2] is Sym s && s.Name == "#t" ? 1L : args[2] is Sym ? 0L : NumericHelper.ToLong(args[2]);
         return v != 0 ? (n | (1L << i)) : (n & ~(1L << i));
     }
 
@@ -1856,6 +1901,8 @@ public static partial class PrimitiveRegistry
         }
         if (a is SchemeVector va && b is SchemeVector vb)
             return va.Data.SequenceEqual(vb.Data, EqualityComparer<object?>.Create((x, y) => Eql(x, y) == Const.TRUE)) ? Const.TRUE : Const.FALSE;
+        if (a is SchemeBytevector bva && b is SchemeBytevector bvb)
+            return bva.Data.AsSpan().SequenceEqual(bvb.Data) ? Const.TRUE : Const.FALSE;
         if (a is System.Collections.IDictionary dictA && b is System.Collections.IDictionary dictB)
         {
             if (dictA.Count != dictB.Count) return Const.FALSE;

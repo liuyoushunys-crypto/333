@@ -1,4 +1,5 @@
 using Miniscm.Types;
+using Miniscm.Primitives;
 
 namespace Miniscm.Reader;
 
@@ -53,6 +54,7 @@ public static class Parser
 
         if (t == "(") return ParseList(r);
         if (t == "#(") return ParseVector(r);
+        if (t == "#u8(") return ParseBytevector(r);
         if (t == ")") throw new Exception("unexpected closing parenthesis");
         if (t == "'") return new Cell(Sym.QUOTE, new Cell(ParseExpr(r), Const.NIL));
         if (t == "`") return new Cell(Sym.QQ, new Cell(ParseExpr(r), Const.NIL));
@@ -104,6 +106,21 @@ public static class Parser
         var cur = items;
         while (cur is Cell c) { vec.Data.Add(c.Car); cur = c.Cdr; }
         return vec;
+    }
+
+    private static object? ParseBytevector(ReaderState r)
+    {
+        var items = ParseList(r);
+        var bytes = new List<int>();
+        var cur = items;
+        while (cur is Cell c)
+        {
+            var value = c.Car;
+            if (value is not int and not long) throw new Exception("bytevector literal requires integers");
+            bytes.Add(NumericHelper.ToInt(value));
+            cur = c.Cdr;
+        }
+        return new SchemeBytevector(bytes);
     }
 
     // ── Infix parser for #{...} ──

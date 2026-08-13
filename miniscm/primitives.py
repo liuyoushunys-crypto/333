@@ -568,6 +568,8 @@ for _n,_chain in _cxr_map.items():
 # format_dispatch: format 的分发入口
 #   如果第一个参数是 str-port（输出字符串端口），结果写入端口而非返回
 def format_dispatch(*a):
+    if len(a) >= 2 and a[0] is FALSE:
+        return format(a[1], list(a[2:]))
     if len(a) >= 2 and isinstance(a[0], tuple) and a[0][0] == 'str-port' and isinstance(a[0][1], list):
         result = format(a[1], list(a[2:]))
         a[0][1][0] = result

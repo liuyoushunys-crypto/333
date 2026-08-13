@@ -8,7 +8,7 @@ from mtypes import (
     Promise, SyntaxObject, ErrorObject, NIL, VOID, EOF, TRUE, FALSE, Env, TailCall,
     _pr, _so, _sn, _plist, _lst, builtin, be
 )
-from primitives import port_out, scheme_truthy, cell_iter, cells, list_span, str_mutate, stream_filter_fn, cs_char, char_val 
+from primitives import port_out, scheme_truthy, cell_iter, cells, list_span, str_mutate, stream_filter_fn, cs_char, char_val, call as _scheme_call
 from primitives_first import call, port_out
 
 # char_ci_eq: 字符大小写不敏感比较（从 primitives.py 迁入）
@@ -641,7 +641,7 @@ def generator_map(fn, g):
         try:
             v = g()
             while v is not EOF:
-                yield fn(v)
+                yield _scheme_call(fn, [v])
                 v = g()
         except: pass
     it = gen_map()
@@ -652,7 +652,7 @@ def generator_filter(pred, g):
         try:
             v = g()
             while v is not EOF:
-                if pred(v) is TRUE:
+                if scheme_truthy(_scheme_call(pred, [v])):
                     yield v
                 v = g()
         except: pass
@@ -777,7 +777,7 @@ def generator_for_each(fn, g):
     try:
         v = g()
         while v is not EOF:
-            fn(v)
+            _scheme_call(fn, [v])
             v = g()
     except: pass
     return VOID
@@ -883,6 +883,26 @@ def hash_table_fold(fn, init, ht):
     for k, v in items:
         acc = fn(Sym(k) if isinstance(k, str) else k, v, acc)
     return acc
+
+def _hash_items(ht):
+    if isinstance(ht, dict):
+        return ht
+    if hasattr(ht, 'data') and isinstance(ht.data, dict):
+        return ht.data
+    raise TypeError("not a hash table")
+
+def hash_table_update(ht, key, proc, default=FALSE):
+    d = _hash_items(ht)
+    d[key] = proc(d.get(key, default))
+    return VOID
+
+def hash_table_walk(proc, ht):
+    for key, value in list(_hash_items(ht).items()):
+        proc(key, value)
+    return VOID
+
+def hash_table_count(ht):
+    return len(_hash_items(ht))
 
 def error_q(x):
     if isinstance(x, ErrorObject):

@@ -120,7 +120,7 @@ public static partial class PrimitiveRegistry
             {
                 var v = GenNext(g);
                 if (v is Eof) return Const.EOF;
-                if (App(pred, v) is Sym s && s != Const.FALSE) return v;
+                if (Truthy(App(pred, v))) return v;
             }
         });
     }
@@ -147,7 +147,7 @@ public static partial class PrimitiveRegistry
         var pred = args[0];
         var g = args[1];
         long cnt = 0;
-        while (true) { var v = GenNext(g); if (v is Eof) break; if (App(pred, v) is Sym s && s != Const.FALSE) cnt++; }
+        while (true) { var v = GenNext(g); if (v is Eof) break; if (Truthy(App(pred, v))) cnt++; }
         return cnt;
     }
 
@@ -156,7 +156,7 @@ public static partial class PrimitiveRegistry
     {
         var pred = args[0];
         var g = args[1];
-        while (true) { var v = GenNext(g); if (v is Eof) return Const.EOF; if (App(pred, v) is Sym s && s != Const.FALSE) return v; }
+        while (true) { var v = GenNext(g); if (v is Eof) return Const.EOF; if (Truthy(App(pred, v))) return v; }
     }
 
     // generator-for-each: (generator-for-each fn g)

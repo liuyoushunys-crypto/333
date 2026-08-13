@@ -60,11 +60,20 @@ public static partial class PrimitiveRegistry
         _b("string->keyword", args => Sym.Intern(":" + ToStr(args[0]).TrimStart(':')));
         _b("keyword->string", args => new SchemeString(ToStr(args[0]).TrimStart(':')));
         _b("srfi-available?", _ => Const.TRUE);
-        _b("stream?", args => args[0] is Cell or Promise ? Const.TRUE : Const.FALSE);
+        _b("stream?", args => args[0] is Promise || args[0] is Cell c && (c.Cdr is Promise || c.Cdr is Func<object?[], object?>) ? Const.TRUE : Const.FALSE);
         _b("string-normalize-nfc", args => new SchemeString(ToStr(args[0])));
         _b("string-normalize-nfd", args => new SchemeString(ToStr(args[0])));
         _b("string-normalize-nfkc", args => new SchemeString(ToStr(args[0])));
         _b("string-normalize-nfkd", args => new SchemeString(ToStr(args[0])));
+        _b("string-concatenate-reverse", args => new SchemeString(string.Concat(args[0].Cells().Select(ToStr).Reverse())));
+        _b("substring-count", args =>
+        {
+            var s = ToStr(args[0]); var sub = ToStr(args[1]);
+            if (sub.Length == 0) return 0L;
+            long count = 0;
+            for (var at = 0; (at = s.IndexOf(sub, at, StringComparison.Ordinal)) >= 0; at++) count++;
+            return count;
+        });
         _b("string-prefix-ci?", args => ToStr(args[1]).StartsWith(ToStr(args[0]), StringComparison.OrdinalIgnoreCase) ? Const.TRUE : Const.FALSE);
         _b("gentemp", _ => Sym.Intern("gentemp"));
         foreach (var p in new[] { "f32", "f64", "s8", "s16", "s32", "s64", "u16", "u32", "u64" })
@@ -123,7 +132,6 @@ public static partial class PrimitiveRegistry
         // bytevector <-> string
         _b("bytevector->string", args => new SchemeString(args[0] is SchemeBytevector bv ? Encoding.UTF8.GetString(bv.Data) : ToStr(args[0])));
         _b("string->bytevector", args => new SchemeBytevector(Encoding.UTF8.GetBytes(ToStr(args[0]))));
-        _b("get-output-bytevector", args => new SchemeBytevector(Array.Empty<byte>()));
 
         // ports
         _b("textual-port?", args => IsPort(args[0], null) ? Const.TRUE : Const.FALSE);
@@ -131,7 +139,14 @@ public static partial class PrimitiveRegistry
         _b("u8-ready?", args => CharReady(args));
         _b("peek-u8", args => ReadU8(args, true));
         _b("read-u8", args => ReadU8(args, false));
-        _b("write-u8", args => WriteU8(args));
+         _b("write-u8", args => WriteU8(args));
+         _b("read-bytevector", args => ReadBytevector(args, false));
+         _b("read-bytevector!", args => ReadBytevector(args, true));
+         _b("write-bytevector", args => WriteBytevector(args));
+         _b("bytevector-s8-ref", args => (long)(sbyte)AsBytevector(args[0])[NumericHelper.ToInt(args[1])]);
+         _b("bytevector-s8-set!", args => { AsBytevector(args[0])[NumericHelper.ToInt(args[1])] = unchecked((byte)NumericHelper.ToInt(args[2])); return Const.VOID; });
+         _b("flush-output-port", _ => { Console.Out.Flush(); return Const.VOID; });
+         _b("call-with-output-string", args => CallWithStringOutput(args[0]));
 
         // json
         _b("json-read", args => JsonRead(args));
@@ -287,7 +302,7 @@ public static partial class PrimitiveRegistry
         object? r = args[0];
         for (int i = 1; i < args.Length; i++)
         {
-            var g = NumericHelper.ToLong(Gcd2(r, args[i]));
+            var g = SchemeGcd2(r, args[i]);
             r = NumericHelper.Div(NumericHelper.Mul(r, args[i]), g);
         }
         return r;
@@ -299,6 +314,14 @@ public static partial class PrimitiveRegistry
         long y = Math.Abs(NumericHelper.ToLong(b));
         while (y != 0) { var t = x % y; x = y; y = t; }
         return x;
+    }
+
+    private static object? SchemeGcd2(object? a, object? b)
+    {
+        var fa = NumericHelper.ToFraction(a); var fb = NumericHelper.ToFraction(b);
+        var den = BigInteger.Abs(fa.Den / BigInteger.GreatestCommonDivisor(fa.Den, fb.Den) * fb.Den);
+        var result = new SchemeFraction(BigInteger.GreatestCommonDivisor(fa.Num, fb.Num), den);
+        return result.Den == 1 ? (object?)(long)result.Num : result;
     }
 
     private static object? SymbolEqual(object?[] args)
@@ -444,11 +467,40 @@ public static partial class PrimitiveRegistry
         {
             if (t[2] is StreamWriter sw) { sw.Write((char)b); sw.Flush(); }
             else if (t[2] is StringBuilder sb) sb.Append((char)b);
+            else if (t[2] is BytePort bp) bp.Append((byte)b);
         }
         else
         {
             Console.Write((char)b);
         }
+        return Const.VOID;
+    }
+
+    private static object? ReadBytevector(object?[] args, bool intoExisting)
+    {
+        SchemeBytevector? target = intoExisting ? AsBytevector(args[0]) : null;
+        var count = intoExisting ? target!.Length : NumericHelper.ToInt(args[0]);
+        var port = intoExisting ? args[1] : args[1];
+        var bytes = new List<byte>();
+        while (bytes.Count < count)
+        {
+            var value = ReadU8([port], false);
+            if (value is Eof) break;
+            bytes.Add((byte)NumericHelper.ToInt(value));
+        }
+        if (target is not null)
+        {
+            for (var i = 0; i < bytes.Count; i++) target[i] = bytes[i];
+            return (long)bytes.Count;
+        }
+        return new SchemeBytevector(bytes.ToArray());
+    }
+
+    private static object? WriteBytevector(object?[] args)
+    {
+        var bytes = AsBytevector(args[0]);
+        var port = args.Length > 1 ? args[1] : null;
+        for (var i = 0; i < bytes.Length; i++) WriteU8([bytes[i], port]);
         return Const.VOID;
     }
 

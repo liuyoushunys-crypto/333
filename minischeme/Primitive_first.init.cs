@@ -55,6 +55,10 @@ public static partial class PrimitiveRegistry
         _b("display", PDisplay);
         _b("newline", args => { Console.WriteLine(); return Const.VOID; });
         _b("write", PWrite);
+        _b("print", PPrint);
+        _b("pretty-print", PPrint);
+        _b("write-simple", PWrite);
+        _b("write-shared", PWrite);
         _b("write-char", PWriteChar);
         _b("error", PError);
         _b("eval", args => Evaluator.Eval(args[0],args.Length > 1 && args[1] is Env e ? e : Evaluator.GlobalEnv));

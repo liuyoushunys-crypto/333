@@ -53,11 +53,21 @@ public class StringPort
     public void SetPos(int p) => Pos = p;
 }
 
-public sealed class BytePort
+public sealed class BytePort : IDisposable
 {
     public byte[] Data;
     public int Pos;
-    public BytePort(IEnumerable<byte> data) { Data = data.ToArray(); Pos = 0; }
+    public string? FilePath { get; }
+    public BytePort(IEnumerable<byte> data, string? filePath = null) { Data = data.ToArray(); FilePath = filePath; Pos = 0; }
+    public void Append(byte value)
+    {
+        Array.Resize(ref Data, Data.Length + 1);
+        Data[^1] = value;
+    }
+    public void Dispose()
+    {
+        if (FilePath is not null) File.WriteAllBytes(FilePath, Data);
+    }
 }
 
 public sealed class LambdaProc

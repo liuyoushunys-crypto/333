@@ -298,6 +298,21 @@ public static partial class PrimitiveRegistry
         return Const.VOID;
     }
 
+    static object? PPrint(object?[] args)
+    {
+        var value = args.Length > 0 ? args[0] : Const.VOID;
+        var port = args.Length > 1 ? args[1] : null;
+        var text = Printer.Format(value);
+        if (port is ITuple t && t.Length > 2 && t[0] is "port")
+        {
+            if (t[2] is StreamWriter sw) { sw.WriteLine(text); sw.Flush(); }
+            else if (t[2] is StringBuilder sb) sb.AppendLine(text);
+            else if (t[2] is BytePort bp) { foreach (var b in Encoding.UTF8.GetBytes(text + "\n")) bp.Append(b); }
+        }
+        else Console.WriteLine(text);
+        return Const.VOID;
+    }
+
 
     static object? PError(object?[] args)
     {

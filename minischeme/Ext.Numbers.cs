@@ -174,7 +174,7 @@ public static partial class PrimitiveRegistry
             long x = NumericHelper.ToLong(args[0]);
             int i = NumericHelper.ToInt(args[1]);
             bool b = args.Length > 2 && Truthy(args[2]);
-            return b ? x : (x | (1L << i));
+            return b ? (x | (1L << i)) : (x & ~(1L << i));
         });
         _b("fxfirst-set-bit", args =>
         {
@@ -330,8 +330,8 @@ public static partial class PrimitiveRegistry
         _b("prime?", args => IsPrime(NumericHelper.ToLong(args[0])) ? Const.TRUE : Const.FALSE);
         _b("factor", args => Factor(NumericHelper.ToLong(args[0])).ToCell());
         _b("binomial", args => Binomial(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])));
-        _b("permutations", args => Permutations(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])).ToCell());
-        _b("combinations", args => Combinations(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])).ToCell());
+        _b("permutations", args => args.Length == 1 && args[0] is Cell ? ListPermutations(args[0].Cells()).ToCell() : Permutations(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])).ToCell());
+        _b("combinations", args => args[0] is Cell ? ListCombinations(args[0].Cells(), NumericHelper.ToLong(args[1])).ToCell() : Combinations(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])).ToCell());
         _b("quick-expt", args => QuickExpt(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1])));
         _b("expt-mod", args => ModPow(NumericHelper.ToLong(args[0]), NumericHelper.ToLong(args[1]), NumericHelper.ToLong(args[2])));
         _b("log-base", args => Math.Log(NumericHelper.ToDouble(args[0]), NumericHelper.ToDouble(args[1])));
@@ -450,6 +450,23 @@ public static partial class PrimitiveRegistry
         return res;
     }
 
+    private static IEnumerable<object?> ListPermutations(IReadOnlyList<object?> items)
+    {
+        if (items.Count == 0) { yield return Const.NIL; yield break; }
+        for (var i = 0; i < items.Count; i++)
+            foreach (var tail in ListPermutations(items.Where((_, n) => n != i).ToList()))
+                yield return new Cell(items[i], tail);
+    }
+
+    private static IEnumerable<object?> ListCombinations(IReadOnlyList<object?> items, long k)
+    {
+        if (k == 0) { yield return Const.NIL; yield break; }
+        if (k < 0 || k > items.Count) yield break;
+        for (var i = 0; i <= items.Count - k; i++)
+            foreach (var tail in ListCombinations(items.Skip(i + 1).ToList(), k - 1))
+                yield return new Cell(items[i], tail);
+    }
+
     private static object? QuickExpt(long b, long e)
     {
         long r = 1;
@@ -478,9 +495,24 @@ public static partial class PrimitiveRegistry
 
     private static long CeilDiv(object? a, object? b)
     {
-        var ia = NumericHelper.ToBigInt(a);
-        var ib = NumericHelper.ToBigInt(b);
-        return (long)-FloorDivBig(-ia, ib);
+        var fa = NumericHelper.ToFraction(a); var fb = NumericHelper.ToFraction(b);
+        var den = fa.Den * fb.Num;
+        if (den == 0) throw new DivideByZeroException();
+        var num = fa.Num * fb.Den;
+        var q = num / den;
+        if (num % den != 0 && (num < 0) == (den < 0)) q++;
+        return (long)q;
+    }
+
+    private static object? FloorDiv(object? a, object? b)
+    {
+        var fa = NumericHelper.ToFraction(a); var fb = NumericHelper.ToFraction(b);
+        var den = fa.Den * fb.Num;
+        if (den == 0) throw new DivideByZeroException();
+        var num = fa.Num * fb.Den;
+        var q = num / den;
+        if (num % den != 0 && (num < 0) != (den < 0)) q--;
+        return q <= long.MaxValue && q >= long.MinValue ? (object?)(long)q : q;
     }
 
     private static BigInteger FloorDivBig(BigInteger ia, BigInteger ib)
@@ -490,15 +522,16 @@ public static partial class PrimitiveRegistry
         return r;
     }
 
-    private static long CeilRem(object? a, object? b)
+    private static object? CeilRem(object? a, object? b)
     {
-        return (long)(NumericHelper.ToBigInt(a) - NumericHelper.ToBigInt(CeilDiv(a, b)) * NumericHelper.ToBigInt(b));
+        return NumericHelper.Sub(a, NumericHelper.Mul(CeilDiv(a, b), b));
     }
 
     private static long RoundDiv(object? a, object? b)
     {
-        var ia = NumericHelper.ToBigInt(a);
-        var ib = NumericHelper.ToBigInt(b);
+        var fa = NumericHelper.ToFraction(a); var fb = NumericHelper.ToFraction(b);
+        var ia = fa.Num * fb.Den;
+        var ib = fa.Den * fb.Num;
         var q = ia * 2 / ib;
         var r = ia % ib;
         var rounded = ia / ib;
@@ -507,8 +540,13 @@ public static partial class PrimitiveRegistry
         return (long)rounded;
     }
 
-    private static long EuclideanDiv(object? a, object? b)
+    private static object? EuclideanDiv(object? a, object? b)
     {
+        if (a is SchemeFraction || b is SchemeFraction)
+        {
+            var divisor = NumericHelper.ToFraction(b);
+            return divisor.Num.Sign >= 0 ? FloorDiv(a, b) : NumericHelper.Negate(FloorDiv(NumericHelper.Negate(a), NumericHelper.Negate(b)));
+        }
         var ia = NumericHelper.ToBigInt(a);
         var ib = NumericHelper.ToBigInt(b);
         var ibAbs = BigInteger.Abs(ib);
@@ -516,8 +554,10 @@ public static partial class PrimitiveRegistry
         return (long)((ia - r) / ib);
     }
 
-    private static long EuclideanRem(object? a, object? b)
+    private static object? EuclideanRem(object? a, object? b)
     {
+        if (a is SchemeFraction || b is SchemeFraction)
+            return NumericHelper.Sub(a, NumericHelper.Mul(EuclideanDiv(a, b), b));
         var ia = NumericHelper.ToBigInt(a);
         var ib = NumericHelper.ToBigInt(b);
         var ibAbs = BigInteger.Abs(ib);
