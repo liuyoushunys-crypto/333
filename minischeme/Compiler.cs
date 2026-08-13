@@ -29,7 +29,8 @@ public static class Compiler
         "identity",
         "check",
         "test",
-        "t-eq"
+        "t-eq",
+        "my-for-each"
         // "my-bind-pattern",
         // "my-bind-elem",
         // "sx-macro-expand",
@@ -177,11 +178,22 @@ public static class Compiler
         }
         return false;
     }
+
+    static bool HasMutation(object? expr)
+    {
+        if (expr is Sym s && (s.Name is "set!" or "set!-form" or "set-car!" or "set-cdr!"))
+            return true;
+        if (expr is Cell c)
+            return HasMutation(c.Car) || HasMutation(c.Cdr);
+        return false;
+    }
+
     public static CompiledLambda? CompileLambdaProc(LambdaProc lp)
     {
         if (Environment.GetEnvironmentVariable("MSCM_JIT_DEBUG") is not null)
             Console.Error.WriteLine($"CompileLambdaProc ENTER: {lp.Name} params=[{string.Join(",", lp.Params)}]");
         if (!ShouldJit(lp)) return null;
+        if (HasMutation(lp.Body)) return null;
         // 编译失败标记：结构性失败(自递归/quasiquote)跨进程一致，记录后避免重复编译尝试
         // 重入保护由调用方 Evaluator 的 !IsCompiling 检查提供
         string? failFile = null;
