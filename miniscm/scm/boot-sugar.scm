@@ -50,6 +50,11 @@
     ((_ head tail)
      (cons head (delay tail)))))
 
+;; Compatibility alias used by the extension gap-fill library.
+(define-syntax cons-stream
+  (syntax-rules ()
+    ((cons-stream a b) (cons a (delay b)))))
+
 ;; ── fluid-let ──
 ;; 动态作用域绑定：临时修改变量值，离开作用域后自动恢复。
 ;;   用法: (fluid-let ((var val) ...) body ...)

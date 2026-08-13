@@ -640,10 +640,6 @@ if __name__=='__main__':
             sys.stderr.write(f"loaded {n} from {f}\n")
         except: pass
 
-    from initenv_ext import initenv_ext
-    initenv_ext()
-
-
         # scm 库 parameterize 版 with-output-to-string 需 display 支持端口重定向，
         # Python 的 display 写 sys.stdout，故用原生版（sys.stdout 切换）
     from primitives import call as _call2

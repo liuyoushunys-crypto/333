@@ -1956,6 +1956,41 @@ def char_set_equal(*css):
         if first != cs: return FALSE
     return TRUE
 
+def ucs_range_char_set(lower, upper, *rest):
+    """Build the SRFI-14 256-codepoint host representation."""
+    result = [False] * 256
+    for code in range(int(lower), min(int(upper), 256)):
+        if code >= 0:
+            result[code] = True
+    return result
+
+def tree_to_list(tree):
+    result = []
+    pending = [tree]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, Cell):
+            pending.append(node.cdr)
+            pending.append(node.car)
+        elif node is not NIL:
+            result.append(node)
+    return _lst(result)
+
+def generic_sort(first, second):
+    if callable(first):
+        return list_sort_fn(first, second)
+    return list_sort_fn(second, first)
+
+def num_den(value):
+    fraction = value if isinstance(value, Fraction) else Fraction(value, 1)
+    return Cell(fraction.numerator, fraction.denominator)
+
+def json_read_string(s):
+    return json_to_scheme(_json.loads(str(s)))
+
+def json_write_string(value):
+    return SchemeString(_json.dumps(scheme_to_json(value), ensure_ascii=False, separators=(',', ':')))
+
 def str_to_char_set(s):
     v = [False] * 256
     for ch in str(s):

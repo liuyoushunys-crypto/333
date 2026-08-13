@@ -50,9 +50,6 @@ public class Program
             }
         }
 
-        if (pyb)
-            PrimitiveRegistry.InitExt();
-
         if (args.Length > 0)
         {
             foreach (var path in args)

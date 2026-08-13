@@ -403,6 +403,23 @@ def initenv_ext():
     builtin('char-set-map', char_set_map)
     builtin('char-set-hash', lambda cs, *bound: char_set_hash(cs, int(bound[0]) if bound else 65536))
     builtin('char-set=?', char_set_equal)
+    builtin('ucs-range->char-set', ucs_range_char_set)
+    builtin('char-set:empty', [False] * 256)
+    builtin('char-set:full', [True] * 256)
+    builtin('char-set:lower-case', char_set_make([SchemeChar(chr(i)) for i in range(ord('a'), ord('z') + 1)]))
+    builtin('char-set:lower', be.data['char-set:lower-case'])
+    builtin('char-set:upper-case', char_set_make([SchemeChar(chr(i)) for i in range(ord('A'), ord('Z') + 1)]))
+    builtin('char-set:upper', be.data['char-set:upper-case'])
+    builtin('char-set:digit', char_set_make([SchemeChar(chr(i)) for i in range(ord('0'), ord('9') + 1)]))
+    builtin('char-set:whitespace', char_set_make([SchemeChar(' '), SchemeChar('\t'), SchemeChar('\n'), SchemeChar('\r')]))
+    builtin('char-set:letter', char_set_binop((be.data['char-set:lower-case'], be.data['char-set:upper-case']), lambda a, b: a or b))
+    builtin('char-set:punctuation', char_set_make([SchemeChar(c) for c in ".,;:!?-'\"()[]{}\\/@#$%^&*+=<>|~"]))
+    builtin('char-set:graphic', char_set_binop((be.data['char-set:letter'], be.data['char-set:digit'], be.data['char-set:punctuation']), lambda a, b: a or b))
+    builtin('char-set:printing', ucs_range_char_set(32, 127))
+    builtin('char-set:symbol', char_set_make([SchemeChar(c) for c in "$%&*+-./:<=>?@^_~"]))
+    builtin('char-set:hex-digit', char_set_make([SchemeChar(c) for c in '0123456789abcdefABCDEF']))
+    builtin('char-set:blank', char_set_make([SchemeChar(' '), SchemeChar('\t')]))
+    builtin('char-set:iso-control', char_set_adjoin(ucs_range_char_set(0, 32), [SchemeChar(chr(127))]))
 
     # ═══════════════════════════════════════════════════════════════
     # SRFI-158: Generators
@@ -505,6 +522,7 @@ def initenv_ext():
     builtin('list-zip', zip_fn)
     builtin('list-sort', list_sort_fn)
     builtin('list-stable-sort', list_sort_fn)
+    builtin('sort', generic_sort)
     builtin('list=', list_equal)
     builtin('sorted?', sorted_p_fn)
     builtin('merge', merge_fn)
@@ -587,6 +605,8 @@ def initenv_ext():
     builtin('naturals', lambda *a: nat_stream(int(a[0]) if a else 0))
     builtin('sieve', sieve_fn)
     builtin('primes', sieve_fn(nat_stream(2)))
+    builtin('tree->list', tree_to_list)
+    builtin('num-den', num_den)
 
     # ═══════════════════════════════════════════════════════════════
     # Number theory & math
@@ -623,6 +643,8 @@ def initenv_ext():
     builtin('inexact', lambda x: float(x))
     builtin('exact-nonnegative-integer?', lambda x: TRUE if (isinstance(x, int) and x >= 0) or (isinstance(x, Fraction) and x.denominator == 1 and x.numerator >= 0) else FALSE)
     builtin('exact-rational?', lambda x: TRUE if isinstance(x, (int, Fraction)) else FALSE)
+    builtin('exact-integer?', lambda x: TRUE if is_exact_int(x) else FALSE)
+    builtin('reciprocal', lambda x: div(1, x))
     builtin('ceiling->exact', lambda x: int(math.ceil(float(x))) if isinstance(x, Fraction) else int(math.ceil(x)))
     builtin('floor->exact', lambda x: int(math.floor(float(x))) if isinstance(x, Fraction) else int(math.floor(x)))
     builtin('truncate->exact', lambda x: int(x))
@@ -665,8 +687,8 @@ def initenv_ext():
     # ═══════════════════════════════════════════════════════════════
     builtin('json-read', json_read)
     builtin('json-write', json_write)
-    builtin('json-read-string', lambda s: _json.loads(str(s)))
-    builtin('json-write-string', lambda x: _json.dumps(x, separators=(',', ':')))
+    builtin('json-read-string', json_read_string)
+    builtin('json-write-string', json_write_string)
 
     # ═══════════════════════════════════════════════════════════════
     # SRFI-207: String-notable (bytevector <-> string)

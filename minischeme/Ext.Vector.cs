@@ -66,7 +66,7 @@ public static partial class PrimitiveRegistry
     {
         var fn = args[0];
         var v = (SchemeVector)args[1]!;
-        for (int i = 0; i < v.Length; i++) v[i] = App(fn, v[i]);
+        for (int i = 0; i < v.Length; i++) v[i] = App(fn, (long)i, v[i]);
         return v;
     }
 
@@ -110,11 +110,11 @@ public static partial class PrimitiveRegistry
         var data = ((SchemeVector)args[2]!).Data;
         if (right)
         {
-            for (int i = data.Count - 1; i >= 0; i--) acc = App(fn, (long)i, acc, data[i]);
+            for (int i = data.Count - 1; i >= 0; i--) acc = App(fn, (long)i, data[i], acc);
         }
         else
         {
-            for (int i = 0; i < data.Count; i++) acc = App(fn, (long)i, acc, data[i]);
+            for (int i = 0; i < data.Count; i++) acc = App(fn, (long)i, data[i], acc);
         }
         return acc;
     }
@@ -174,7 +174,8 @@ public static partial class PrimitiveRegistry
     private static object? VectorReverseBang(object?[] args)
     {
         var v = (SchemeVector)args[0]!;
-        v.Data.Reverse();
+        for (int i = 0, j = v.Length - 1; i < j; i++, j--)
+            (v[i], v[j]) = (v[j], v[i]);
         return Const.VOID;
     }
 

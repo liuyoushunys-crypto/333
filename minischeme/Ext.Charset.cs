@@ -10,7 +10,13 @@ public static partial class PrimitiveRegistry
     private static bool[] CharsetData(object? value)
     {
         if (value is bool[] bits) return bits;
-        if (value is SchemeVector vector) return vector.Data.Select(x => x is Sym s && !ReferenceEquals(s, Const.FALSE)).Select(x => x).ToArray();
+        if (value is SchemeVector vector)
+            return vector.Data.Select(x => x switch
+            {
+                bool b => b,
+                Sym s => !ReferenceEquals(s, Const.FALSE),
+                _ => x is not Nil
+            }).ToArray();
         throw new ArgumentException("not a character set");
     }
     private static object? RegisterExtChars()

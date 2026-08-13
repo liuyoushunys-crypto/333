@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Miniscm.Types;
 using Miniscm.Eval;
+using Miniscm.Compiler;
 using Void = Miniscm.Types.Void;
 
 namespace Miniscm.Primitives;
@@ -59,7 +60,7 @@ public static partial class PrimitiveRegistry
         _b("string->keyword", args => Sym.Intern(":" + ToStr(args[0]).TrimStart(':')));
         _b("keyword->string", args => new SchemeString(ToStr(args[0]).TrimStart(':')));
         _b("srfi-available?", _ => Const.TRUE);
-        _b("stream?", _ => Const.FALSE);
+        _b("stream?", args => args[0] is Cell or Promise ? Const.TRUE : Const.FALSE);
         _b("string-normalize-nfc", args => new SchemeString(ToStr(args[0])));
         _b("string-normalize-nfd", args => new SchemeString(ToStr(args[0])));
         _b("string-normalize-nfkc", args => new SchemeString(ToStr(args[0])));
@@ -76,7 +77,7 @@ public static partial class PrimitiveRegistry
             _b("make-" + p + "vector", args => new SchemeVector(Enumerable.Repeat(args.Length > 1 ? args[1] : 0L, NumericHelper.ToInt(args[0])).Cast<object?>()));
         }
         _b("json-read-string", args => JsonToScheme(System.Text.Json.JsonDocument.Parse(ToStr(args[0])).RootElement));
-        _b("json-write-string", args => new SchemeString(JsonSerializer.Serialize(args[0])));
+        _b("json-write-string", args => new SchemeString(JsonSerializer.Serialize(SchemeToJson(args[0]))));
         // numeric aliases & predicates
         _b("add1", args => NumericHelper.Add(args[0], 1L));
         _b("sub1", args => NumericHelper.Sub(args[0], 1L));
@@ -183,6 +184,78 @@ public static partial class PrimitiveRegistry
         });
 
         return Const.VOID;
+    }
+
+    private static object? RegisterExtSchemeCoverage()
+    {
+        _b("reciprocal", args => NumericHelper.Div(1L, args[0]));
+        _b("exact-integer?", args => args[0] is int or long or BigInteger ? Const.TRUE : Const.FALSE);
+        _b("num-den", args => new Cell(PNumerator([args[0]]), PDenominator([args[0]])));
+        _b("sort", args => args[0] is Delegate or LambdaProc or CompiledLambda
+            ? SortList([args[0], args[1]])
+            : SortList([args[1], args[0]]));
+        _b("tree->list", args => TreeToList(args[0]));
+        _b("ucs-range->char-set", args => UcsRangeCharSet(args));
+        _b("char-set:empty", _ => new bool[256]);
+        _b("char-set:full", _ => Enumerable.Repeat(true, 256).ToArray());
+        _b("char-set:lower-case", _ => UcsRangeCharSet([97L, 123L]));
+        _b("char-set:lower", _ => UcsRangeCharSet([97L, 123L]));
+        _b("char-set:upper-case", _ => UcsRangeCharSet([65L, 91L]));
+        _b("char-set:upper", _ => UcsRangeCharSet([65L, 91L]));
+        _b("char-set:digit", _ => UcsRangeCharSet([48L, 58L]));
+        _b("char-set:letter", _ => CharSetBinOp([UcsRangeCharSet([97L, 123L]), UcsRangeCharSet([65L, 91L])], true));
+        _b("char-set:whitespace", _ => MakeCharSet(" \t\r\n"));
+        _b("char-set:blank", _ => MakeCharSet(" \t"));
+        _b("char-set:iso-control", _ => UcsRangeCharSet([0L, 32L]));
+        _b("char-set:punctuation", _ => MakeCharSet(".,;:!?-'\"()[]{}\\/@#$%^&*+=<>|~"));
+        _b("char-set:graphic", _ => CharSetBinOp([
+            CharSetBinOp([UcsRangeCharSet([97L, 123L]), UcsRangeCharSet([65L, 91L])], true),
+            UcsRangeCharSet([48L, 58L]),
+            MakeCharSet(".,;:!?-'\"()[]{}\\/@#$%^&*+=<>|~")
+        ], true));
+        _b("char-set:printing", _ => UcsRangeCharSet([32L, 127L]));
+        _b("char-set:symbol", _ => MakeCharSet("$%&*+-./:<=>?@^_~"));
+        _b("char-set:hex-digit", _ => MakeCharSet("0123456789abcdefABCDEF"));
+        _b("json-encode", args => new SchemeString(JsonSerializer.Serialize(SchemeToJson(args[0]))));
+        _b("list-transduce", args => Transduce(args[0], args[1], args[2], args[3], "list"));
+        _b("vector-transduce", args => Transduce(args[0], args[1], args[2], args[3], "vector"));
+        _b("string-transduce", args => Transduce(args[0], args[1], args[2], args[3], "string"));
+        return Const.VOID;
+    }
+
+    private static object? TreeToList(object? tree)
+    {
+        var result = new List<object?>();
+        void Visit(object? node)
+        {
+            if (node is Cell c) { Visit(c.Car); Visit(c.Cdr); }
+            else if (node is not Nil) result.Add(node);
+        }
+        Visit(tree);
+        return result.ToCell();
+    }
+
+    private static object? UcsRangeCharSet(object?[] args)
+    {
+        int lower = NumericHelper.ToInt(args[0]);
+        int upper = NumericHelper.ToInt(args[1]);
+        var result = new bool[256];
+        for (int cp = Math.Max(0, lower); cp < Math.Min(256, upper); cp++) result[cp] = true;
+        return result;
+    }
+
+    private static object? Transduce(object? xform, object? reducer, object? init, object? input, string kind)
+    {
+        var xfReducer = App(xform, reducer);
+        object? acc = init;
+        IEnumerable<object?> values = kind switch
+        {
+            "vector" when input is SchemeVector v => v.Data,
+            "string" => ToStr(input).EnumerateRunes().Select(r => (object?)new SchemeChar(r.Value)),
+            _ => input.Cells()
+        };
+        foreach (var value in values) acc = App(xfReducer, acc, value);
+        return App(xfReducer, acc);
     }
 
     private static object? NumEqual(object?[] args)
@@ -561,26 +634,16 @@ public static partial class PrimitiveRegistry
 
     private static object? StreamMap(object? f, object? s)
     {
-        var cur = s;
-        var result = new List<object?>();
-        while (cur is Cell c)
-        {
-            result.Add(App(f, c.Car));
-            cur = StreamNext(cur);
-        }
-        return result.ToCell();
+        if (s is not Cell c) return Const.NIL;
+        return new Cell(App(f, c.Car), (Func<object?[], object?>)(_ => StreamMap(f, StreamNext(s))));
     }
 
     private static object? StreamFilter(object? pred, object? s)
     {
         var cur = s;
-        var result = new List<object?>();
-        while (cur is Cell c)
-        {
-            if (ReferenceEquals(App(pred, c.Car), Const.TRUE)) result.Add(c.Car);
-            cur = StreamNext(cur);
-        }
-        return result.ToCell();
+        while (cur is Cell c && ReferenceEquals(App(pred, c.Car), Const.FALSE)) cur = StreamNext(cur);
+        if (cur is not Cell hit) return Const.NIL;
+        return new Cell(hit.Car, (Func<object?[], object?>)(_ => StreamFilter(pred, StreamNext(cur))));
     }
 
     private static object? StreamTake(object? s, int n)
@@ -653,6 +716,6 @@ public static partial class PrimitiveRegistry
 
     private static object? Primes()
     {
-        return Sieve(new Cell(2L, (Func<object?[], object?>)(_ => new Cell(3L, (Func<object?[], object?>)(_ => Const.NIL)))));
+        return Sieve(NatStream([2L]));
     }
 }

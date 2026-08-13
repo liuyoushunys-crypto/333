@@ -459,14 +459,6 @@
 
 
 
-;; ── cons-stream ──
-
-(define-syntax cons-stream
-
-  (syntax-rules ()
-
-    ((cons-stream a b) (cons a (delay b)))))
-
 (define (vector-map! proc v)
 
   (let ((n (vector-length v)))
