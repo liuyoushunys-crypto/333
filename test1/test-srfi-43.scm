@@ -8,4 +8,4 @@
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
 (%test-equal "vector-map" #(2 3 4) (vector-map (lambda (x) (+ x 1)) '#(1 2 3)))
-(%test-equal "vector->list" (1 2 3) (vector->list '#(1 2 3)))
+ (%test-equal "vector->list" '(1 2 3) (vector->list '#(1 2 3)))
