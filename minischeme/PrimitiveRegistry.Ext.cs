@@ -63,7 +63,7 @@ public static partial class PrimitiveRegistry
             var fields = args.Length > 1 ? args[1..] : [];
             return ("condition", type, fields.ToList().ToCell());
         });
-        _b("condition?", args => args[0] is ITuple t && t.Length > 0 && (t[0] is "condition" or "condition-type") ? Const.TRUE : Const.FALSE);
+        _b("condition?", args => args[0] is ErrorObject or SchemeException || (args[0] is ITuple t && t.Length > 0 && (t[0] is "condition" or "condition-type")) ? Const.TRUE : Const.FALSE);
         _b("condition-ref", args =>
         {
             if (args[0] is ITuple t && t.Length > 2 && t[0] is "condition")

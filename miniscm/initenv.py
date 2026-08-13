@@ -10,6 +10,33 @@ from reader import parse_number_scheme
 from primitives import *
 from primitives import set_port_pos, hash_table_keys, hash_table_values, hash_table_ref_default, compose_fn, list_drop
 
+def _read_bytevector(n, port=None):
+    p = port
+    if p is None:
+        data = sys.stdin.buffer.read(n)
+        return SchemeBytevector(list(data))
+    if isinstance(p, tuple) and p[0] == 'bin-str-port':
+        data, pos = p[1]
+        end = min(pos + n, len(data))
+        p[1][1] = end
+        return SchemeBytevector(list(data[pos:end]))
+    if isinstance(p, tuple) and p[0] == 'bin-file-port' and len(p) > 3:
+        return SchemeBytevector(list(p[3].read(n)))
+    return SchemeBytevector([])
+
+def _read_bytevector_into(target, port):
+    data = _read_bytevector(len(target.data), port)
+    target.data[:len(data.data)] = data.data
+    return len(data.data)
+
+def _write_bytevector(value, port):
+    data = bytes(value.data)
+    if isinstance(port, tuple) and port[0] == 'byte-port':
+        port[1].extend(data)
+    elif isinstance(port, tuple) and port[0] == 'bin-file-port' and len(port) > 3:
+        port[3].write(data)
+    return VOID
+
 
 def _last_pair(lst):
     cur = lst
@@ -314,6 +341,7 @@ def initenv():
     builtin('bytevector-length', lambda v: len(v.data) if hasattr(v,'data') else 0)
     builtin('bytevector-u8-ref', lambda v,i: v.data[i] if hasattr(v,'data') else 0)
     builtin('bytevector-u8-set!', lambda v,i,x: bv_set_u8(v, i, x) if hasattr(v,'data') else VOID)
+    builtin('bytevector-copy!', lambda target, at, source: [target.data.__setitem__(int(at) + i, b) for i, b in enumerate(source.data)] and VOID)
     builtin('bytevector-append', lambda *vs: SchemeBytevector([b for v in vs for b in v.data]))
     builtin('bytevector-s8-ref', lambda v,i: v.data[i] - 256 if v.data[i] >= 128 else v.data[i])
     builtin('bytevector-s8-set!', lambda v,i,x: bv_set_u8(v, i, int(x) & 255))
@@ -335,6 +363,7 @@ def initenv():
     builtin('eof-object?', lambda x:TRUE if x is EOF else FALSE)
     builtin('open-input-file', lambda n: ("file-port",str(n),"r",open(str(n),'r')))
     builtin('open-binary-input-file', lambda n: ("bin-file-port",str(n),"rb",open(str(n),'rb')))
+    builtin('open-binary-output-file', lambda n: ("bin-file-port",str(n),"wb",open(str(n),'wb')))
     builtin('open-output-file', lambda n: ("file-port",str(n),"w",open(str(n),'w')))
     # open-input-string: 端口为 ('str-port', [字符串, 位置])，位置暂未使用
     builtin('open-input-string', lambda s: ("str-port", [str(s), 0]))
@@ -349,6 +378,9 @@ def initenv():
     builtin('call-with-string-output', lambda proc: (lambda p: (proc(p), SchemeString(p[1][0]))[1])(('str-port', [''])))
     builtin('call-with-string-output-port', lambda proc: (lambda p: (proc(p), SchemeString(p[1][0]))[1])(('str-port', [''])))
     builtin('call-with-bytevector-output-port', lambda proc: (lambda p: (proc(p), SchemeBytevector(p[1]))[1])(('byte-port', bytearray())))
+    builtin('read-bytevector', lambda n, p=None: _read_bytevector(int(n), p))
+    builtin('read-bytevector!', _read_bytevector_into)
+    builtin('write-bytevector', _write_bytevector)
     builtin('with-input-from-string', lambda s, thunk: _with_string_input(str(s), thunk))
     builtin('delay-force', lambda p: p)
     builtin('close-input-port', lambda p: p[3].close() if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3 else VOID)
@@ -432,6 +464,9 @@ def initenv():
     # proc 接收 yield 函数; 每次调用生成器返回下一个 yield 值, proc 结束后返回 eof
     builtin('make-coroutine-generator', make_coroutine_generator)
     builtin('make-compound-condition', lambda *a: ErrorObject('compound', _lst(list(a)) if a else NIL))
+    builtin('extract-condition', lambda *a: FALSE)
+    builtin('record?', lambda x: FALSE)
+    builtin('error-message', lambda x: SchemeString(str(x)))
     builtin('condition?', lambda x: TRUE if isinstance(x,(SchemeException,ErrorObject)) or (isinstance(x, tuple) and x and x[0] == 'condition') else FALSE)
     builtin('make-condition-type', lambda name, parent, predicate, fields: ('condition-type', name, [f for f in _plist(fields)]))
     builtin('make-condition', lambda typ, *fields: ('condition', typ, dict(zip((f.name if isinstance(f, Sym) else str(f) for f in typ[2]), fields[1::2]))))
