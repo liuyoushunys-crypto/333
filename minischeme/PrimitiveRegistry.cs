@@ -51,7 +51,12 @@ public static partial class PrimitiveRegistry
     static object? PMember(object?[] args)
     {
         object? cur = args[1];
-        while (cur is Cell c) { if (c.Car?.Equals(args[0]) == true) return cur; cur = c.Cdr; }
+        while (cur is Cell c)
+        {
+            if (ReferenceEquals(Miniscm.Compiler.JitRuntime.Equal2(c.Car, args[0]), Const.TRUE))
+                return cur;
+            cur = c.Cdr;
+        }
         return Const.FALSE;
     }
 

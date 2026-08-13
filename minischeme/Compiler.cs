@@ -1112,12 +1112,6 @@ public static class Compiler
                     var b = CompileExpr(node.Args[1]);
                     return Expression.Call(typeof(JitRuntime), "Equal2", null, Obj(a), Obj(b));
                 }
-                if (op == "member")
-                {
-                    var a = CompileExpr(node.Args[0]);
-                    var b = CompileExpr(node.Args[1]);
-                    return Expression.Call(typeof(JitRuntime), "Member", null, Obj(a), Obj(b));
-                }
                 if (op == "assoc")
                 {
                     var a = CompileExpr(node.Args[0]);

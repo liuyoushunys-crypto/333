@@ -776,7 +776,9 @@ public static partial class PrimitiveRegistry
         var cur = lst;
         while (cur is Cell c)
         {
-            if (identity ? (ReferenceEquals(c.Car, obj) || Equals(c.Car, obj)) : Equals(c.Car, obj))
+            if (identity
+                ? (ReferenceEquals(c.Car, obj) || Equals(c.Car, obj))
+                : ReferenceEquals(Miniscm.Compiler.JitRuntime.Equal2(c.Car, obj), Const.TRUE))
                 return cur;
             cur = c.Cdr;
         }
