@@ -73,7 +73,7 @@
 (test-equal "cl-str 1"       "hello" (cl-str "hello"))
 (test-equal "cl-str 2"       "hel" (cl-str "hello" 3))
 (test-equal "cl-str 3"       "ell" (cl-str "hello" 1 4))
-(test-equal "cl-str multi"   "abc" (cl-str "a" "b" "c"))
+(test-equal "cl-str multi"   "abcd" (cl-str "a" "b" "c" "d"))
 
 ;; ════════════════════════════════════════════════════════════════
 ;; 2. Rest 参数子句（点对形式）
@@ -128,12 +128,12 @@
 
 ;; 无 rest 子句时报错，用 guard 捕获
 (test-assert "cl-no-rest 0 error"
-  (guard (e (else (string-contains? (error-object-message e) "no matching clause")))
+   (guard (e (else (string-contains? (error-object-message e) "no matching arity")))
     (cl-no-rest)
     #f))
 
 (test-assert "cl-no-rest 3 error"
-  (guard (e (else (string-contains? (error-object-message e) "no matching clause")))
+   (guard (e (else (string-contains? (error-object-message e) "no matching arity")))
     (cl-no-rest 1 2 3)
     #f))
 
