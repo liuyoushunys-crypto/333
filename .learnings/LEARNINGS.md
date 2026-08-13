@@ -26,3 +26,30 @@ Use per-test paired baselines, preserve existing algorithms, and require `define
 - Last-Seen: 2026-08-13
 
 ---
+
+## [LRN-20260813-002] preserve-independent-regression-tests
+
+**Logged**: 2026-08-13T22:45:00Z
+**Priority**: high
+**Status**: pending
+**Area**: tests
+
+### Summary
+When a test helper exposes a real implementation defect, separate and preserve the helper test instead of deleting it.
+
+### Details
+The `dv-check` suite was mistakenly removed from mixed test files. The intended fix is to place the complete `check`/`dv-sum`/`dv-check` code in an independent test file and repair `floor-div` and related division behavior until both implementations pass. Test removal is not an acceptable substitute for fixing the implementation.
+
+### Suggested Action
+Keep focused regression files for division semantics and clear both Python and C# compiled caches before comparing results after macro or evaluator changes.
+
+### Metadata
+- Source: user_feedback
+- Related Files: test/test-division.scm, miniscm/primitives_ext.py, minischeme/Ext.Numbers.cs
+- Tags: correction, regression-tests, floor-div, python-csharp-parity
+- Pattern-Key: tests.preserve-failing-regressions
+- Recurrence-Count: 1
+- First-Seen: 2026-08-13
+- Last-Seen: 2026-08-13
+
+---
