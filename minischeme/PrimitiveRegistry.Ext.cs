@@ -30,6 +30,7 @@ public static partial class PrimitiveRegistry
         RegisterExtSchemeCoverage();
         RegisterScm12Host();
         RegisterTestedApis();
+        Evaluator.GlobalEnv.Define("stream-null", Const.NIL);
 
         // SRFI-143 exposes these as procedures; the host library also uses
         // the same names for constants, so install the callable contract last.

@@ -5,6 +5,8 @@
 ;; ============================================================
 
 ;; ── SRFI-197: pipeline ──
+(define stream-null '())
+
 (define-syntax |>
   (syntax-rules ()
     ((_ x) x)
