@@ -176,7 +176,11 @@
 ;;         (list-ec (+ x y) (for x '(1 2)) (for y '(10 20)))
 ;;           => '(11 21 12 22)  笛卡尔积
 (define-syntax list-ec
-  (syntax-rules (for if)
+  (syntax-rules (for if :range :list)
+    ((_ expr (:range var start end) more ...)
+     (list-ec expr (for var (iota (- end start) start 1)) more ...))
+    ((_ expr (:list var lst) more ...)
+     (list-ec expr (for var lst) more ...))
     ((_ expr)
      (list expr))
     ((_ expr (for var lst))
@@ -194,7 +198,11 @@
 ;;   示例: (sum-ec x (for x '(1 2 3 4 5)))                 => 15
 ;;         (sum-ec x (for x '(1 2 3 4 5)) (if (> x 2)))    => 12
 (define-syntax sum-ec
-  (syntax-rules (for if)
+  (syntax-rules (for if :range :list)
+    ((_ expr (:range var start end) more ...)
+     (sum-ec expr (for var (iota (- end start) start 1)) more ...))
+    ((_ expr (:list var lst) more ...)
+     (sum-ec expr (for var lst) more ...))
     ((_ expr (if test) more ...)
      (if test (sum-ec expr more ...) 0))
     ((_ expr (for var lst) more ...)
@@ -209,7 +217,11 @@
 ;;   示例: (any?-ec (even? x) (for x '(1 3 5 7)))      => #f
 ;;         (every?-ec (odd? x) (for x '(1 3 5 7)))      => #t
 (define-syntax any?-ec
-  (syntax-rules (for if)
+  (syntax-rules (for if :range :list)
+    ((_ expr (:range var start end) more ...)
+     (any?-ec expr (for var (iota (- end start) start 1)) more ...))
+    ((_ expr (:list var lst) more ...)
+     (any?-ec expr (for var lst) more ...))
     ((_ expr (for var lst) more ...)
      (any (lambda (var) (any?-ec expr more ...)) lst))
     ((_ expr (if test) more ...)
