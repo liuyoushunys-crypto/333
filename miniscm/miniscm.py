@@ -613,7 +613,7 @@ if __name__=='__main__':
     # define-macro/define-syntax/quasiquote/syntax-rules 由 Scheme 端实现,
     # Python 侧仅保留桥接原语 (sx-defmacro/sx-expand-call 等)。
     # my-definemacro2.scm 功能已内嵌至 boot-min2.scm, 无需加载。
-    _libs = ['boot-min2.scm','boot-core.scm','boot-sugar.scm']
+    _libs = ['boot-min2.scm','boot-core.scm','boot-sugar.scm','boot-srfi.scm']
     for f in _libs:
         try:
             n=load_file(_BASE+'/scm/'+f)

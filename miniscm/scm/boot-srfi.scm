@@ -31,6 +31,22 @@
               clauses)
        (else (error "case-lambda: no matching arity")))))
 
+;; ── SRFI-89/182: lambda* (optional positional arguments) ──
+(define-macro (lambda* specs . body)
+  (let loop ((ss specs) (i 0) (bindings '()))
+    (if (null? ss)
+        `(lambda args
+           (let ,(reverse bindings) ,@body))
+        (let* ((spec (car ss))
+               (name (if (pair? spec) (car spec) spec))
+               (default (if (and (pair? spec) (pair? (cdr spec)))
+                            (cadr spec) #f)))
+          (loop (cdr ss) (+ i 1)
+                (cons `(,name (if (> (length args) ,i)
+                                  (list-ref args ,i)
+                                  ,default))
+                      bindings))))))
+
 ;; ── SRFI-73: infix 运算符表达式（支持 + - * / 优先级）──
 (define-macro (infix . terms)
   `(infix-impl (quote ,terms)))
@@ -134,8 +150,13 @@
 ;; ── SRFI-86: mu（多值绑定）──
 (define-syntax mu
   (syntax-rules ()
+    ((_ (var ...) body ...)
+     (lambda (var ...) body ...))
     ((_ (var ...) expr body ...)
      (call-with-values (lambda () expr) (lambda (var ...) body ...)))))
+
+;; SRFI-25/163 shape descriptor used by the portable array helpers.
+(define (shape start end) (list start end))
 
 ;; ── SRFI-55: require-extension ──
 (define-syntax require-extension

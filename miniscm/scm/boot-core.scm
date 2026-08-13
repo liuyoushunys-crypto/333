@@ -56,6 +56,8 @@
 ;;     - 命名 let 是 named-let / 内循环的惯用写法
 (define-syntax let
   (syntax-rules ()
+    ((let (((values var ...) expr)) body1 body2 ...)
+     (let-values (((var ...) expr)) body1 body2 ...))
     ((let ((var val) ...))
      ((lambda (var ...) (if #f #f)) val ...))
     ((let ((var val) ...) body1 body2 ...)
@@ -249,6 +251,10 @@
   (syntax-rules (else)
     ((case-helper val (else result1 result2 ...))
      (begin result1 result2 ...))
+    ((case-helper val ((key ...) => proc) clause1 clause2 ...)
+     (if (memv val '(key ...))
+         (proc val)
+         (case-helper val clause1 clause2 ...)))
     ((case-helper val ((key ...) result1 result2 ...))
      (if (memv val '(key ...))
          (begin result1 result2 ...)
@@ -256,7 +262,7 @@
     ((case-helper val ((key ...) result1 result2 ...) clause1 clause2 ...)
      (if (memv val '(key ...))
          (begin result1 result2 ...)
-         (case-helper val clause1 clause2 ...)))))
+          (case-helper val clause1 clause2 ...)))))
 
 ;; ── do ──
 ;; 迭代循环（R7RS 标准）。
@@ -576,6 +582,12 @@
 (define-syntax let-values
   (syntax-rules ()
     ((_ () body ...) (begin body ...))
+    ((_ (((vars ...) expr)) body ...)
+     (call-with-values (lambda () expr)
+       (lambda (vars ...) body ...)))
+    ((_ (((values vars ...) expr) rest ...) body ...)
+     (call-with-values (lambda () expr)
+       (lambda vars (let-values (rest ...) body ...))))
     ((_ ((vars expr) rest ...) body ...)
      (call-with-values (lambda () expr)
        (lambda vars (let-values (rest ...) body ...))))))
