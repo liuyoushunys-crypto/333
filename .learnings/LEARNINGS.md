@@ -53,3 +53,30 @@ Keep focused regression files for division semantics and clear both Python and C
 - Last-Seen: 2026-08-13
 
 ---
+
+## [LRN-20260813-003] preserve-external-worktree-changes
+
+**Logged**: 2026-08-13T23:47:00Z
+**Priority**: critical
+**Status**: pending
+**Area**: backend
+
+### Summary
+Never roll back, restore, or overwrite code changes made externally by the user.
+
+### Details
+Changes already present in the worktree may be intentional user refactors, even when they cause a build failure or differ from the agent's expected structure. Inspect and work with those changes. Do not use restore, checkout, reset, or equivalent actions against them. If they directly conflict with the requested task or make progress impossible, stop and ask the user before changing them.
+
+### Suggested Action
+Before editing, inspect `git status` and the relevant diff. Keep unrelated and user-owned changes untouched. Treat explicit user corrections about file organization or implementation structure as authoritative for the remainder of the session and future workspace tasks.
+
+### Metadata
+- Source: user_feedback
+- Related Files: minischeme/init.cs, minischeme/Program.cs
+- Tags: correction, worktree, preserve-user-changes, no-rollback
+- Pattern-Key: workflow.never-revert-external-changes
+- Recurrence-Count: 1
+- First-Seen: 2026-08-13
+- Last-Seen: 2026-08-13
+
+---

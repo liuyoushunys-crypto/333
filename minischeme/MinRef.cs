@@ -79,7 +79,7 @@ public static class MinRef
         return Const.FALSE;
     }
 
-internal static Env SxDefEnv()                                       // (sx-def-env)
+    internal static Env SxDefEnv()                                       // (sx-def-env)
         => Evaluator.CurrentMacroDefEnv ?? Evaluator.GlobalEnv;
 
     static Env SxExpandEnv()                                    // (sx-expand-env)
@@ -156,7 +156,7 @@ internal static Env SxDefEnv()                                       // (sx-def-
         return [];
     }
 
-internal static object? SxMacroExpand(object? pattern, object? body, object? args, Env callEnv)  // 9
+    internal static object? SxMacroExpand(object? pattern, object? body, object? args, Env callEnv)  // 9
     {
         // 还原 let: bindings → params/quoted-vals → app-form → eval
         var bindings = MyBindPattern(pattern, args);
@@ -301,7 +301,7 @@ internal static object? SxMacroExpand(object? pattern, object? body, object? arg
     static object? QqWalkVector(object? v, Env env)             // 24
         => QqWalkVectorHelper(((SchemeVector)v!).Data.ToCell(), Const.NIL, env);
 
-internal static object? QqWalk(object? e, Env env)                   // 25
+    internal static object? QqWalk(object? e, Env env)                   // 25
     {
         if (e is Cell) return QqWalkList(e, env);               // (pair? e)
         if (e is SchemeVector) return QqWalkVector(e, env);     // (vector? e)
@@ -367,11 +367,11 @@ internal static object? QqWalk(object? e, Env env)                   // 25
     // SxCollectSetTargets / SxEllipsisVars / SxFindListCount / SxRepeat /
     // SxSubBindings 见 NativeSyntax.cs (internal)
 
-internal static List<Sym> SxMutatedVars = [];                        // 41: (define *sx-mutated-vars* '())
+    internal static List<Sym> SxMutatedVars = [];                        // 41: (define *sx-mutated-vars* '())
 
     // ── syntax-rules 入口 ─────────────────────────────────────────────────
 
-internal static string SxPrint(object? v)
+    internal static string SxPrint(object? v)
     {
         if (v is null || v == Const.NIL) return "()";
         if (v is Sym s) return s.Name;
@@ -386,7 +386,7 @@ internal static string SxPrint(object? v)
         return v.ToString() ?? "?";
     }
 
-internal static object? SxDispatch(object? args, object? lits, object? rules)  // 54
+    internal static object? SxDispatch(object? args, object? lits, object? rules)  // 54
     {
         var litsList = IterCells(lits);
         var cur = rules;
@@ -424,7 +424,7 @@ internal static object? SxDispatch(object? args, object? lits, object? rules)  /
 
     static List<(Sym, object?)> SxBindings = [];                // 56: (define *sx-bindings* '())
 
-internal static List<(Sym, object?)> SxGetBindings()                 // 57
+    internal static List<(Sym, object?)> SxGetBindings()                 // 57
         => SxBindings;
 
     static void SxSetBindings(List<(Sym, object?)> b)           // 58
@@ -477,7 +477,7 @@ internal static List<(Sym, object?)> SxGetBindings()                 // 57
         return new Cell(QsExpand(cc.Car), QsWalkList(cc.Cdr));
     }
 
-internal static object? QsExpand(object? x)                          // 65
+    internal static object? QsExpand(object? x)                          // 65
     {
         if (x is Sym xs)                                        // (symbol? x)
             return NativeSyntax.SxExpandSym(xs, SxGetBindings(), SxMutatedVars, SxDefEnv());
@@ -499,7 +499,7 @@ internal static object? QsExpand(object? x)                          // 65
         return QsWalkList(xc);                                  // (qs-walk-list x)
     }
 
-internal static object? SxGenTemps(object? lst)                      // 66
+    internal static object? SxGenTemps(object? lst)                      // 66
     {
         int n = NativeSyntax.Length(lst);                       // (length lst)
         object? acc = Const.NIL;
@@ -510,7 +510,7 @@ internal static object? SxGenTemps(object? lst)                      // 66
 
     // ── syntax-case / with-syntax / let-syntax ────────────────────────────
 
-internal static object? SxSyntaxCase(object? expr, object? lits, object? clauses)  // 67
+    internal static object? SxSyntaxCase(object? expr, object? lits, object? clauses)  // 67
     {
         var datum = expr;                                       // (datum expr)
         var litsList = IterCells(lits);
@@ -546,7 +546,7 @@ internal static object? SxSyntaxCase(object? expr, object? lits, object? clauses
         return r;
     }
 
-internal static object? SxWithSyntax(object? pairs, object? body)    // 70
+    internal static object? SxWithSyntax(object? pairs, object? body)    // 70
     {
         var acc = new List<(Sym, object?)>();
         var ps = pairs;
@@ -578,7 +578,7 @@ internal static object? SxWithSyntax(object? pairs, object? body)    // 70
         return last;
     }
 
-internal static object? SxLetSyntax(object? bindings, object? body)  // 72
+    internal static object? SxLetSyntax(object? bindings, object? body)  // 72
     {
         // (append (map sx-make-macro-binding bindings) body)
         var inner = new List<object?>();
@@ -589,7 +589,7 @@ internal static object? SxLetSyntax(object? bindings, object? body)  // 72
         // (list (cons 'lambda (cons '() ...)))
     }
 
-internal static object? SxMakeMacroBinding(object? binding)          // 73
+    internal static object? SxMakeMacroBinding(object? binding)          // 73
     {
         var bc = (Cell)binding!;
         var name = bc.Car;                                      // (car binding)

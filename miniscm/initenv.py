@@ -115,6 +115,43 @@ def _with_string_input(value, thunk):
     finally:
         _redirect_in(old)
 
+def _inexact_to_exact_fn(x):
+    if isinstance(x, float):
+        if x != x or x == float('inf') or x == float('-inf'):
+            raise SchemeException("inexact->exact: not a finite number")
+        return Fraction(x).limit_denominator(1000000)
+    if isinstance(x, Fraction) and x.denominator == 1: return int(x)
+    return x
+def _string_to_number(s, radix=10):
+    text = str(s)
+    radix = int(radix)
+    if radix != 10:
+        try:
+            return int(text, radix)
+        except ValueError:
+            return FALSE
+    return parse_number_scheme(text)
+
+def port_pos(p):
+    if isinstance(p, tuple) and p[0] == 'str-port' and isinstance(p[1], list) and len(p[1]) > 1:
+        if not hasattr(set_port_pos, '_saved_str'):
+            set_port_pos._saved_str = {}
+        original = set_port_pos._saved_str.setdefault(id(p), p[1][0])
+        return len(original) - len(p[1][0])
+    if isinstance(p, tuple) and p[0] == 'file-port' and len(p) > 3:
+        return p[3].tell()
+    if isinstance(p, tuple) and p[0] == 'bin-str-port' and isinstance(p[1], list) and len(p[1]) > 1:
+        return p[1][1]
+    return 0
+
+def hash_table_set(ht, *pairs):
+    if len(pairs) % 2: raise SchemeException('hash-table-set!: expected key/value pairs')
+    for i in range(0, len(pairs), 2): ht[pairs[i]] = pairs[i + 1]
+    return VOID
+def hash_table_merge_slash(dst, src):
+    dst.update(src)
+    return dst
+
 def initenv():
     builtin('NIL', lambda: NIL)
     builtin('stream-null', NIL)
@@ -146,23 +183,7 @@ def initenv():
 # ── 数值转换 ──
     builtin('exact->inexact', lambda x: (lambda v: float('inf') if v.bit_length() > 1023 else float(v))(x) if isinstance(x, int) else (float(x) if isinstance(x, Fraction) else x))
     # inexact->exact：float 使用 limit_denominator(1000000) 近似为 Fraction
-    def _inexact_to_exact_fn(x):
-        if isinstance(x, float):
-            if x != x or x == float('inf') or x == float('-inf'):
-                raise SchemeException("inexact->exact: not a finite number")
-            return Fraction(x).limit_denominator(1000000)
-        if isinstance(x, Fraction) and x.denominator == 1: return int(x)
-        return x
     builtin('inexact->exact', _inexact_to_exact_fn)
-    def _string_to_number(s, radix=10):
-        text = str(s)
-        radix = int(radix)
-        if radix != 10:
-            try:
-                return int(text, radix)
-            except ValueError:
-                return FALSE
-        return parse_number_scheme(text)
     builtin('string->number', _string_to_number)
     builtin('numerator', lambda x: int(x) if isinstance(x,int) else (x.numerator if isinstance(x,Fraction) else x))
     builtin('denominator', lambda x: 1 if isinstance(x,int) else (x.denominator if isinstance(x,Fraction) else x.numerator if isinstance(x,float) and x==int(x) else 1))
@@ -393,17 +414,6 @@ def initenv():
     builtin('peek-char', pkc)
     builtin('write', write_proc)
     builtin('write-char', wc)
-    def port_pos(p):
-        if isinstance(p, tuple) and p[0] == 'str-port' and isinstance(p[1], list) and len(p[1]) > 1:
-            if not hasattr(set_port_pos, '_saved_str'):
-                set_port_pos._saved_str = {}
-            original = set_port_pos._saved_str.setdefault(id(p), p[1][0])
-            return len(original) - len(p[1][0])
-        if isinstance(p, tuple) and p[0] == 'file-port' and len(p) > 3:
-            return p[3].tell()
-        if isinstance(p, tuple) and p[0] == 'bin-str-port' and isinstance(p[1], list) and len(p[1]) > 1:
-            return p[1][1]
-        return 0
     builtin('port-position', port_pos)
     builtin('set-port-position!', set_port_pos)
     builtin('get-output-string', lambda x: x[1][0] if isinstance(x,tuple) and x[0]=='str-port' and isinstance(x[1],list) else (x[1] if isinstance(x,tuple) and x[0]=='str-port' else (''.join(x.data) if hasattr(x,'data') else '')))
@@ -497,10 +507,7 @@ def initenv():
     builtin('make-hash-table', make_ht)
     builtin('hash-table?', lambda x: TRUE if isinstance(x, dict) else FALSE)
     builtin('hash-table-size', lambda ht: len(ht))
-    def hash_table_set(ht, *pairs):
-        if len(pairs) % 2: raise SchemeException('hash-table-set!: expected key/value pairs')
-        for i in range(0, len(pairs), 2): ht[pairs[i]] = pairs[i + 1]
-        return VOID
+    
     builtin('hash-table-set!', hash_table_set)
     builtin('hash-table-ref', lambda ht, k, *default: ht[k] if k in ht else (default[0] if default else FALSE))
     builtin('hash-table-ref/default', hash_table_ref_default)
@@ -529,9 +536,6 @@ def initenv():
     builtin('hash-table/put!', lambda ht, k, v: ht.__setitem__(k, v) or VOID)
     builtin('hash-table/update!', lambda ht, k, f, default=FALSE: ht.__setitem__(k, f(ht.get(k, default))) or VOID)
     builtin('hash-table/walk', lambda f, ht: ([f(k, v) for k, v in list(ht.items())] and VOID))
-    def hash_table_merge_slash(dst, src):
-        dst.update(src)
-        return dst
     builtin('hash-table/merge!', hash_table_merge_slash)
     builtin('string-contains?', lambda s, sub: TRUE if str(sub) in str(s) else FALSE)
     builtin('bytevector-copy', lambda bv: SchemeBytevector(list(bv.data)) if hasattr(bv, 'data') else SchemeBytevector(list(bv)))

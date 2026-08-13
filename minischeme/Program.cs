@@ -19,7 +19,7 @@ public class Program
         var projectDir = Path.GetFullPath(Path.Combine(baseDir, "..", "..", ".."));
         var scmDir = Path.Combine(projectDir, "scm");
 
-        var _allLibs = new[] { "boot-min2.scm", "boot-core.scm", "boot-sugar.scm" };
+        var _allLibs = new[] { "boot-min2.scm", "boot-core.scm", "boot-sugar.scm","boot-srfi.scm" };
         var pyb = Environment.GetEnvironmentVariable("MSCM_PYB") == "1";
         var _libs = _allLibs;//pyb ? _allLibs.Take(3).ToArray() : _allLibs;
         if (Directory.Exists(scmDir))
@@ -42,13 +42,6 @@ public class Program
             }
         }
 
-        // Install native extensions after Scheme libraries load so their
-        // provisional definitions cannot replace the runtime contract.
-        PrimitiveRegistry.InitExt();
-
-        // Load supplementary SRFI/extension definitions LAST so they can
-        // override any conflicting native builtins (e.g. list-transduce).
-        LoadBootLib(Path.Combine(scmDir, "boot-srfi.scm"));
 
         if (args.Length > 0)
         {

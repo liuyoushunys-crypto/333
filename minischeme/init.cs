@@ -91,12 +91,12 @@ public static partial class PrimitiveRegistry
 
     public static void Init()
     {
+        var defaultSource = new SchemeRandomSource(DateTimeOffset.UtcNow.ToUnixTimeSeconds()); 
         Evaluator.GlobalEnv.Define("*char-names*", Const.NIL);
         Evaluator.GlobalEnv.Define("pi", Math.PI);
         Evaluator.GlobalEnv.Define("primes", Primes());
         Evaluator.GlobalEnv.Define("red", new SchemeColor(1, 0, 0));
         Evaluator.GlobalEnv.Define("stream-null", Const.NIL);
-        var defaultSource = new SchemeRandomSource(DateTimeOffset.UtcNow.ToUnixTimeSeconds()); 
         Evaluator.GlobalEnv.Define("*default-random-source*", defaultSource); 
         Evaluator.GlobalEnv.Define("char-set:blank",MakeCharSet(" \t")); 
         Evaluator.GlobalEnv.Define("char-set:digit", UcsRangeCharSet([48L,58L])); 
@@ -139,7 +139,6 @@ public static partial class PrimitiveRegistry
         _b("%set-list-queue-back!", args => Const.VOID);
         _b("%set-list-queue-front!", args => { var q=(SchemeListQueue)args[0]!; q.Items.Clear(); q.Items.AddRange(args[1].Cells()); return Const.VOID; });
         _b("*", args => args.Aggregate((object?)1L, (acc, x) => NumericHelper.Mul(acc!, x))!);
-         Evaluator.GlobalEnv.Define("*char-names*", Const.NIL);
         _b("-1+", args => NumericHelper.ToLong(args[0]) - 1);
         _b("->string", args => args[0] is string or SchemeString ? args[0] : new SchemeString(Printer.Format(args[0])));
         _b("/", PDiv);

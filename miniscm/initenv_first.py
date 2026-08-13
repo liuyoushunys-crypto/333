@@ -15,6 +15,28 @@ from primitives_first import (
     _eval_bridge, _sx_def_env, _sx_expand_env, _sx_defined, _sx_defmacro, _sx_expand_call,
 )
 
+from minref import (sx_macro_expand, qq_walk, sx_expand, sx_get_bindings,
+                    sx_gen_temps, sx_syntax_case, sx_with_syntax,
+                    sx_let_syntax, sx_make_macro_binding, qs_expand,
+                    sx_dispatch, sx_def_env, _sx_mutated_vars)
+
+def _number_to_string(x, radix=10):
+    radix = int(radix)
+    if radix != 10 and isinstance(x, int) and not isinstance(x, bool):
+        if not 2 <= radix <= 36:
+            raise ValueError("number->string: invalid radix")
+        digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+        sign = "-" if x < 0 else ""
+        n = abs(x)
+        out = "0" if n == 0 else ""
+        while n:
+            out = digits[n % radix] + out
+            n //= radix
+        return SchemeString(sign + out)
+    return SchemeString(str(x))
+
+def _min_sx_expand(tmpl, bindings):
+    return sx_expand(tmpl, bindings, _sx_mutated_vars, sx_def_env())
 
 def initenv_first():
     # ── 数值/逻辑 ──
@@ -25,20 +47,6 @@ def initenv_first():
     builtin('>', gt)
     builtin('<=', le)
     builtin('>=', ge)
-    def _number_to_string(x, radix=10):
-        radix = int(radix)
-        if radix != 10 and isinstance(x, int) and not isinstance(x, bool):
-            if not 2 <= radix <= 36:
-                raise ValueError("number->string: invalid radix")
-            digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-            sign = "-" if x < 0 else ""
-            n = abs(x)
-            out = "0" if n == 0 else ""
-            while n:
-                out = digits[n % radix] + out
-                n //= radix
-            return SchemeString(sign + out)
-        return SchemeString(str(x))
     builtin('number->string', _number_to_string)
 
     # ── 谓词 ──
@@ -95,13 +103,7 @@ def initenv_first():
     # 宏元组执行链: (sx-macro-expand 'pat 'body args (sx-expand-env)) →
     #   minref.sx_macro_expand → eval 宏体 → min-* 原语 → minref/native_syntax。
     # 非 syntax-rules 宏 (define-macro/quasiquote/syntax-case 等) 全部经由本组原语。
-    from minref import (sx_macro_expand, qq_walk, sx_expand, sx_get_bindings,
-                        sx_gen_temps, sx_syntax_case, sx_with_syntax,
-                        sx_let_syntax, sx_make_macro_binding, qs_expand,
-                        sx_dispatch, sx_def_env, _sx_mutated_vars)
 
-    def _min_sx_expand(tmpl, bindings):
-        return sx_expand(tmpl, bindings, _sx_mutated_vars, sx_def_env())
 
     builtin('sx-macro-expand', sx_macro_expand)
     builtin('qq-walk', qq_walk)
