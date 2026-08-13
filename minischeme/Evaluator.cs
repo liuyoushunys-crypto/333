@@ -445,15 +445,61 @@ public static class Evaluator
     // Data values are inlined as quoted literals; procedures/macros are left as
     // callable names. Non-marked sub-expressions are returned unchanged.
     internal static object? ResolveHygieneMarkers(object? expr, Env defEnv)
+        => ResolveHygieneMarkers(expr, defEnv, new HashSet<string>());
+
+    static object? ResolveHygieneMarkers(object? expr, Env defEnv, HashSet<string> bound)
     {
         while (expr is SyntaxObject so) expr = so.Expr;
         if (expr is Cell c)
         {
+            if (c.Car is Sym form && form.Name is "let" or "let*" or "letrec" or "letrec*"
+                && c.Cdr is Cell letArgs && letArgs.Car is Cell bindingList)
+            {
+                var rebuilt = new List<object?>();
+                foreach (var raw in bindingList.Cells())
+                {
+                    if (raw is Cell binding)
+                    {
+                        var name = binding.Car is Sym direct ? direct :
+                            binding.Car is Cell marker && marker.Car is Sym ms && ms.Name == "sx-hygiene"
+                            && marker.Cdr is Cell markerArg && markerArg.Car is Sym markerName
+                                ? markerName : null;
+                        if (name is not null)
+                        {
+                            rebuilt.Add(new Cell(name, ResolveHygieneMarkers(binding.Cdr, defEnv, bound)));
+                            continue;
+                        }
+                    }
+                    
+                    if (raw is Cell bindingCell)
+                        rebuilt.Add(new Cell(ResolveHygieneMarkers(bindingCell.Car, defEnv, bound), ResolveHygieneMarkers(bindingCell.Cdr, defEnv, bound)));
+                    else rebuilt.Add(raw);
+                }
+                var names = rebuilt.OfType<Cell>().Select(x => x.Car).OfType<Sym>().Select(x => x.Name);
+                var body = ResolveHygieneMarkers(letArgs.Cdr, defEnv, bound.Union(names).ToHashSet());
+                return new Cell(c.Car, new Cell(rebuilt.ToCell(), body));
+            }
+            if (c.Car is Sym lambda && lambda.Name == "lambda" && c.Cdr is Cell lambdaArgs)
+            {
+                var parameters = lambdaArgs.Car;
+                var parameterNames = new HashSet<string>();
+                foreach (var p in parameters.Cells())
+                {
+                    if (p is Sym ps) parameterNames.Add(ps.Name);
+                    else if (p is Cell pm && pm.Car is Sym ms && ms.Name == "sx-hygiene"
+                             && pm.Cdr is Cell pa && pa.Car is Sym pas)
+                        parameterNames.Add(pas.Name);
+                }
+                var body = ResolveHygieneMarkers(lambdaArgs.Cdr, defEnv, bound.Union(parameterNames).ToHashSet());
+                return new Cell(lambda, new Cell(parameters, body));
+            }
             if (c.Car is Sym s && s.Name == "sx-hygiene")
             {
                 var name = c.Cdr is Cell arg && arg.Cdr is Nil && arg.Car is Sym nameSym
                     ? nameSym.Name
                     : null;
+                if (name is not null && bound.Contains(name))
+                    return c.Cdr is Cell boundCell ? boundCell.Car : c;
                 if (name is not null && defEnv.Data.TryGetValue(name, out var v))
                 {
                     // Inline data values; leave procedures/macros as names.
@@ -465,8 +511,8 @@ public static class Evaluator
                 }
                 return c.Cdr is Cell ccc ? ccc.Car : c;
             }
-            var newCar = ResolveHygieneMarkers(c.Car, defEnv);
-            var newCdr = ResolveHygieneMarkers(c.Cdr, defEnv);
+            var newCar = ResolveHygieneMarkers(c.Car, defEnv, bound);
+            var newCdr = ResolveHygieneMarkers(c.Cdr, defEnv, bound);
             if (ReferenceEquals(newCar, c.Car) && ReferenceEquals(newCdr, c.Cdr))
                 return c;
             return new Cell(newCar, newCdr);
