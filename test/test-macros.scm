@@ -303,7 +303,7 @@
 (define-syntax my-when
   (syntax-rules ()
     ((_ test body1 body2 ...) (if test (begin body1 body2 ...)))))
-(check "my-when true" (c #t 42) 42)
+(check "my-when true" (my-when #t 42) 42)
 (check "my-when false" (my-when #f 42) (if #f 42))
 
 (define-syntax swap!
@@ -517,7 +517,7 @@
 (check "case no match else" (case 'w ((x y) 'found) (else 'not-found)) 'not-found)
 
 ;; case => proc
-(check "case => match" (case 2 ((1 2 3) => (lambda (m) (car m))) (else #f)) 2)
+(check "case => match" (case 2 ((1 2 3) => (lambda (m) m)) (else #f)) 2)
 
 ;; case multi datum
 (check "case multi-datum first" (case 1 ((1 2) 'ab) (else 'other)) 'ab)
@@ -2221,4 +2221,3 @@
     ((_ (a . b) expr body ...)
      (let ((tmp expr))
        (let ((a (car tmp)) (b (cdr tmp))) body ...)))))
-

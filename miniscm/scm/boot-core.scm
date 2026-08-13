@@ -198,6 +198,7 @@
 ;;     - (else) 子句必须放在最后，识别为关键字（syntax-rules else）
 (define-syntax cond
   (syntax-rules (else =>)
+    ((cond) #f)
     ((cond (else result1 result2 ...))
      (begin result1 result2 ...))
     ((cond (test => expression))
@@ -239,6 +240,7 @@
 ;;     - 无可匹配分支且无 else 时返回 unspecified
 (define-syntax case
   (syntax-rules (else)
+    ((case key) #f)
     ((case key clause1 clause2 ...)
      ((lambda (val)
         (case-helper val clause1 clause2 ...))
