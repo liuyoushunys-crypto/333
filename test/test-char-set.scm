@@ -145,7 +145,7 @@
 
 (test 2 (char-set-count (char-set-filter (lambda (c) #t) (char-set #\a #\b))))
 (test 0 (char-set-count (char-set-filter (lambda (c) #f) (char-set #\a #\b))))
-(test 256 (char-set-count (char-set-map (lambda (c) #t) (char-set #\a))))
+(test 1 (char-set-count (char-set-map (lambda (c) c) (char-set #\a))))
 
 ;; --- Fold ---
 
@@ -174,22 +174,22 @@
   (< (abs (- a b)) 1e-10))
 
 ;; ── SRFI-141 division with Fractions ──
-(assert (= (floor/ 7 3) 2 1)       "(floor/ 7 3)")
-(assert (= (floor/ -7 3) -3 2)     "(floor/ -7 3)")
-(assert (= (floor/ 7 -3) -3 -2)    "(floor/ 7 -3)")
-(assert (= (floor/ -7 -3) 2 -1)    "(floor/ -7 -3)")
+(assert (call-with-values (lambda () (floor/ 7 3)) (lambda (q r) (and (= q 2) (= r 1)))) "(floor/ 7 3)")
+(assert (call-with-values (lambda () (floor/ -7 3)) (lambda (q r) (and (= q -3) (= r 2)))) "(floor/ -7 3)")
+(assert (call-with-values (lambda () (floor/ 7 -3)) (lambda (q r) (and (= q -3) (= r -2)))) "(floor/ 7 -3)")
+(assert (call-with-values (lambda () (floor/ -7 -3)) (lambda (q r) (and (= q 2) (= r -1)))) "(floor/ -7 -3)")
 
-(assert (= (truncate/ 7 3) 2 1)    "(truncate/ 7 3)")
-(assert (= (truncate/ -7 3) -2 -1) "(truncate/ -7 3)")
+(assert (call-with-values (lambda () (truncate/ 7 3)) (lambda (q r) (and (= q 2) (= r 1)))) "(truncate/ 7 3)")
+(assert (call-with-values (lambda () (truncate/ -7 3)) (lambda (q r) (and (= q -2) (= r -1)))) "(truncate/ -7 3)")
 
-(assert (= (ceiling/ 7 3) 3 -2)    "(ceiling/ 7 3)")
-(assert (= (ceiling/ -7 3) -2 -1)  "(ceiling/ -7 3)")
+(assert (call-with-values (lambda () (ceiling/ 7 3)) (lambda (q r) (and (= q 3) (= r -2)))) "(ceiling/ 7 3)")
+(assert (call-with-values (lambda () (ceiling/ -7 3)) (lambda (q r) (and (= q -2) (= r -1)))) "(ceiling/ -7 3)")
 
-(assert (= (round/ 5 3) 2 -1)      "(round/ 5 3)")
-(assert (= (round/ 7 3) 2 1)       "(round/ 7 3)")
+(assert (call-with-values (lambda () (round/ 5 3)) (lambda (q r) (and (= q 2) (= r -1)))) "(round/ 5 3)")
+(assert (call-with-values (lambda () (round/ 7 3)) (lambda (q r) (and (= q 2) (= r 1)))) "(round/ 7 3)")
 
-(assert (= (euclidean/ 7 3) 2 1)   "(euclidean/ 7 3)")
-(assert (= (euclidean/ -7 3) -3 2)  "(euclidean/ -7 3)")
+(assert (call-with-values (lambda () (euclidean/ 7 3)) (lambda (q r) (and (= q 2) (= r 1)))) "(euclidean/ 7 3)")
+(assert (call-with-values (lambda () (euclidean/ -7 3)) (lambda (q r) (and (= q -3) (= r 2)))) "(euclidean/ -7 3)")
 
 ;; ── Fraction / Rational arithmetic ──
 (assert (= (/ 1 3 2) 1/6)          "(/ 1 3 2)")
