@@ -39,10 +39,10 @@ public static partial class PrimitiveRegistry
         _b("comparator?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
         _b("comparator-order?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
         _b("comparator-hashable?", args => args[0] is Cell c && c.Car is Sym s && s.Name == "comparator" ? Const.TRUE : Const.FALSE);
-        _b("integer-comparator", _ => MakeComparator(
-            (Func<object?[], object?>)(_ => Const.TRUE),
+        Evaluator.GlobalEnv.Define("integer-comparator", MakeComparator(
             (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]) == 0 ? Const.TRUE : Const.FALSE),
-            (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]) < 0 ? Const.TRUE : Const.FALSE)));
+            (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]) < 0 ? Const.TRUE : Const.FALSE),
+            (Func<object?[], object?>)(a => NumericHelper.Compare(a[0], a[1]))));
         _b("=?", args => CallComparator(args[0], args[1], args[2], 0));
         _b("<?", args => CallComparator(args[0], args[1], args[2], -1));
         _b("comparator-test-type", args => (Func<object?[], object?>)(_ => Const.TRUE));

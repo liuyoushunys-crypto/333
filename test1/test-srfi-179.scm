@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "csv-read" (("a" "b" "c")) (csv-read (open-input-string "a,b,c")))
+(%test-equal "csv-read" '(("a" "b" "c")) (csv-read (open-input-string "a,b,c")))

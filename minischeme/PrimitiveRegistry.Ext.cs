@@ -28,6 +28,7 @@ public static partial class PrimitiveRegistry
         RegisterExtMisc();
         RegisterExtSchemeCoverage();
         RegisterScm12Host();
+        RegisterTestedApis();
 
         // SRFI-143 exposes these as procedures; the host library also uses
         // the same names for constants, so install the callable contract last.

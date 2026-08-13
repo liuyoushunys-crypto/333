@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "group-by" ((0 2) (1 3)) (group-by even? '(0 1 2 3)))
+(%test-equal "group-by" '((0 2) (1 3)) (group-by even? '(0 1 2 3)))
