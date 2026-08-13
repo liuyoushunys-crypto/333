@@ -547,8 +547,6 @@ def initenv_ext():
     builtin('require-extension', lambda *args: TRUE)
     builtin('require-srfi', lambda *args: TRUE)
     builtin('test-equal?', _test_equal)
-    for _name in ('define-record-type*', 'let*-values', 'let-values-helper', 'letrec*', 'record-accessor', 'record-constructor', 'record-modifier', 'record-predicate', 'simple-conditions', 'source-file', 'syntax-violation', 'transcript-off', 'transcript-on'):
-        builtin(_name, _unsupported(_name))
     builtin('u8vector', lambda *xs: SchemeVector(list(xs)))
     builtin('u8vector?', lambda v: TRUE if isinstance(v, SchemeVector) else FALSE)
     builtin('u8vector-length', lambda v: len(v.data))
@@ -1463,6 +1461,8 @@ def initenv_ext():
     builtin('list-transduce', list_transduce)
     builtin('vector-transduce', lambda x,r,i,v: list_transduce(x, r, i, _lst(v.data if hasattr(v, 'data') else v)))
     builtin('string-transduce', lambda x,r,i,s: list_transduce(x, r, i, _lst([cs_char(c) for c in str(s)])))
+    for _name in ('define-record-type*', 'let*-values', 'let-values-helper', 'letrec*', 'record-accessor', 'record-constructor', 'record-modifier', 'record-predicate', 'simple-conditions', 'source-file', 'syntax-violation', 'transcript-off', 'transcript-on'):
+        builtin(_name, _unsupported(_name))
 
 
 
