@@ -27,9 +27,110 @@ def initenv_ext():
     builtin('string-normalize-nfkd', lambda x: SchemeString(str(x)))
     builtin('string-prefix-ci?', lambda a, b: TRUE if str(b).lower().startswith(str(a).lower()) else FALSE)
     builtin('gentemp', lambda: Sym('gentemp'))
-    for _name in ('call-with-bytevector-output-port', 'call-with-string-output-port', 'char-set->integer', 'char-set-unfold', 'concatenate!', 'cond-expand-srfi-61', 'define-record-type*', 'deque-add-back!', 'deque-add-front!', 'deque-remove-back!', 'deque-remove-front!', 'drop-right!', 'find-tail', 'fold-right-1', 'gentemp', 'include-ci', 'integer->char-set', 'let*-values', 'let-values-helper', 'letrec*', 'lset-adjoin', 'lset<=', 'lset=', 'random-source-make-integers', 'random-source-make-reals', 'record-accessor', 'record-constructor', 'record-modifier', 'record-predicate', 'require-extension', 'require-srfi', 'simple-conditions', 'source-file', 'srfi-available?', 'stream?', 'string-normalize-nfc', 'string-normalize-nfd', 'string-normalize-nfkc', 'string-normalize-nfkd', 'string-prefix-ci?', 'syntax-violation', 'test-equal?', 'transcript-off', 'transcript-on'):
-        if _name not in be.data:
-            builtin(_name, lambda *args: VOID)
+    def _append_bang(*xs):
+        return append(*xs)
+
+    def _append_reverse_bang(x, y):
+        return append(reverse(x), y)
+
+    def _char_set_unfold(stop, mapper, successor, seed, *bases):
+        result = [False] * 256
+        state = seed
+        while not stop(state):
+            ch = mapper(state)
+            cp = ord(cs_char(ch))
+            if cp < 256: result[cp] = True
+            state = successor(state)
+        for base in bases:
+            result = char_set_binop([result, base], lambda a, b: a or b)
+        return result
+
+    def _integer_char_set(value):
+        n = int(value)
+        return [bool(n & (1 << i)) for i in range(256)]
+
+    def _drop_right_bang(xs, n):
+        items = list(cell_iter(xs))
+        keep = len(items) - int(n)
+        if keep < 0: raise SchemeException('drop-right!: count exceeds list length')
+        cur = xs
+        if keep == 0: return NIL
+        for _ in range(1, keep): cur = cur.cdr
+        cur.cdr = NIL
+        return xs
+
+    def _find_tail(pred, xs):
+        cur = xs
+        while isinstance(cur, Cell):
+            if pred(cur.car) is not FALSE: return cur
+            cur = cur.cdr
+        return FALSE
+
+    def _fold_right_1(proc, xs):
+        values = list(cell_iter(xs))
+        if not values: raise SchemeException('fold-right-1: empty list')
+        acc = values[-1]
+        for value in reversed(values[:-1]): acc = proc(value, acc)
+        return acc
+
+    def _include_ci(path):
+        import pathlib
+        requested = str(path)
+        p = pathlib.Path(requested)
+        if not p.exists():
+            matches = [x for x in p.parent.iterdir() if x.name.lower() == p.name.lower()]
+            if matches: p = matches[0]
+        if not p.exists(): raise SchemeException(f'include-ci: file not found: {requested}')
+        from miniscm import load_file
+        return load_file(str(p))
+
+    def _lset_adjoin(eq, xs, *values):
+        result = list(cell_iter(xs))
+        for value in values:
+            if not any(eq(value, old) is TRUE for old in result): result.append(value)
+        return _lst(result)
+
+    def _lset_subset(eq, *lists):
+        for left, right in zip(lists, lists[1:]):
+            if any(not any(eq(x, y) is TRUE for y in cell_iter(right)) for x in cell_iter(left)): return FALSE
+        return TRUE
+
+    import random as _random
+    def _random_integers(source, bound):
+        rng = source if isinstance(source, _random.Random) else _random.Random()
+        return lambda n: rng.randrange(int(n))
+
+    def _random_reals(source):
+        rng = source if isinstance(source, _random.Random) else _random.Random()
+        return lambda: rng.random()
+
+    def _test_equal(actual, expected):
+        return TRUE if actual == expected else FALSE
+
+    builtin('append!', _append_bang)
+    builtin('append-reverse!', _append_reverse_bang)
+    builtin('char-set-unfold', _char_set_unfold)
+    builtin('concatenate!', concatenate_fn)
+    builtin('cond-expand-srfi-61', lambda *args: TRUE)
+    builtin('drop-right!', _drop_right_bang)
+    builtin('find-tail', _find_tail)
+    builtin('fold-right-1', _fold_right_1)
+    builtin('include-ci', _include_ci)
+    builtin('integer->char-set', _integer_char_set)
+    builtin('lset-adjoin', _lset_adjoin)
+    builtin('lset<=', _lset_subset)
+    builtin('lset=', lambda eq, a, b: _lset_subset(eq, a, b) if _lset_subset(eq, a, b) is TRUE and _lset_subset(eq, b, a) is TRUE else FALSE)
+    builtin('random-source-make-integers', _random_integers)
+    builtin('random-source-make-reals', _random_reals)
+    builtin('require-extension', lambda *args: TRUE)
+    builtin('require-srfi', lambda *args: TRUE)
+    builtin('test-equal?', _test_equal)
+    def _unsupported(name):
+        def fail(*args):
+            raise SchemeException(f'{name}: unsupported by this implementation')
+        return fail
+    for _name in ('define-record-type*', 'let*-values', 'let-values-helper', 'letrec*', 'record-accessor', 'record-constructor', 'record-modifier', 'record-predicate', 'simple-conditions', 'source-file', 'syntax-violation', 'transcript-off', 'transcript-on'):
+        builtin(_name, _unsupported(_name))
     builtin('u8vector', lambda *xs: SchemeVector(list(xs)))
     builtin('u8vector?', lambda v: TRUE if isinstance(v, SchemeVector) else FALSE)
     builtin('u8vector-length', lambda v: len(v.data))

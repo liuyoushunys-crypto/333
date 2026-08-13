@@ -15,6 +15,140 @@ public static partial class PrimitiveRegistry
     static readonly Dictionary<string, SchemeString> MutableStringViews =
         new(ReferenceEqualityComparer.Instance);
 
+    static object? PAppendBang(object?[] args) => PAppend(args);
+
+    static object? PAppendReverseBang(object?[] args)
+    {
+        if (args.Length != 2) throw new SchemeException("append-reverse!: expected two lists");
+        return PAppend([PReverse([args[0]]), args[1]]);
+    }
+
+    static object? PConcatenateBang(object?[] args)
+    {
+        if (args.Length != 1) throw new SchemeException("concatenate!: expected one list of lists");
+        return Concatenate(args[0]);
+    }
+
+    static object? PAssertViolation(object?[] args)
+    {
+        var who = args.Length > 0 ? ToStr(args[0]) : "assertion";
+        var message = args.Length > 1 ? args[1] : new SchemeString("assertion violation");
+        var irritants = args.Length > 2 ? args[2..].ToList().ToCell() : Const.NIL;
+        throw new SchemeException(new ErrorObject(new SchemeString($"{who}: {ToStr(message)}"), irritants));
+    }
+
+    static object? PCharSetUnfold(object?[] args)
+    {
+        if (args.Length < 4) throw new SchemeException("char-set-unfold: expected stop?, mapper, successor, seed");
+        var result = new bool[256];
+        object? state = args[3];
+        while (!Truthy(App(args[0], state)))
+        {
+            var mapped = App(args[1], state);
+            var cp = AsChar(mapped);
+            if (cp < 256) result[cp] = true;
+            state = App(args[2], state);
+        }
+        if (args.Length > 4) result = (bool[])CharSetBinOp([args[4], result], true)!;
+        return result;
+    }
+
+    static object? PDropRightBang(object?[] args)
+    {
+        if (args.Length < 2 || args[0] is not Cell list) throw new SchemeException("drop-right!: expected a non-empty proper list and count");
+        var n = NumericHelper.ToInt(args[1]);
+        if (n < 0) throw new SchemeException("drop-right!: count must be non-negative");
+        if (n == 0) return list;
+        var items = list.Cells().ToList();
+        if (n >= items.Count) throw new SchemeException("drop-right!: cannot mutate a list into the empty list");
+        var keep = items.Count - n;
+        var cur = list;
+        for (int i = 1; i < keep; i++)
+        {
+            if (cur.Cdr is not Cell next) throw new SchemeException("drop-right!: expected a proper list");
+            cur = next;
+        }
+        cur.Cdr = Const.NIL;
+        return list;
+    }
+
+    static object? PFindTail(object?[] args)
+    {
+        object? cur = args[1];
+        while (cur is Cell c)
+        {
+            if (Truthy(App(args[0], c.Car))) return cur;
+            cur = c.Cdr;
+        }
+        return Const.FALSE;
+    }
+
+    static object? PFoldRight1(object?[] args)
+    {
+        if (args.Length < 2 || args[1] is not Cell) throw new SchemeException("fold-right-1: expected procedure and non-empty list");
+        var values = args[1].Cells().ToList();
+        object? acc = values[^1];
+        for (int i = values.Count - 2; i >= 0; i--) acc = App(args[0], values[i], acc);
+        return acc;
+    }
+
+    static object? PIncludeCi(object?[] args)
+    {
+        var requested = ToStr(args[0]);
+        var full = Path.GetFullPath(requested);
+        if (!File.Exists(full))
+        {
+            var directory = Path.GetDirectoryName(full) ?? Directory.GetCurrentDirectory();
+            var name = Path.GetFileName(full);
+            var match = Directory.Exists(directory)
+                ? Directory.EnumerateFiles(directory).FirstOrDefault(x => string.Equals(Path.GetFileName(x), name, StringComparison.OrdinalIgnoreCase))
+                : null;
+            full = match ?? full;
+        }
+        if (!File.Exists(full)) throw new SchemeException($"include-ci: file not found: {requested}");
+        return PLoad([full]);
+    }
+
+    static object? PIntegerCharSet(object?[] args)
+    {
+        var value = NumericHelper.ToBigInt(args[0]);
+        var result = new bool[256];
+        for (int i = 0; i < 256; i++) result[i] = !value.IsZero && (value & (System.Numerics.BigInteger.One << i)) != 0;
+        return result;
+    }
+
+    static object? PLsetAdjoin(object?[] args)
+    {
+        if (args.Length < 2) throw new SchemeException("lset-adjoin: expected comparator and list");
+        var result = args[1].Cells().ToList();
+        foreach (var item in args[2..])
+            if (!result.Any(x => Truthy(App(args[0], item, x)))) result.Add(item);
+        return result.ToCell();
+    }
+
+    static object? PLsetSubset(object?[] args)
+    {
+        if (args.Length < 3) return Const.TRUE;
+        for (int i = 1; i < args.Length - 1; i++)
+            foreach (var item in args[i].Cells())
+                if (!args[i + 1].Cells().Any(x => Truthy(App(args[0], item, x)))) return Const.FALSE;
+        return Const.TRUE;
+    }
+
+    static object? PRandomSourceMakeIntegers(object?[] args)
+    {
+        var source = args[0] as SchemeRandomSource ?? throw new SchemeException("random-source-make-integers: expected random source");
+        return (Func<object?[], object?>)(a => S12RandomInt(source, NumericHelper.ToInt(a[0])));
+    }
+
+    static object? PRandomSourceMakeReals(object?[] args)
+    {
+        var source = args[0] as SchemeRandomSource ?? throw new SchemeException("random-source-make-reals: expected random source");
+        return (Func<object?[], object?>)(_ => S12RandomReal(source));
+    }
+
+    static object? UnsupportedPrimitive(string name, object?[] _) => throw new SchemeException($"{name}: unsupported by this implementation");
+
 
 
 
