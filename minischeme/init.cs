@@ -8,10 +8,11 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Miniscm.Base;
+using Miniscm.Compiler;
 using Miniscm.Types;
 using Miniscm.Eval;
-using Miniscm.Compiler;
-using Void = Miniscm.Types.Void;
+using Void = Miniscm.Base.Void;
 
 namespace Miniscm.Primitives;
 

@@ -1,15 +1,2023 @@
+# Unified Scheme primitive implementations.
+import ast, base64, cmath, functools, io, json, math, os, pathlib, queue, random, re, sys, threading, time
+_base64 = base64
+_functools = functools
+_json = json
+_os = os
+_random = random
+_re = re
+_time = time
+from fractions import Fraction
+from functools import cmp_to_key
+from mtypes import (
+    Sym, Cell, SchemeString, SchemeChar, SchemeVector, SchemeBytevector,
+    Promise, SyntaxObject, SchemeException, ErrorObject, TailCall, Env,
+    NIL, VOID, EOF, TRUE, FALSE, SYM_QUOTE, _UNBOUND, _pr, _sn, _plist,
+    _lst, _cells, _cell_len, _so, _ContinuationEscape, _cont_id, _gensym_ctr,
+    builtin, be
+)
+from reader import read, parse_number_scheme
+from minref import (
+    sx_macro_expand, qq_walk, sx_expand, sx_get_bindings, sx_gen_temps,
+    sx_syntax_case, sx_with_syntax, sx_let_syntax, sx_make_macro_binding,
+    qs_expand, sx_dispatch, sx_def_env, _sx_mutated_vars
+)
+
+
+# ---- primitives_first.py ----
+# primitives_first.py — 宏系统自举核心 builtin 的辅助函数独立副本
+# 自包含：仅依赖 mtypes.py；对 miniscm 求值器的访问使用函数体内惰性导入
+
+
+# isnum: 判断是否为 Scheme 数值类型（int/float/complex/Fraction）
+def isnum(x): return isinstance(x,(int,float,complex,Fraction)) and type(x) is not bool
+
+# num: 将数值统一转为 Fraction（Scheme 精确数的内部表示）
+#   注意：float 和 complex 原样返回，不做强制转换
+def num(x):
+    if type(x) is bool: raise TypeError(f"not a number: {x}")
+    if isinstance(x,Fraction): return x
+    if isinstance(x,int): return Fraction(x,1)
+    if isinstance(x,float): return x
+    if isinstance(x,complex): return x
+    raise TypeError(f"not a number: {x}")
+
+# ── 类型辅助（eqv?/equal? 依赖）──
+def is_scheme_char(x):
+    return isinstance(x, SchemeChar) or (isinstance(x, tuple) and len(x) == 2 and x[0] == 'char')
+def get_scheme_char(x):
+    return x.char if isinstance(x, SchemeChar) else x[1]
+def is_scheme_str(x):
+    return isinstance(x, (str, SchemeString))
+def get_scheme_str(x):
+    return ''.join(x.data) if isinstance(x, SchemeString) else x
+def is_scheme_vec(x):
+    return isinstance(x, (list, SchemeVector))
+def get_scheme_vec_data(x):
+    return x.data if isinstance(x, SchemeVector) else x
+
+class _EqHashTable:
+    __slots__ = ('data',)
+    def __init__(self): self.data = {}
+
+# ── eqv? 与 equal? ──
+def eqv(a, b):
+    if a is b: return TRUE
+    is_num_a = isinstance(a, (int, float, complex, Fraction)) and type(a) is not bool
+    is_num_b = isinstance(b, (int, float, complex, Fraction)) and type(b) is not bool
+    if is_num_a and is_num_b:
+        exact_a = isinstance(a, (int, Fraction))
+        exact_b = isinstance(b, (int, Fraction))
+        if exact_a != exact_b: return FALSE
+        if isinstance(a, float) and isinstance(b, float):
+            if a != a and b != b: return TRUE
+        if a == 0 and b == 0:
+            ar = a.real if isinstance(a, complex) else a
+            br = b.real if isinstance(b, complex) else b
+            if isinstance(ar, float) and isinstance(br, float):
+                if math.copysign(1.0, ar) != math.copysign(1.0, br): return FALSE
+        try: return TRUE if a == b else FALSE
+        except: return FALSE
+    if is_scheme_char(a) and is_scheme_char(b): return TRUE if get_scheme_char(a) == get_scheme_char(b) else FALSE
+    return FALSE
+
+def equal(a, b, seen=None):
+    if eqv(a, b) is TRUE: return TRUE
+    if is_scheme_char(a) and is_scheme_char(b): return TRUE if get_scheme_char(a) == get_scheme_char(b) else FALSE
+    if is_scheme_str(a) and is_scheme_str(b): return TRUE if get_scheme_str(a) == get_scheme_str(b) else FALSE
+    if seen is None: seen = set()
+    pair_id = (id(a), id(b))
+    if pair_id in seen: return TRUE
+    seen.add(pair_id)
+    if isinstance(a, Cell) and isinstance(b, Cell):
+        if equal(a.car, b.car, seen) is TRUE: return equal(a.cdr, b.cdr, seen)
+        return FALSE
+    if is_scheme_vec(a) and is_scheme_vec(b):
+        da = get_scheme_vec_data(a); db = get_scheme_vec_data(b)
+        if len(da) != len(db): return FALSE
+        for x, y in zip(da, db):
+            if equal(x, y, seen) is FALSE: return FALSE
+        return TRUE
+    if isinstance(a, SchemeBytevector) and isinstance(b, SchemeBytevector):
+         return TRUE if a.data == b.data else FALSE
+    if isinstance(a, _EqHashTable) and isinstance(b, _EqHashTable):
+        if len(a.data) != len(b.data): return FALSE
+        for k, v in a.data.items():
+            if k not in b.data: return FALSE
+            if equal(v, b.data[k], seen) is FALSE: return FALSE
+        return TRUE
+    if (isinstance(a, dict) or isinstance(a, _EqHashTable)) and (isinstance(b, dict) or isinstance(b, _EqHashTable)):
+        if len(a) != len(b): return FALSE
+        for k, v in a.items():
+            if k not in b: return FALSE
+            if equal(v, b[k], seen) is FALSE: return FALSE
+        return TRUE
+    return FALSE
+
+# ── 对与列表 ──
+def cons(a,d): return Cell(a,d)
+
+def car(p):
+    if isinstance(p,Cell): return p.car
+    raise TypeError("car: not a pair")
+
+def cdr(p):
+    if isinstance(p,Cell): return p.cdr
+    raise TypeError("cdr: not a pair")
+
+def caar(x): return x.car.car
+def cadr(x): return x.cdr.car
+def cdar(x): return x.car.cdr
+def cddr(x): return x.cdr.cdr
+
+def lst(*a):
+    r=NIL
+    for x in reversed(a): r=Cell(x,r)
+    return r
+
+# ── 列表检测 ──
+def is_list(x):
+    seen=set()
+    while isinstance(x,Cell):
+        if id(x) in seen: return FALSE
+        seen.add(id(x))
+        x=x.cdr
+    return TRUE if x is NIL else FALSE
+
+def list_ref(lst,k):
+    for _ in range(k):
+        if not isinstance(lst,Cell): raise IndexError("list-ref")
+        lst=lst.cdr
+    if not isinstance(lst, Cell): raise IndexError("list-ref")
+    return lst.car
+
+def append(*ls):
+    if not ls: return NIL
+    r = NIL
+    last = ls[-1]
+    if isinstance(last, Cell):
+        for l in reversed(ls):
+            if isinstance(l, Cell):
+                rev = NIL; cur = l
+                while isinstance(cur, Cell): rev = Cell(cur.car, rev); cur = cur.cdr
+                cur = rev
+                while isinstance(cur, Cell): r = Cell(cur.car, r); cur = cur.cdr
+            elif l is not NIL: r = Cell(l, r)
+    else:
+        r = last
+        for l in reversed(ls[:-1]):
+            if isinstance(l, Cell):
+                rev = NIL; cur = l
+                while isinstance(cur, Cell): rev = Cell(cur.car, rev); cur = cur.cdr
+                cur = rev
+                while isinstance(cur, Cell): r = Cell(cur.car, r); cur = cur.cdr
+            elif l is not NIL: r = Cell(l, r)
+    return r
+
+def memq(k,lst):
+    while isinstance(lst,Cell):
+        if lst.car is k: return lst
+        lst=lst.cdr
+    return FALSE
+
+def assq(k,al):
+    while isinstance(al,Cell):
+        p=al.car
+        if isinstance(p,Cell) and p.car is k: return p
+        al=al.cdr
+    return FALSE
+
+def map_(f,*lsts):
+    from mtypes import Cell, NIL, TailCall
+    from miniscm import _eval as _eval_fn
+    f_real=f if callable(f) else lambda *a: call(f,list(a))
+    result = NIL
+    tail = None
+    while True:
+        heads=[l for l in lsts if isinstance(l,Cell)]
+        if len(heads) < len(lsts) or not heads:
+            if tail is None:
+                prev = NIL
+                cur = result
+                while isinstance(cur, Cell):
+                    nxt = cur.cdr
+                    cur.cdr = prev
+                    prev = cur
+                    cur = nxt
+                return prev
+            return result
+        r=f_real(*(l.car for l in heads))
+        while isinstance(r, TailCall):
+            r = _eval_fn(r.expr, r.env)
+        result = Cell(r, result)
+        lsts = tuple(h.cdr for h in heads)
+
+def filter_(pred, lst):
+    return _lst([x for x in _cells(lst) if pred(x) is not FALSE])
+
+# ── 数值运算 ──
+def add(*a):
+    if not a: return 0
+    all_int = True
+    for x in a:
+        if not isinstance(x, int):
+            all_int = False
+            break
+    if all_int:
+        r = 0
+        for x in a: r += x
+        return r
+    if any(isinstance(x,complex) for x in a):
+        return sum(complex(x) if not isinstance(x,complex) else x for x in a)
+    if any(isinstance(x,Fraction) for x in a):
+        return sum((Fraction(x,1) if isinstance(x,int) else x) for x in a)
+    return sum(a)
+
+def sub(*a):
+    if not a: return 0
+    if len(a)==1: return -a[0] if isnum(a[0]) else -num(a[0])
+    all_int = True
+    for x in a:
+        if not isinstance(x, int):
+            all_int = False
+            break
+    if all_int:
+        r = a[0]
+        for x in a[1:]: r -= x
+        return r
+    if any(isinstance(x,complex) for x in a):
+        ca=a[0] if isinstance(a[0],complex) else complex(float(a[0].real if isinstance(a[0],Fraction) else a[0]),0)
+        for x in a[1:]: ca-=x if isinstance(x,complex) else complex(float(x.real if isinstance(x,Fraction) else x),0)
+        return ca
+    if any(isinstance(x,Fraction) for x in a):
+        r=Fraction(a[0],1) if isinstance(a[0],int) else a[0]
+        for x in a[1:]: r-=Fraction(x,1) if isinstance(x,int) else x
+        return r
+    return a[0]-sum(a[1:])
+
+def eq_num(*a):
+    return FALSE if any(
+        (type(a[i]) is bool) != (type(a[i+1]) is bool)
+        or (not isinstance(a[i], (int,float,complex,Fraction))
+            and not isinstance(a[i+1], (int,float,complex,Fraction))
+            and type(a[i]) is not type(a[i+1]))
+        or a[i] != a[i+1]
+        for i in range(len(a)-1)) else TRUE
+
+def lt(*a):
+    return FALSE if any(isinstance(x,complex) for x in a) or any(a[i]>=a[i+1] for i in range(len(a)-1)) else TRUE
+def gt(*a):
+    return FALSE if any(isinstance(x,complex) for x in a) or any(a[i]<=a[i+1] for i in range(len(a)-1)) else TRUE
+def le(*a):
+    return FALSE if any(isinstance(x,complex) for x in a) or any(a[i]>a[i+1] for i in range(len(a)-1)) else TRUE
+def ge(*a):
+    return FALSE if any(isinstance(x,complex) for x in a) or any(a[i]<a[i+1] for i in range(len(a)-1)) else TRUE
+
+# ── 通用过程调用（TailCall 解析经惰性导入 miniscm）──
+def call(proc,args):
+    from miniscm import eval_seq, _eval as _eval_fn
+    from mtypes import TailCall
+    if callable(proc):
+        r = proc(*args)
+        while isinstance(r, TailCall):
+            r = _eval_fn(r.expr, r.env)
+        return r
+    if isinstance(proc,tuple) and proc[0]=='lambda':
+        _,params,body,penv, _ = proc; nenv=Env(penv); pi=0
+        for p in params:
+            ps=_sn(p)
+            if ps.startswith('rest:'):
+                nenv.define(ps[5:], _lst(args[pi:]))
+                pi=len(args)
+            else:
+                nenv.define(ps, args[pi]); pi+=1
+        return eval_seq(body,nenv)
+    raise TypeError(f"not callable: {proc}")
+
+# ── 副作用 ──
+def for_each_fn(f, *lsts):
+    if not lsts: return VOID
+    xs = lsts[0]
+    if isinstance(xs, (str, SchemeString)):
+        iters = [str(x) for x in lsts]
+        for items in zip(*iters):
+            call(f, [SchemeChar(c) for c in items])
+    else:
+        iters = [_plist(x) for x in lsts]
+        for items in zip(*iters):
+            call(f, list(items))
+    return VOID
+
+def error(*a):
+    msg=str(a[0]) if a else ""
+    irr=_lst(a[1:]) if len(a)>1 else NIL
+    raise SchemeException(ErrorObject(msg, irr))
+
+def port_out(port, s):
+    if isinstance(port, tuple):
+        if port[0] == 'str-port' and isinstance(port[1], list):
+            port[1][0] += s; return True
+        if port[0] == 'file-port' and len(port) > 3:
+            port[3].write(s); port[3].flush(); return True
+    return False
+
+def dsp(x, port=None):
+    s=str(x) if isinstance(x,(str,SchemeString)) else _pr(x)
+    if not port_out(port, s): sys.stdout.write(s); return VOID
+    return VOID
+
+# ── 宏系统桥接 ──
+_CURRENT_MACRO_DEF_ENV = None
+_CURRENT_EXPAND_ENV = None
+
+def _eval_bridge(expr, env=None):
+    from miniscm import _eval as _eval_fn
+    env = env if isinstance(env, Env) else be
+    return _eval_fn(expr, env)
+
+def _sx_defined(name, env=None):
+    env = env if isinstance(env, Env) else be
+    nm = name.name if hasattr(name, 'name') else str(name)
+    return TRUE if env.lookup_silent(nm, _UNBOUND) is not _UNBOUND else FALSE
+
+def _sx_defmacro(name, pattern, body, env=None):
+    env = env if isinstance(env, Env) else be
+    nm = name.name if hasattr(name, 'name') else str(name)
+    be.data[nm] = ('macro', pattern, body, env, True)
+    return name
+
+def _sx_expand_call(expr, env=None):
+    env = env if isinstance(env, Env) else be
+    if isinstance(expr, Cell) and isinstance(expr.car, Sym):
+        proc = env.lookup_silent(expr.car.name, _UNBOUND)
+        if proc is not _UNBOUND:
+            expanded = expand_macro(proc, expr.cdr, env)
+            if expanded is not None:
+                return expanded
+    return FALSE
+
+# mbody 编译缓存: {macro_tuple: compiled}; 保留宏对象，避免 id 重用命中旧宏。
+# 第一优先级: 原生 syntax-rules 编译器 (native_syntax.py) — 展开时零解释器。
+# 第二优先级: mbody 编译成带 args 参数的 LambdaProc。
+# 失败都回退解释器。调用前设置 _CURRENT_MACRO_DEF_ENV/_CURRENT_EXPAND_ENV 等价。
+_MBODY_COMPILE_CACHE = {}
+
+def clear_macro_caches():
+    """Drop compiled macro bodies after a Scheme library is reloaded."""
+    _MBODY_COMPILE_CACHE.clear()
+
+def _extract_syntax_rules(proc):
+    """从宏元组提取 (lits, rules)。结构必须是 sx-make-macro-binding 生成的
+    ((sx-macro-expand 'args '((sx-dispatch args 'lits 'rules))) args (sx-expand-env))。
+    返回 (lits, rules) 或 None(非 syntax-rules 结构)。"""
+    try:
+        mbody = proc[2]
+        form = mbody.car
+        if not (isinstance(form, Cell) and isinstance(form.car, Sym)
+                and form.car.name == 'sx-macro-expand'):
+            return None
+        body_list = form.cdr.cdr.car.cdr.car
+        dispatch = body_list.car
+        if not (isinstance(dispatch, Cell) and isinstance(dispatch.car, Sym)
+                and dispatch.car.name == 'sx-dispatch'):
+            return None
+        lits = dispatch.cdr.cdr.car.cdr.car
+        rules = dispatch.cdr.cdr.cdr.car.cdr.car
+        return (lits, rules)
+    except Exception:
+        return None
+
+def _compile_mbody(proc):
+    """编译宏体。优先原生 syntax-rules 编译器, 其次 LambdaProc 编译。
+    返回编译对象(原生 callable 或 LambdaProc)或 None → 解释器回退。
+    原生 callable 带 __native_syntax__ 标记。
+    """
+    if not (isinstance(proc, tuple) and len(proc) >= 5 and proc[0] == 'macro'):
+        return None
+    defEnv = proc[3]
+    if not isinstance(defEnv, Env):
+        return None
+    # 1) 原生 syntax-rules 编译器
+    try:
+        from native_syntax import compile_syntax_rules
+        sr = _extract_syntax_rules(proc)
+        if sr is not None:
+            lits, rules = sr
+            native = compile_syntax_rules(lits, rules, defEnv)
+            if native is not None:
+                native.__native_syntax__ = True
+                return native
+    except Exception:
+        pass
+    # 2) mbody LambdaProc 编译
+    from compiler import LambdaProc, compile_lambda_proc
+    mbody = proc[2]
+    lp = LambdaProc(['args'], mbody, defEnv, True, name='__macro_mbody__')
+    try:
+        cv = compile_lambda_proc(lp)
+    except Exception:
+        cv = None
+    if cv is None:
+        return None
+    lp.compiled_version = cv
+    return lp
+
+def _expand_macro_compiled(compiled_lp, args, env, defEnv):
+    """用编译版宏体展开。调用前设置宏全局状态(与解释器路径等价)。
+    返回展开结果或 None(需回退解释器)。原生 callable 直接调用(无 TailCall)。"""
+    global _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV
+    savedDefEnv = _CURRENT_MACRO_DEF_ENV
+    _CURRENT_MACRO_DEF_ENV = defEnv
+    _CURRENT_EXPAND_ENV = env
+    try:
+        if getattr(compiled_lp, '__native_syntax__', False):
+            return compiled_lp(args if args is not None else NIL)
+        from compiler import __mscm_invoke__
+        from mtypes import NIL as _NIL
+        args_val = args if args is not None else _NIL
+        # 迭代 trampoline（C# JitRuntime.Invoke 等价）：宏编译体的 JIT 尾调用
+        # 在循环内解包，避免递归 __mscm_eval_tail_call__ 逐层 +1 栈帧。
+        r = __mscm_invoke__(compiled_lp, [args_val], env)
+        if isinstance(r, SyntaxObject):
+            r = r.expr
+        return r
+    except Exception:
+        return None
+    finally:
+        _CURRENT_MACRO_DEF_ENV = savedDefEnv
+
+def expand_macro(proc, args, env):
+    global _CURRENT_MACRO_DEF_ENV, _CURRENT_EXPAND_ENV
+    from miniscm import eval_seq, _eval
+    if not (isinstance(proc, tuple) and len(proc) >= 5 and proc[0] == 'macro'):
+        return None
+    if not isinstance(proc[3], Env):
+        return None
+    defEnv = proc[3]
+    mbody = proc[2]
+
+    # 编译缓存路径: 宏体已编译则直接调用, 失败自动回退解释器
+    key = proc
+    try:
+        if key not in _MBODY_COMPILE_CACHE:
+            _MBODY_COMPILE_CACHE[key] = _compile_mbody(proc)
+        compiled_lp = _MBODY_COMPILE_CACHE[key]
+        if compiled_lp is not None:
+            result = _expand_macro_compiled(compiled_lp, args, env, defEnv)
+            if result is not None:
+                return resolve_hygiene_markers(result, defEnv)
+    except Exception:
+        pass
+
+    nenv = Env(env)
+    if isinstance(proc[1], Sym):
+        nenv.data[proc[1].name] = args if args is not None else NIL
+
+    savedDefEnv = _CURRENT_MACRO_DEF_ENV
+    _CURRENT_MACRO_DEF_ENV = defEnv
+    _CURRENT_EXPAND_ENV = env
+    try:
+        r = eval_seq(mbody, nenv)
+        while isinstance(r, TailCall):
+            r = _eval(r.expr, r.env)
+    finally:
+        _CURRENT_MACRO_DEF_ENV = savedDefEnv
+
+    result = r.expr if isinstance(r, SyntaxObject) else r
+    return resolve_hygiene_markers(result, defEnv)
+
+def resolve_hygiene_markers(expr, defEnv):
+    def marker_name(value):
+        if isinstance(value, Cell) and isinstance(value.car, Sym) and value.car.name == 'sx-hygiene':
+            if isinstance(value.cdr, Cell) and value.cdr.cdr is NIL and isinstance(value.cdr.car, Sym):
+                return value.cdr.car.name
+        return value.name if isinstance(value, Sym) else None
+
+    def walk(value, bound):
+        while isinstance(value, SyntaxObject):
+            value = value.expr
+        if not isinstance(value, Cell):
+            return value
+        if isinstance(value.car, Sym) and value.car.name == 'sx-hygiene':
+            name = marker_name(value)
+            if name in bound:
+                return Sym(name)
+            v = defEnv.data.get(name) if name is not None else None
+            if v is not None and not callable(v) and not (isinstance(v, tuple) and v and v[0] == 'macro'):
+                return Cell(SYM_QUOTE, Cell(v, NIL))
+            return Sym(name) if name is not None else value
+        if (isinstance(value.car, Sym) and value.car.name in ('let', 'let*', 'letrec', 'letrec*')
+                and isinstance(value.cdr, Cell) and isinstance(value.cdr.car, Cell)):
+            binds, rest = value.cdr.car, value.cdr.cdr
+            names = []
+            out = NIL
+            tail = None
+            cur = binds
+            while isinstance(cur, Cell):
+                b = cur.car
+                if isinstance(b, Cell):
+                    name = marker_name(b.car)
+                    name_value = Sym(name) if name is not None else walk(b.car, bound)
+                    names.append(name or (name_value.name if isinstance(name_value, Sym) else ''))
+                    item = Cell(name_value, walk(b.cdr, bound))
+                else:
+                    item = walk(b, bound)
+                node = Cell(item, NIL)
+                if tail is None: out = node
+                else: tail.cdr = node
+                tail = node
+                cur = cur.cdr
+            body = walk(rest, bound | {n for n in names if n})
+            return Cell(value.car, Cell(out, body))
+        return Cell(walk(value.car, bound), walk(value.cdr, bound))
+
+    return walk(expr, set())
+
+def _sx_def_env():
+    global _CURRENT_MACRO_DEF_ENV
+    from mtypes import be
+    return _CURRENT_MACRO_DEF_ENV or be
+
+def _sx_expand_env():
+    global _CURRENT_EXPAND_ENV
+    from mtypes import be
+    return _CURRENT_EXPAND_ENV or be
+
+# Implementations moved from initbuiltin.py.
+
+def _number_to_string(x, radix=10):
+    radix = int(radix)
+    if radix != 10 and isinstance(x, int) and not isinstance(x, bool):
+        if not 2 <= radix <= 36:
+            raise ValueError("number->string: invalid radix")
+        digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+        sign = "-" if x < 0 else ""
+        n = abs(x)
+        out = "0" if n == 0 else ""
+        while n:
+            out = digits[n % radix] + out
+            n //= radix
+        return SchemeString(sign + out)
+    return SchemeString(str(x))
+
+def _min_sx_expand(tmpl, bindings):
+    return sx_expand(tmpl, bindings, _sx_mutated_vars, sx_def_env())
+
+def _read_bytevector(n, port=None):
+    p = port
+    if p is None:
+        data = sys.stdin.buffer.read(n)
+        return SchemeBytevector(list(data))
+    if isinstance(p, tuple) and p[0] == 'bin-str-port':
+        data, pos = p[1]
+        end = min(pos + n, len(data))
+        p[1][1] = end
+        return SchemeBytevector(list(data[pos:end]))
+    if isinstance(p, tuple) and p[0] == 'bin-file-port' and len(p) > 3:
+        return SchemeBytevector(list(p[3].read(n)))
+    return SchemeBytevector([])
+
+def _read_bytevector_into(target, port):
+    data = _read_bytevector(len(target.data), port)
+    target.data[:len(data.data)] = data.data
+    return len(data.data)
+
+def _write_bytevector(value, port):
+    data = bytes(value.data)
+    if isinstance(port, tuple) and port[0] == 'byte-port':
+        port[1].extend(data)
+    elif isinstance(port, tuple) and port[0] == 'bin-file-port' and len(port) > 3:
+        port[3].write(data)
+    return VOID
+
+
+def _last_pair(lst):
+    cur = lst
+    while isinstance(cur, Cell) and cur.cdr is not NIL:
+        cur = cur.cdr
+    return cur
+
+def make_coroutine_generator(proc):
+    import queue, threading
+    from mtypes import EOF as _EOF
+    vals = queue.Queue()
+    done = [False]
+    resume = threading.Event()
+
+    def _yield(v):
+        vals.put(v)
+        resume.clear()
+        resume.wait()
+
+    def _run():
+        try:
+            proc(_yield)
+        finally:
+            vals.put(_EOF)
+            done[0] = True
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    started = [False]
+
+    def gen():
+        if done[0] and vals.empty():
+            return _EOF
+        if not started[0]:
+            started[0] = True
+            resume.set()
+        v = vals.get()
+        resume.set()
+        return v
+
+    return gen
+
+
+def _reduce_bit_or(args):
+    r = 0
+    for a in args: r |= int(a)
+    return r
+
+def _sys_exit(code):
+    raise SystemExit(code)
+
+def _redirect_in(stream):
+    sys.stdin = stream
+
+def _redirect_out(stream):
+    sys.stdout = stream
+
+def _with_file(path, thunk, mode, redirect):
+    old = sys.stdin if mode == 'r' else sys.stdout
+    with open(str(path), mode) as f:
+        redirect(f)
+        try:
+            r = call(thunk, [])
+        finally:
+            if mode == 'r': sys.stdin = old
+            else: sys.stdout = old
+    return r
+
+def _with_string_input(value, thunk):
+    old = sys.stdin
+    _redirect_in(io.StringIO(value))
+    try:
+        return call(thunk, [])
+    finally:
+        _redirect_in(old)
+
+def _inexact_to_exact_fn(x):
+    if isinstance(x, float):
+        if x != x or x == float('inf') or x == float('-inf'):
+            raise SchemeException("inexact->exact: not a finite number")
+        return Fraction(x).limit_denominator(1000000)
+    if isinstance(x, Fraction) and x.denominator == 1: return int(x)
+    return x
+def _string_to_number(s, radix=10):
+    text = str(s)
+    radix = int(radix)
+    if radix != 10:
+        try:
+            return int(text, radix)
+        except ValueError:
+            return FALSE
+    return parse_number_scheme(text)
+
+def port_pos(p):
+    if isinstance(p, tuple) and p[0] == 'str-port' and isinstance(p[1], list) and len(p[1]) > 1:
+        if not hasattr(set_port_pos, '_saved_str'):
+            set_port_pos._saved_str = {}
+        original = set_port_pos._saved_str.setdefault(id(p), p[1][0])
+        return len(original) - len(p[1][0])
+    if isinstance(p, tuple) and p[0] == 'file-port' and len(p) > 3:
+        return p[3].tell()
+    if isinstance(p, tuple) and p[0] == 'bin-str-port' and isinstance(p[1], list) and len(p[1]) > 1:
+        return p[1][1]
+    return 0
+
+def hash_table_set(ht, *pairs):
+    if len(pairs) % 2: raise SchemeException('hash-table-set!: expected key/value pairs')
+    for i in range(0, len(pairs), 2): ht[pairs[i]] = pairs[i + 1]
+    return VOID
+def hash_table_merge_slash(dst, src):
+    dst.update(src)
+    return dst
+
+def _call(proc, *args):
+    return proc(*args)
+
+
+class Hook:
+    def __init__(self): self.procedures = []
+
+
+class RandomSource:
+    def __init__(self, state=None): self.state = int(time.time()) if state is None else int(state)
+
+    def step(self):
+        self.state = (1103515245 * self.state + 12345) % 2147483648
+        return self.state
+
+
+class BinaryHeap:
+    def __init__(self, cmp=lambda a, b: a < b, initial=NIL):
+        self.cmp, self.items = cmp, list(cell_iter(initial))
+        for i in range(len(self.items) // 2 - 1, -1, -1): self._down(i)
+
+    def _down(self, i):
+        n = len(self.items)
+        while True:
+            left, right, best = 2 * i + 1, 2 * i + 2, i
+            if left < n and scheme_truthy(self.cmp(self.items[left], self.items[best])): best = left
+            if right < n and scheme_truthy(self.cmp(self.items[right], self.items[best])): best = right
+            if best == i: return
+            self.items[i], self.items[best], i = self.items[best], self.items[i], best
+
+    def insert(self, value):
+        self.items.append(value); i = len(self.items) - 1
+        while i:
+            p = (i - 1) // 2
+            if not scheme_truthy(self.cmp(self.items[i], self.items[p])): break
+            self.items[i], self.items[p], i = self.items[p], self.items[i], p
+
+
+class Bimap:
+    def __init__(self, init):
+        self.forward, self.reverse = {}, {}
+        for pair in cell_iter(init): self.set(pair.car, pair.cdr)
+    def set(self, key, value):
+        self.forward[key], self.reverse[value] = value, key
+
+    def forward_ref(self, key, default=FALSE):
+        return self.forward.get(key, default)
+
+    def reverse_ref(self, value, default=FALSE):
+        return self.reverse.get(value, default)
+
+
+class Deque:
+    def __init__(self, items=()): self.items = list(items)
+
+
+class Array:
+    def __init__(self, dimensions, value=0):
+        self.dimensions = list(dimensions)
+        def build(ds):
+            if len(ds) == 1: return SchemeVector([value] * ds[0])
+            return SchemeVector([build(ds[1:]) for _ in range(ds[0])])
+        self.value = build(self.dimensions)
+
+
+def _pair_items(m):
+    return [(p.car, p.cdr) for p in cell_iter(m)]
+
+
+def _mapping(*pairs):
+    vals = cells(pairs[0]) if len(pairs) == 1 and isinstance(pairs[0], Cell) else list(pairs)
+    return _lst([Cell(vals[i], vals[i + 1]) for i in range(0, len(vals) - 1, 2)])
+
+
+def _array_dims(x):
+    if not isinstance(x, SchemeVector): return []
+    return [len(x.data)] + _array_dims(x.data[0]) if x.data else [0]
+
+
+
+
+def builtin_remove_heap(h):
+    value = h.items.pop(0)
+    if h.items: h._down(0)
+    return value
+
+
+def _array_ref(a, indices):
+    for i in indices: a = a.data[int(i)]
+    return a
+
+
+def _array_set(a, value, indices):
+    for i in indices[:-1]: a = a.data[int(i)]
+    a.data[int(indices[-1])] = value
+    return VOID
+
+
+def _char_set_integer(cs):
+    values = cs.data if hasattr(cs, 'data') else cs
+    result = 0
+    for i, value in enumerate(values[:256]):
+        if scheme_truthy(value): result = result * 33 + i
+    return result
+
+def rint(s, n): return int(round(s.step() / 2147483648.0 * int(n))) % int(n)
+
+def qremove(q, end=False):
+    if not q['items']: raise ValueError('empty list queue')
+    return q['items'].pop(-1 if end else 0)
+
+def _gen_fold(f, acc, g):
+    while True:
+        x = g()
+        if x is EOF: return acc
+        acc = f(x, acc)
+
+
+def _bit_fold(fn, values):
+    if not values: return -1 if fn(1, 1) == 1 else 0
+    result = int(values[0])
+    for value in values[1:]: result = fn(result, int(value))
+    return result
+
+
+def _loop_n(n):
+    return _loop_n(n - 1) if n else Sym('done')
+
+
+def _json_value(x):
+    if x is TRUE: return True
+    if x is FALSE: return False
+    if x is NIL: return None
+    if isinstance(x, SchemeString): return str(x)
+    if isinstance(x, Cell): return [_json_value(v) for v in cell_iter(x)]
+    if isinstance(x, SchemeVector): return [_json_value(v) for v in x.data]
+    if isinstance(x, Sym): return x.name
+    return x
+
+
+def _map_value(f, value): return EOF if value is EOF else f(value)
+def _filter_value(p, g):
+    while True:
+        value = g()
+        if value is EOF or scheme_truthy(p(value)): return value
+
+
+def _vector_cumulate(f, init, v):
+    result, acc = [], init
+    for value in v.data:
+        acc = f(acc, value); result.append(acc)
+    return SchemeVector(result)
+
+
+def _vector_index_right(p, v, *start):
+    data = v.data; i = int(start[0]) if start else len(data)-1
+    while i >= 0:
+        if scheme_truthy(p(data[i])): return i
+        i -= 1
+    return FALSE
+
+
+def _vector_skip_right(p, v, *start):
+    data = v.data; i = int(start[0]) if start else len(data)-1
+    while i >= 0:
+        if not scheme_truthy(p(data[i])): return i
+        i -= 1
+    return FALSE
+
+
+def _vector_append_subvectors(*args):
+    result = []
+    for i in range(0, len(args), 3): result.extend(args[i].data[int(args[i+1]):int(args[i+2])])
+    return SchemeVector(result)
+
+
+def _reverse_bang(lst):
+    previous = NIL
+    current = lst
+    while isinstance(current, Cell):
+        following = current.cdr
+        current.cdr = previous
+        previous, current = current, following
+    return previous
+
+
+def _gen_take(n, g):
+    left = [n]
+    def out():
+        if left[0] <= 0: return EOF
+        left[0] -= 1; return g()
+    return out
+
+
+def _vec_fold(f, acc, v):
+    for i,x in enumerate(v.data if isinstance(v, SchemeVector) else v): acc = f(i,x,acc)
+    return acc
+
+
+def _vec_fold_right(f, acc, v):
+    data = v.data if isinstance(v, SchemeVector) else v
+    for i in range(len(data)-1,-1,-1): acc = f(i,data[i],acc)
+    return acc
+
+
+def _vec_map_bang(f,v):
+    for i,x in enumerate(v.data): v.data[i] = f(x)
+    return VOID
+
+def drop_gen(n, g):
+    for _ in range(n):
+        if g() is EOF: break
+    return g
+
+def rcons(acc, value):
+    items = list(cell_iter(acc)) if isinstance(acc, Cell) else []
+    return _lst(items + [value])
+def tmap(f):
+    return lambda reducer: lambda acc, value: _scheme_call(reducer, [acc, _scheme_call(f, [value])])
+def tfilter(pred):
+    return lambda reducer: lambda acc, value: _scheme_call(reducer, [acc, value]) if scheme_truthy(_scheme_call(pred, [value])) else acc
+def list_transduce(xform, reducer, init, values):
+    step = _scheme_call(xform, [reducer])
+    acc = init
+    for value in cell_iter(values):
+        acc = _scheme_call(step, [acc, value])
+    return acc
+
+
+class ISet:
+    __slots__ = ('items',)
+    def __init__(self, items=None):
+        self.items = set()
+        if items is not None:
+            for it in items:
+                self.items.add(int(it))
+    def __repr__(self):
+        return '#<iset %s>' % sorted(self.items)
+
+def _unsupported(name):
+    def fail(*args):
+        raise SchemeException(f'{name}: unsupported by this implementation')
+    return fail
+
+def iset_fn(*xs):
+    return ISet(xs)
+def iset_p(x):
+    return TRUE if isinstance(x, ISet) else FALSE
+def iset_contains_p(s, v):
+    return TRUE if int(v) in s.items else FALSE
+def iset_adjoin(s, *xs):
+    n = ISet(); n.items = set(s.items)
+    for x in xs: n.items.add(int(x))
+    return n
+def iset_delete(s, *xs):
+    n = ISet(); n.items = set(s.items)
+    for x in xs: n.items.discard(int(x))
+    return n
+def iset_empty():
+    return ISet()
+def iset_size(s):
+    return len(s.items)
+def iset_empty_p(s):
+    return TRUE if not s.items else FALSE
+def iset_union(a, b):
+    n = ISet(); n.items = a.items | b.items; return n
+def iset_intersection(a, b):
+    n = ISet(); n.items = a.items & b.items; return n
+def iset_difference(a, b):
+    n = ISet(); n.items = a.items - b.items; return n
+def iset_to_list(s):
+    return _lst(sorted(s.items))
+def list_to_iset(xs):
+    return ISet(cell_iter(xs))
+def update_fn(lst, i, proc):
+    xs = list(cell_iter(lst))
+    idx = int(i)
+    xs[idx] = proc(xs[idx])
+    return _lst(xs)
+
+def _append_bang(*xs):
+    return append(*xs)
+
+def _append_reverse_bang(x, y):
+    return append(reverse(x), y)
+
+def _char_set_unfold(stop, mapper, successor, seed, *bases):
+    result = [False] * 256
+    state = seed
+    while not stop(state):
+        ch = mapper(state)
+        cp = ord(cs_char(ch))
+        if cp < 256: result[cp] = True
+        state = successor(state)
+    for base in bases:
+        result = char_set_binop([result, base], lambda a, b: a or b)
+    return result
+
+def _integer_char_set(value):
+    n = int(value)
+    return [bool(n & (1 << i)) for i in range(256)]
+
+def _drop_right_bang(xs, n):
+    items = list(cell_iter(xs))
+    keep = len(items) - int(n)
+    if keep < 0: raise SchemeException('drop-right!: count exceeds list length')
+    cur = xs
+    if keep == 0: return NIL
+    for _ in range(1, keep): cur = cur.cdr
+    cur.cdr = NIL
+    return xs
+
+def _find_tail(pred, xs):
+    cur = xs
+    while isinstance(cur, Cell):
+        if pred(cur.car) is not FALSE: return cur
+        cur = cur.cdr
+    return FALSE
+
+def _fold_right_1(proc, xs):
+    values = list(cell_iter(xs))
+    if not values: raise SchemeException('fold-right-1: empty list')
+    acc = values[-1]
+    for value in reversed(values[:-1]): acc = proc(value, acc)
+    return acc
+
+def _include_ci(path):
+    import pathlib
+    requested = str(path)
+    p = pathlib.Path(requested)
+    if not p.exists():
+        matches = [x for x in p.parent.iterdir() if x.name.lower() == p.name.lower()]
+        if matches: p = matches[0]
+    if not p.exists(): raise SchemeException(f'include-ci: file not found: {requested}')
+    from miniscm import load_file
+    return load_file(str(p))
+
+def _lset_adjoin(eq, xs, *values):
+    result = list(cell_iter(xs))
+    for value in values:
+        if not any(eq(value, old) is TRUE for old in result): result.append(value)
+    return _lst(result)
+
+def _lset_subset(eq, *lists):
+    for left, right in zip(lists, lists[1:]):
+        if any(not any(eq(x, y) is TRUE for y in cell_iter(right)) for x in cell_iter(left)): return FALSE
+    return TRUE
+
+def _random_integers(source, bound):
+    rng = source if isinstance(source, _random.Random) else _random.Random()
+    return lambda n: rng.randrange(int(n))
+
+def _random_reals(source):
+    rng = source if isinstance(source, _random.Random) else _random.Random()
+    return lambda: rng.random()
+
+def _test_equal(actual, expected):
+    return TRUE if actual == expected else FALSE
+
+def sorted_by_fn(pred, lst):
+    xs = list(cell_iter(lst))
+    def _cmp(a, b):
+        if scheme_truthy(pred(a, b)): return -1
+        if scheme_truthy(pred(b, a)): return 1
+        return 0
+    return _lst(sorted(xs, key=_functools.cmp_to_key(_cmp)))
+
+def _group_by(pred, values):
+    groups = {}
+    order = []
+    for value in cell_iter(values):
+        key = call(pred, [value])
+        key = key.name if isinstance(key, Sym) else key
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(value)
+    return _lst([_lst(groups[key]) for key in order])
+
+def _option(spec, required, handler):
+    return ('option', spec, required, handler)
+
+def hash_table_merge_bang(dst, src):
+    dst.update(src)
+    return dst
+
+def file_exists_fn(p):
+    from miniscm import _resolve_load_path
+    r = _resolve_load_path(p)
+    return TRUE if (r is not None and _os.path.exists(r)) else FALSE
+
+# ---- primitives.py ----
+# primitives.py
+
+
+# ── 从 primitives_first 导入自举核心函数 ──
+
+# char_val: extract Python str from SchemeChar
+_has_sc = False
+def cs_char(c):
+    if isinstance(c, SchemeChar): return c.char
+    if isinstance(c, tuple) and len(c) == 2 and c[0] == 'char': return c[1]
+    if isinstance(c, str) and len(c) == 1: return c
+    return str(c)[0] if len(str(c)) > 0 else ' '
+
+# ── SECTION A: 位运算辅助函数（匿名 lambda 用于 bitwise 操作）──
+AND = lambda a,b: a&b
+IOR = lambda a,b: a|b
+NOT = lambda a: ~a
+XOR = lambda a,b: a^b
+
+# ── 原生函数求值辅助器 ──
+
+# scheme_truthy: check if a value is truthy in Scheme (only #f is false)
+def scheme_truthy(v):
+    return v is not FALSE and v is not False and v is not NIL
+
+
+# char_val: 从字符表示中提取纯 Python str
+#   支持 SchemeChar 对象和 ('char', str) 元组两种格式
+# make_char: 统一创建 SchemeChar（接受元组或现有 SchemeChar）
+def make_char(s):
+    if isinstance(s,SchemeChar): return s
+    if isinstance(s,tuple) and s[0]=='char': return SchemeChar(s[1])
+    return SchemeChar(str(s))
+
+# str_set_char: SchemeString 的原地字符设置（通过 .data 列表）
+def char_val(c):
+    if isinstance(c, SchemeChar): return c.char
+    if isinstance(c, tuple) and len(c) == 2 and c[0] == 'char': return c[1]
+    if isinstance(c, str) and len(c) == 1: return c
+    if isinstance(c, int): return chr(c)
+    raise SchemeException("char-val: invalid argument")
+
+def str_set_char(v, i, c):
+    v.data[i] = char_val(c)
+
+# str_mutate: 强制 SchemeString 获得 .data 属性（惰性初始化）
+#   坑：__class__.__name__ 检查而非 isinstance，因为未设置 __class__
+def str_mutate(v):
+    if not hasattr(v, 'data'):
+        setattr(v, 'data', list(str(v)))
+    return v
+
+# vec_set_elem: 向量元素设置（支持 SchemeVector.data 和 Python list）
+def vec_set_elem(v, i, x):
+    if hasattr(v, 'data'):
+        v.data[i] = x
+    elif isinstance(v, list):
+        v[i] = x
+    return VOID
+
+# bv_set_u8: 字节向量单字节设置
+def bv_set_u8(v, i, x):
+    v.data[i] = x
+    return VOID
+
+# is_list: 循环检测 true list（含环形链表检测 via seen set）
+#   返回值是 TRUE/FALSE（Scheme 布尔值），不是 Python bool
+
+# str_cons: 从多个字符参数构造字符串
+def str_cons(*chars):
+    return ''.join(c[1] if isinstance(c,tuple) else (c.char if hasattr(c,'char') else str(c)) for c in chars)
+
+
+# assoc: 通用 assoc 查找，支持自定义比较函数 eq
+def assoc(k,al,eq):
+    while isinstance(al,Cell):
+        p=al.car
+        if isinstance(p,Cell) and eq(p.car,k) is TRUE: return p
+        al=al.cdr
+    return FALSE
+
+# bit_op: 对参数列表执行二元位操作（折叠）
+def bit_op(args,op):
+    r=args[0]
+    for x in args[1:]: r=op(r,x)
+    return r
+
+# format: ~a/~s/~d/~%/~~ 格式化引擎（Scheme format 子集）
+def format(fmt,args):
+    fmt = str(fmt)
+    parts=[]; i=0; ai=0
+    while i<len(fmt):
+        if fmt[i]=='~' and i+1<len(fmt):
+            c=fmt[i+1]
+            if c=='a':
+                value = args[ai]
+                parts.append(value.char if isinstance(value, SchemeChar) else (str(value) if isinstance(value, (str, SchemeString)) else _pr(value))); ai+=1; i+=2
+            elif c=='s': parts.append(_pr(args[ai])); ai+=1; i+=2
+            elif c=='d':
+                if ai >= len(args): raise SchemeException("format: not enough arguments")
+                val = args[ai]
+                if isinstance(val, Fraction): val = int(val)
+                parts.append(str(int(val))); ai+=1; i+=2
+            elif c=='%': parts.append('\n'); i+=2
+            elif c=='~': parts.append('~'); i+=2
+            else: parts.append(fmt[i]); i+=2
+        else: parts.append(fmt[i]); i+=1
+    return ''.join(str(p) for p in parts)
+
+# compose: 函数组合（从右到左执行）
+def compose(fns):
+    def comp(x):
+        r=x
+        for fn in reversed(fns):
+            r=call(fn,[r]) if not callable(fn) else fn(r)
+        return r
+    return comp
+
+# ── 辅助函数（模块级，避免 equal?/eqv? 每次调用重复创建）──
+
+
+# ── eqv? 与 equal? ──
+# eqv? 的数值相等判定：需要类型一致（exact vs inexact），0 的符号检测
+#   注意：NaN 比较 (x != x) 和 signed zero 的特殊处理
+
+# equal? 递归比较：支持链表、向量、字节向量、hash-table、字符串、字符
+#   使用 seen set 检测循环引用（环形链表不导致无限递归）
+
+# member_py: 通用列表成员查找（使用自定义相等判定 _e）
+def member_py(k, lst, _e):
+    while isinstance(lst, Cell):
+        if _e(lst.car, k) is TRUE: return lst
+        lst = lst.cdr
+    return FALSE
+
+# next_gensym: 生成唯一的 gensym 符号（自增计数器）
+def next_gensym():
+    _gensym_ctr[0] += 1
+    return Sym(f"g{_gensym_ctr[0]}")
+
+# ── 原生基础库绑定 ──
+
+
+# +：加法，多参，支持 int/Fraction/float/complex 混合运算
+#   如果任一参数是 complex，所有参数转 complex 计算
+#   如果任一参数是 Fraction，int 参数先转 Fraction
+# -：减法，单参取负，多参连续减
+#   complex/Fraction 混合处理同 +
+# *：乘法，多参
+def mul(*a):
+    if not a: return 1
+    all_int = True
+    for x in a:
+        if not isinstance(x, int):
+            all_int = False
+            break
+    if all_int:
+        r = 1
+        for x in a: r *= x
+        return r
+    if any(isinstance(x,complex) for x in a):
+        r=1
+        for x in a: r*=x
+        return r
+    if any(isinstance(x,Fraction) for x in a):
+        r=Fraction(1,1)
+        for x in a: r*=Fraction(x,1) if isinstance(x,int) else x
+        return r
+    r=1
+    for x in a: r*=x
+    return r
+# /：除法——为何 int/int 返回 Fraction？
+#   R7RS 要求 exact 除法返回精确结果。1/2 在 Scheme 中应为 1/2 而非 0.5
+#   两个 int 不能整除时 (a%x!=0) 自动转为 Fraction
+#   float 参数出现后保持 float 路径
+def div(a,*b):
+    if not b:
+        if isinstance(a,complex): return 1/a
+        if isinstance(a,Fraction): return Fraction(1,1)/a
+        if isinstance(a,int): return Fraction(1,a)
+        return 1/a
+    has_float = isinstance(a,float)
+    for x in b:
+        if isinstance(a,complex) or isinstance(x,complex): a/=x; has_float = isinstance(a,float)
+        elif isinstance(a,Fraction) or isinstance(x,Fraction):
+            a=Fraction(a,1) if isinstance(a,int) else a
+            x=Fraction(x,1) if isinstance(x,int) else x
+            a/=x
+        elif isinstance(a,int) and isinstance(x,int):
+            if x == 0: raise SchemeException("division by zero")
+            if a%x==0: a//=x
+            else: a=Fraction(a,x)
+        else: a/=x; has_float = has_float or isinstance(a,float)
+    if isinstance(a,Fraction): return a
+    return int(a) if isinstance(a,float) and a==int(a) and not has_float else a
+# gcd2: gcd(a/b, c/d) = gcd(a,c) / lcm(b,d)
+def gcd2(a,b):
+    a,b=abs(a),abs(b)
+    _gcd = math.gcd
+    _lcm = lambda x,y: x * y // _gcd(x, y) if x and y else 0
+    if isinstance(a,Fraction) and isinstance(b,Fraction):
+        g = lambda: 0
+        return Fraction(_gcd(a.numerator,b.numerator), _lcm(a.denominator,b.denominator))
+    if isinstance(a,Fraction) or isinstance(b,Fraction):
+        na, da = a.numerator, a.denominator if isinstance(a,Fraction) else (int(a),1)
+        nb, db = b.numerator, b.denominator if isinstance(b,Fraction) else (int(b),1)
+        return Fraction(_gcd(na,nb), _lcm(da,db))
+    a,b=int(a),int(b)
+    while b: a,b=b,a%b
+    return a
+def gcd(*a):
+    if not a: return 0
+    r=0
+    for x in a:
+        if r==0: r=abs(x)
+        else: r=gcd2(r,x)
+    return r
+# lcm2: lcm(a/b, c/d) = lcm(a,c) / gcd(b,d)
+def lcm2(a,b):
+    if a==0 or b==0: return 0
+    if isinstance(a,Fraction) or isinstance(b,Fraction):
+        _gcd = math.gcd
+        _lcm = lambda x,y: x * y // _gcd(x, y) if x and y else 0
+        a=Fraction(a,1) if isinstance(a,int) else a
+        b=Fraction(b,1) if isinstance(b,int) else b
+        return Fraction(_lcm(a.numerator,b.numerator), _gcd(a.denominator,b.denominator))
+    return abs(int(a)*int(b))//gcd2(a,b)
+def lcm(*a):
+    if not a: return 1
+    r=a[0]
+    for x in a[1:]: r=lcm2(r,x)
+    return r
+def load(path):
+    from miniscm import load_file
+    return load_file(str(path))
+# map_：标准 map，支持多列表
+#   TailCall 陷阱：f_real() 调用可能返回 TailCall（当 f 是编译后的跨函数尾调用时）
+#   必须用 _eval_fn 解析 TailCall 后才 cons 到结果 Cell 中
+#   递归调用 map_ 处理 cdr（非尾递归，深度受限）
+def list_tail(lst,k):
+    for _ in range(k):
+        if not isinstance(lst,Cell): raise IndexError("list-tail")
+        lst=lst.cdr
+    return lst
+# append: append，逆转+平坦化后重建
+def member(k,lst):
+    while isinstance(lst,Cell):
+        if equal(lst.car,k) is TRUE: return lst
+        lst=lst.cdr
+    return FALSE
+
+def memv(k,lst):
+    while isinstance(lst,Cell):
+        if eqv(lst.car, k) is TRUE: return lst
+        lst=lst.cdr
+    return FALSE
+
+
+# assoc: 通用关联列表查找，支持自定义比较（第三个参数）
+#   默认比较器是 equal；注意 eq 返回 TRUE 或 True 都算匹配
+def assoc(k,al,*cmp):
+    eq = cmp[0] if cmp else equal
+    while isinstance(al,Cell):
+        p=al.car
+        if isinstance(p,Cell):
+            res = eq(p.car,k) if not callable(eq) else eq(p.car, k)
+            if res is TRUE or res is True: return p
+        al=al.cdr
+    return FALSE
+
+def assv(k,al):
+    while isinstance(al,Cell):
+        p=al.car
+        if isinstance(p,Cell) and eqv(p.car,k) is TRUE: return p
+        al=al.cdr
+    return FALSE
+
+# call/cc: call-with-current-continuation
+#   通过 _ContinuationEscape 异常实现控制流逃逸
+#   _cont_id 用于匹配逃逸来源，防止外部逃逸被内部捕获
+def call_cc(f):
+    global _cont_id
+    _cont_id+=1; my_id=_cont_id
+    captured=[None]
+    def_esc = lambda v: captured.__setitem__(0, v) or (_ for _ in ()).throw(_ContinuationEscape(my_id))
+    try:
+        return f(def_esc) if callable(f) else call(f,[def_esc])
+    except _ContinuationEscape as e:
+        if e.args[0]!=my_id: raise
+        return captured[0]
+
+# cvw: call-with-values
+#   生产者 f 返回值检测：
+#     - 如果返回 tuple（values 多值），拆解后传给 g
+#     - 如果返回 Cell 点对（非 Cell 的 cdr 且非 NIL），作为两个值
+#     - 如果返回 Cell 正规二元素列表且至少一个元素是列表，也作为两个值
+#       （break/span/partition/split-at 等返回双列表，但单元素如 (list 1 2) 保持单值）
+#     - 否则作为单值传给 g
+def cvw(f,g):
+    r=call(f,[])
+    if isinstance(r,tuple):
+        if len(r)==0: return call(g,[])
+        if len(r)==1: return call(g,[r[0]])
+        return call(g,list(r))
+    if isinstance(r, Cell) and not isinstance(r.cdr, Cell) and r.cdr is not NIL:
+        return call(g,[r.car,r.cdr])
+    if isinstance(r, Cell) and isinstance(r.cdr, Cell) and r.cdr.cdr is NIL:
+        if isinstance(r.car, Cell) or r.car is NIL or isinstance(r.cdr.car, Cell) or r.cdr.car is NIL:
+            return call(g,[r.car, r.cdr.car])
+    return call(g,[r])
+# dynamic-wind: before/during/after 保证执行
+def dynamic_wind(before,during,after):
+    before() if callable(before) else call(before,[])
+    try:
+        r=during() if callable(during) else call(during,[])
+        return r
+    finally:
+        after() if callable(after) else call(after,[])
+# do_force: force promise（惰性求值缓存）
+def do_force(p):
+    if isinstance(p,Promise):
+        if not p.forced:
+            try:
+                p.val=call(p.thunk,[])
+            except Exception:
+                p.forced=True
+                raise
+            p.forced=True
+        return p.val
+    return p
+# port_out: 输出端口写入
+#   str-port 使用 list 包裹字符串实现引用传递（'str-port', [缓冲串]）
+#   file-port 直接写入 .write()
+
+def port_in(port):
+    if isinstance(port, tuple):
+        if port[0] == 'str-port' and isinstance(port[1], list):
+            return port[1][0]
+        if port[0] == 'file-port' and len(port) > 3:
+            return port[3].read()
+    return None
+
+# dsp: display（字符串不引号包裹，其他值使用 _pr 打印）
+#   坑：str-port 从列表缓冲取第一个字符并截断，无字符返回 EOF
+def rc(p):
+    if p is None: p = ('str-port', [sys.stdin.read()])
+    if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3:
+        c=p[3].read(1)
+        return SchemeChar(c) if c else EOF
+    if isinstance(p,tuple) and p[0]=='str-port' and isinstance(p[1],list):
+        s=p[1][0]
+        if not s: return EOF
+        c=s[0]; p[1][0]=s[1:]; return SchemeChar(c)
+    return EOF
+# pkc: peek-char，窥视一个字符但不消耗
+#   file-port 通过 seek(-1,1) 回退，str-port 只看不截断
+def pkc(p):
+    if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3:
+        c=p[3].read(1)
+        if c:
+            try: p[3].seek(p[3].tell()-1)
+            except OSError: pass
+        return SchemeChar(c) if c else EOF
+    if isinstance(p,tuple) and p[0]=='str-port' and isinstance(p[1],list):
+        s=p[1][0]
+        if not s: return EOF
+        return SchemeChar(s[0])
+    return EOF
+# wc: write-char，写一个字符到端口
+def wc(c,p=None):
+    ch=c[1] if isinstance(c,tuple) else (c.char if hasattr(c,'char') else str(c))
+    if port_out(p, ch): return VOID
+    sys.stdout.write(ch); return VOID
+def write_proc(x, port=None):
+    s=_pr(x)
+    if port_out(port, s): return VOID
+    sys.stdout.write(s); return VOID
+# read_proc: read，从端口读一个 S 表达式
+#   str-port 通过 _tokenize + _parse1 解析，保留未消耗部分
+def read_proc(port=None):
+    if port is None or port is TRUE:
+        line=sys.stdin.readline()
+        if not line: return EOF
+        return read(line)
+    if isinstance(port,tuple) and port[0]=='str-port' and isinstance(port[1],list):
+        s = port[1][0]; s_stripped = s.lstrip()
+        if not s_stripped: return EOF
+        skip = len(s) - len(s_stripped)
+        from reader import _tokenize, Reader, parse_reader
+        toks = _tokenize(s_stripped)
+        if not toks: return EOF
+        r = Reader(toks)
+        expr = parse_reader(r)
+        consumed = r.pos
+        pos = skip
+        for t in toks[:consumed]:
+            idx = s.find(t, pos)
+            if idx < 0: break
+            pos = idx + len(t)
+        port[1][0] = s[pos:].lstrip()
+        return expr
+    if isinstance(port,tuple) and port[0]=='file-port' and len(port)>3:
+        line=port[3].readline()
+        if not line: return EOF
+        return read(line)
+    return EOF
+# cwif: call-with-input-file（打开文件，调用 thunk，自动关闭）
+def cwif(n,f):
+    try:
+        fp = open(str(n), 'r')
+        p = ('file-port', str(n), 'r', fp)
+        return f(p) if callable(f) else call(f,[p])
+    except: return VOID
+# cwof: call-with-output-file
+def cwof(n,f):
+    try:
+        fp = open(str(n), 'w')
+        p = ('file-port', str(n), 'w', fp)
+        return f(p) if callable(f) else call(f,[p])
+    except: return VOID
+# call: 通用过程调用
+#   TailCall 陷阱：可调用过程 proc 执行后可能返回 TailCall（来自 JIT 编译的跨函数尾调用）
+#   必须用 _eval_fn 循环解析直到返回非 TailCall 值
+#   lambda 元组（'lambda', params, body, penv, _）直接构造 env 并 eval_seq
+#     因为 proc(*all_args) 返回 Python bool 时需要转成 Scheme TRUE/FALSE
+def app(fn,*args):
+    from miniscm import eval_seq
+    all_args = []
+    for x in args:
+        if isinstance(x,Cell):
+            while isinstance(x,Cell): all_args.append(x.car); x=x.cdr
+        elif x is not NIL:
+            all_args.append(x)
+    if callable(fn):
+        proc=fn
+    elif isinstance(fn,tuple) and fn[0]=='lambda':
+        proc=fn
+    else:
+        proc=be.lookup(fn)
+    if isinstance(proc,tuple) and proc[0]=='lambda':
+        _,params,body,penv, _ = proc; nenv=Env(penv); pi=0
+        for p in params:
+            ps=_sn(p)
+            if ps.startswith('rest:'): nenv.define(ps[5:], _lst(all_args[pi:])); pi=len(all_args)
+            else: nenv.define(ps, all_args[pi]); pi+=1
+        r=eval_seq(body,nenv)
+    else:
+        r = proc(*all_args)
+    if isinstance(r, TailCall):
+        from miniscm import _eval as _eval_fn
+        r = _eval_fn(r.expr, r.env)
+    if r is True: return TRUE
+    if r is False: return FALSE
+    return r
+def with_exception_handler(handler,thunk):
+    try: return thunk() if callable(thunk) else call(thunk,[])
+    except SchemeException as e:
+        h=handler if callable(handler) else (lambda x: call(handler,[x]))
+        return h(e.val)
+    except Exception as e:
+        h=handler if callable(handler) else (lambda x: call(handler,[x]))
+        return h(SchemeString(str(e)))
+def do_raise(x):
+    raise SchemeException(x)
+
+
+# make_coro_gen: 协程生成器（收集 yield 值后顺序返回）
+def make_coro_gen(proc):
+    vals = []
+    call(proc, [lambda v: vals.append(v)])
+    i = [0]
+    def gen():
+        if i[0] >= len(vals): return EOF
+        v = vals[i[0]]; i[0] += 1
+        return v
+    return gen
+
+# id_eq: bound-identifier=? / free-identifier=?
+#   坑：只比较 SyntaxObject.expr 或原始对象的 str() 表示
+#   如果 sa 和 sb 引用同一个 SyntaxObject（自引用），str(sa) == str(sb) 判定为相等
+#   但 R7RS 要求比较 lexical context，此实现不追踪 context，仅按名称匹配
+def id_eq(a,b):
+    sa = a.expr if isinstance(a,SyntaxObject) else a
+    sb = b.expr if isinstance(b,SyntaxObject) else b
+    return TRUE if str(sa) == str(sb) else FALSE
+
+# ── SECTION C: 运行时原语批处理绑定 ──
+#   以下块通过 for 循环批量注册数学函数、CxR 组合器
+
+
+def math_or_cmath(f, cf):
+    def _(x):
+        if isinstance(x, complex): return cf(x)
+        try: return f(float(x)) if isinstance(x,Fraction) else f(x)
+        except ValueError: return cf(float(x))
+    return _
+
+# 数学科学计算
+
+# float_result: 包装函数确保返回 float（用于 round/floor/ceil/truncate）
+def float_result(f):
+    def _(x):
+        r = f(float(x)) if isinstance(x,Fraction) else f(x)
+        return float(r)
+    return _
+
+# preserve_type: 类型保持包装——输入 int 返回 int，输入 float 返回 float
+#   坑：Fraction 参数先转 float 计算，结果回落为 int 或 float
+#   round/floor/ceil/truncate 用此包装以保持 Scheme 语义
+def preserve_type(f):
+    def _(x):
+        r = f(x) if not isinstance(x,Fraction) else f(x)
+        if isinstance(x, Fraction): return Fraction(r, 1) if int(r) == r else r
+        if isinstance(x, float) and float('inf') in (x, -x, float('nan')): return x
+        if isinstance(x, float): return float(r)
+        return int(r)
+    return _
+
+# 批量注册：sin/cos/exp/sqrt/log/round/floor/ceiling/truncate/tan/asin/acos/atan/abs/expt
+#   sqrt 特殊处理：整数完全平方返回 isqrt（精确），否则用 math_or_cmath
+for fn,n in [(math_or_cmath(math.sin, cmath.sin),'sin'),
+    (math_or_cmath(math.cos, cmath.cos),'cos'),
+    (math_or_cmath(math.exp, cmath.exp),'exp'),
+    (lambda x: int(math.isqrt(x)) if isinstance(x,int) and x>=0 and math.isqrt(x)**2==x else (math_or_cmath(math.sqrt, cmath.sqrt)(x)),'sqrt'),
+    (math_or_cmath(math.log, cmath.log),'log'),
+    (preserve_type(round),'round'),
+    (preserve_type(math.floor),'floor'),
+    (preserve_type(math.ceil),'ceiling'),
+    (preserve_type(math.trunc),'truncate'),
+    (math_or_cmath(math.tan, cmath.tan),'tan'),
+    (math_or_cmath(math.asin, cmath.asin),'asin'),
+    (math_or_cmath(math.acos, cmath.acos),'acos'),
+    (math_or_cmath(math.atan, cmath.atan),'atan'),
+    (abs,'abs'),(lambda a,b: a**b,'expt')]:
+    builtin(n, fn)
+
+# 动态 CxR 提取
+#   c*r 组合器字典：通过 car/cdr 链实现 caaaar/cddddr 等 24 种组合
+_cxr_map = {
+    'caaar': (car,car,car), 'caadr': (car,car,cdr), 'cadar': (car,cdr,car), 'caddr': (car,cdr,cdr),
+    'cdaar': (cdr,car,car), 'cdadr': (cdr,car,cdr), 'cddar': (cdr,cdr,car), 'cdddr': (cdr,cdr,cdr),
+    'caaaar': (car,car,car,car), 'caaadr': (car,car,car,cdr), 'caadar': (car,car,cdr,car), 'caaddr': (car,car,cdr,cdr),
+    'cadaar': (car,cdr,car,car), 'cadadr': (car,cdr,car,cdr), 'caddar': (car,cdr,cdr,car), 'cadddr': (car,cdr,cdr,cdr),
+    'cdaaar': (cdr,car,car,car), 'cdaadr': (cdr,car,car,cdr), 'cdadar': (cdr,car,cdr,car), 'cdaddr': (cdr,car,cdr,cdr),
+    'cddaar': (cdr,cdr,car,car), 'cddadr': (cdr,cdr,car,cdr), 'cdddar': (cdr,cdr,cdr,car), 'cddddr': (cdr,cdr,cdr,cdr),
+}
+# mk_cxr: 闭包工厂，按逆序应用 cdr/car 链
+for _n,_chain in _cxr_map.items():
+    def mk_cxr(ch):
+        def cxr(x):
+            for c in reversed(ch): x=c(x)
+            return x
+        return cxr
+    builtin(_n, mk_cxr(_chain))
+
+# format_dispatch: format 的分发入口
+#   如果第一个参数是 str-port（输出字符串端口），结果写入端口而非返回
+def format_dispatch(*a):
+    if len(a) >= 2 and a[0] is FALSE:
+        return format(a[1], list(a[2:]))
+    if len(a) >= 2 and isinstance(a[0], tuple) and a[0][0] == 'str-port' and isinstance(a[0][1], list):
+        result = format(a[1], list(a[2:]))
+        a[0][1][0] = result
+        return VOID
+    return format(a[0], list(a[1:]))
+# simplest_between: 求 (a,b) 区间内的最简分数（用于 rationalize）
+#   递归的 Stern-Brocot 树搜索
+def simplest_between(a, b):
+    if a >= b: return simplest_between(b, a)
+    fa = int(math.floor(a))
+    fb = int(math.floor(b))
+    if fa != fb:
+        return Fraction(fb, 1)
+    r = simplest_between(Fraction(1, 1) / (Fraction(b) - fa), Fraction(1, 1) / (Fraction(a) - fa))
+    return Fraction(fa, 1) + Fraction(1, 1) / r
+
+# string_fill_prim: string-fill! 的底层实现
+def string_fill_prim(s, c, *args):
+    str_mutate(s)
+    start = args[0] if args else 0
+    end = args[1] if len(args) > 1 else len(s.data)
+    ch = c[1] if isinstance(c, tuple) else (c.char if hasattr(c, 'char') else str(c))
+    for i in range(start, end): s.data[i] = ch
+    return VOID
+
+# symbol_eq_prim: symbol=? 多参比较（全等判定，is 比较）
+def symbol_eq_prim(*args):
+    for i in range(len(args) - 1):
+        if args[i] is not args[i+1]: return FALSE
+    return TRUE
+
+# for-each: 对列表/字符串/字符每个元素执行过程（副作用）
+    return VOID
+def make_ht():
+    return {}
+def alist2ht(al):
+    r = {}
+    while isinstance(al, Cell):
+        p = al.car
+        if isinstance(p, Cell):
+            r[p.car] = p.cdr.car if isinstance(p.cdr, Cell) else p.cdr
+        al = al.cdr
+    return r
+
+def make_param(init, *rest):
+    converter = rest[0] if rest else None
+    box = [converter(init) if converter else init]
+    def param(*args):
+        if not args:
+            return box[0]
+        if len(args) == 1:
+            box[0] = converter(args[0]) if converter else args[0]
+            return VOID
+        raise SchemeException("make-parameter: too many arguments")
+    return param
+
+
+# ── Imported from primitives_ext ──
+def cell_iter(lst):
+    while isinstance(lst, Cell):
+        yield lst.car
+        lst = lst.cdr
+
+
+def cells(lst):
+    return list(cell_iter(lst))
+
+
+def _stream_next(cur):
+    nxt = cur.cdr
+    if callable(nxt):
+        return nxt()
+    if isinstance(nxt, Promise):
+        return do_force(nxt)
+    return nxt
+
+
+def stream_ref_fn(s, n):
+    cur = s
+    for _ in range(n):
+        if cur is NIL: return NIL
+        if isinstance(cur, Cell):
+            cur = _stream_next(cur)
+        elif isinstance(cur, tuple) and len(cur) == 2:
+            cur = cur[1]
+        else:
+            return NIL
+    if cur is NIL: return NIL
+    if isinstance(cur, Cell): return cur.car
+    if isinstance(cur, tuple) and len(cur) == 2: return cur[0]
+    return NIL
+
+
+def _stream_advance(v):
+    if isinstance(v, Promise):
+        return do_force(v)
+    return v
+
+
+def stream_map_fn(f, s):
+    cur = s
+    def _step():
+        nonlocal cur
+        if cur is NIL or not isinstance(cur, Cell):
+            return NIL
+        mapped = f(cur.car)
+        nxt = _stream_advance(cur.cdr)
+        out = Cell(mapped, Promise(_step))
+        cur = nxt
+        return out
+    return _step()
+
+
+def stream_filter_fn(pred, s):
+    cur = s
+    def _step():
+        nonlocal cur
+        while True:
+            if cur is NIL or not isinstance(cur, Cell):
+                return NIL
+            if pred(cur.car) is TRUE:
+                nxt = _stream_advance(cur.cdr)
+                out = Cell(cur.car, Promise(_step))
+                cur = nxt
+                return out
+            cur = _stream_advance(cur.cdr)
+    return _step()
+
+
+def stream_take_fn(s, n):
+    result = []
+    cur = s
+    for _ in range(n):
+        if not isinstance(cur, Cell): break
+        result.append(cur.car)
+        cur = _stream_next(cur)
+    return _lst(result)
+
+
+def list_split_at(lst, n):
+    first = []
+    cur = lst
+    for _ in range(n):
+        if not isinstance(cur, Cell): break
+        first.append(cur.car)
+        cur = cur.cdr
+    return Cell(_lst(first), Cell(cur, NIL))
+
+
+def list_span(pred, lst):
+    yes = []
+    cur = lst
+    while isinstance(cur, Cell):
+        if pred(cur.car) is TRUE:
+            yes.append(cur.car)
+            cur = cur.cdr
+        else:
+            break
+    return Cell(_lst(yes), Cell(cur, NIL))
+
+
+def break_list_fn(pred, lst):
+    yes = []
+    cur = lst
+    while isinstance(cur, Cell):
+        if pred(cur.car) is TRUE:
+            break
+        yes.append(cur.car)
+        cur = cur.cdr
+    return Cell(_lst(yes), Cell(cur, NIL))
+
+
+def partition_fn(pred, lst):
+    yes, no = [], []
+    for x in cell_iter(lst):
+        if pred(x) is TRUE: yes.append(x)
+        else: no.append(x)
+    return Cell(_lst(yes), Cell(_lst(no), NIL))
+
+
+def booleans_to_integer(*bools):
+    r = 0
+    bit = 0
+    for b in bools:
+        if b is TRUE or b is True:
+            r |= (1 << bit)
+        bit += 1
+    return r
+
+
+def bits_to_integer(lst):
+    r = 0
+    cur = lst
+    while isinstance(cur, Cell):
+        v = cur.car
+        r = r * 2 + (1 if v is TRUE or v is True or (isinstance(v, Sym) and v.name == '1') or v == 1 else 0)
+        cur = cur.cdr
+    return r
+
+
+def bits_to_integer_lsb(lst):
+    r = 0
+    bit = 0
+    cur = lst
+    while isinstance(cur, Cell):
+        v = cur.car
+        if v is TRUE or v is True or (isinstance(v, Sym) and v.name == '1') or v == 1:
+            r |= (1 << bit)
+        bit += 1
+        cur = cur.cdr
+    return r
+
+
+def integer_to_bits_list(n, k=0):
+    n = int(n)
+    bits = []
+    temp = abs(n)
+    while temp:
+        bits.append(1 if temp & 1 else 0)
+        temp >>= 1
+    if not bits: bits = [0]
+    if k > len(bits):
+        bits = bits + [0] * (k - len(bits))
+    return _lst(bits)
+
+
+def alist_copy_fn(al):
+    result = NIL
+    for p in cell_iter(al):
+        if isinstance(p, Cell) and isinstance(p.cdr, Cell) and p.cdr.cdr is NIL:
+            result = Cell(Cell(p.car, Cell(p.cdr.car, NIL)), result)
+        elif isinstance(p, Cell):
+            result = Cell(Cell(p.car, p.cdr), result)
+        else:
+            result = Cell(p, result)
+    # reverse to preserve order
+    prev = NIL
+    cur = result
+    while isinstance(cur, Cell):
+        nxt = cur.cdr
+        cur.cdr = prev
+        prev = cur
+        cur = nxt
+    return prev
+
+
+def box(x): return ['box', x]
+
+def is_box(x): return isinstance(x, list) and len(x) == 2 and x[0] == 'box'
+
+def unbox(b): return b[1] if is_box(b) else (b[1] if isinstance(b, tuple) else b)
+
+def do_set_box(b, x):
+    if is_box(b): b[1] = x; return VOID
+    raise TypeError("not a box")
+
+
+def set_port_pos(p, pos):
+    pos = int(pos)
+    if not hasattr(set_port_pos, '_saved_str'):
+        set_port_pos._saved_str = {}
+    if isinstance(p, tuple) and p[0] == 'str-port' and isinstance(p[1], list):
+        s = p[1][0]
+        key = id(p)
+        if key not in set_port_pos._saved_str:
+            set_port_pos._saved_str[key] = s
+        p[1][0] = set_port_pos._saved_str[key][pos:] if 0 <= pos < len(set_port_pos._saved_str[key]) else ('' if pos >= len(set_port_pos._saved_str[key]) else set_port_pos._saved_str[key])
+    if isinstance(p, tuple) and p[0] == 'bin-str-port' and isinstance(p[1], list):
+        p[1][1] = max(0, min(pos, len(p[1][0])))
+    if isinstance(p, tuple) and p[0] == 'file-port' and len(p) > 3:
+        p[3].seek(pos)
+    return VOID
+
+
+def hash_table_ref_default(ht, key, default):
+    if isinstance(ht, dict):
+        return ht.get(key, default)
+    if hasattr(ht, 'data'):
+        return ht.data.get(key, default)
+    cur = ht
+    while isinstance(cur, Cell):
+        if cur.car is key or (hasattr(cur.car, '__eq__') and cur.car == key):
+            return cur.cdr.car if isinstance(cur.cdr, Cell) else cur.cdr
+        cur = cur.cdr
+    return default
+
+
+def hash_table_keys(ht):
+    d = ht if isinstance(ht, dict) else ht.data
+    return _lst(list(d.keys()))
+
+
+def hash_table_values(ht):
+    d = ht if isinstance(ht, dict) else ht.data
+    return _lst(list(d.values()))
+
+
+def compose_fn(*fns):
+    if not fns: return lambda x: x
+    def comp(*args):
+        r = fns[-1](*args)
+        for f in reversed(fns[:-1]):
+            r = f(r)
+        return r
+    return comp
+
+
+def list_drop(lst, n):
+    cur = lst
+    for _ in range(n):
+        if not isinstance(cur, Cell): break
+        cur = cur.cdr
+    return cur
+
+
+# pair-fold/pair-fold-right
+def pair_fold_fn(f, init, plist):
+    acc = init
+    while plist is not NIL:
+        acc = f(plist, acc)
+        plist = plist.cdr
+    return acc
+def pair_fold_right_fn(f, init, plist):
+    pairs = []
+    cur = plist
+    while cur is not NIL:
+        pairs.append(cur)
+        cur = cur.cdr
+    acc = init
+    for p in reversed(pairs):
+        acc = f(p, acc)
+    return acc
+
+def do_quotient(n, d):
+    if not d: raise SchemeException("division by zero")
+    return n//d if (n>=0)==(d>=0) else -((-n)//d)
+
+def trunc_rem(n, d):
+    if not d: raise SchemeException("division by zero")
+    r = n % d
+    if r != 0 and (n >= 0) != (d >= 0):
+        r -= d
+    return r
+
+def do_modulo(n, d):
+    if not d: raise SchemeException("division by zero")
+    return n - (n//d)*d
+
+def string_ref_prim(s, *a):
+    if not a: raise SchemeException("string-ref: wrong number of arguments")
+    if isinstance(s, SchemeString): return SchemeChar(str(s)[a[0]])
+    return SchemeChar(str(s)[a[0]])
+
+
+
+# The extension implementations use this explicit alias to avoid importing the
+# core module back into the consolidated primitive module.
+_scheme_call = call
+
+# ---- primitives_ext.py ----
 # primitives_ext.py — R7RS-large 扩展内置过程
 # 通过 Python builtin 实现高性能原语，在 miniscm.py 引导时使用 initenv_ext() 注册
 
-import math, sys, json as _json
-from fractions import Fraction
-from mtypes import (
-    SchemeException, Sym, Cell, SchemeString, SchemeChar, SchemeVector, SchemeBytevector,
-    Promise, SyntaxObject, ErrorObject, NIL, VOID, EOF, TRUE, FALSE, Env, TailCall,
-    _pr, _so, _sn, _plist, _lst, builtin, be
-)
-from primitives import port_out, scheme_truthy, cell_iter, cells, list_span, str_mutate, stream_filter_fn, cs_char, char_val, call as _scheme_call
-from primitives_first import call, port_out
 
 # char_ci_eq: 字符大小写不敏感比较（从 primitives.py 迁入）
 def char_ci_eq(a,b):
@@ -1124,7 +3132,6 @@ def radians_to_degrees(r):
 # ═══════════════════════════════════════════════════════════════════
 # Random extras
 # ═══════════════════════════════════════════════════════════════════
-import random as _random
 _str_builtin = str
 _RNG = _random.Random()
 
@@ -2459,3 +4466,94 @@ def peek_u8_fn(*p):
     return EOF
 
 # initenv_ext() is now in initenv_ext.py
+
+# ---- primitives_py.py ----
+
+def _parse_slice(s):
+    parts = s.split(':')
+    result = []
+    for p in parts:
+        p = p.strip()
+        if p == '':
+            result.append(None)
+        else:
+            try:
+                result.append(int(p))
+            except ValueError:
+                result.append(p)
+    while len(result) < 3:
+        result.append(None)
+    return tuple(result[:3])
+
+def pyslice(obj, spec):
+    s = str(spec).strip()
+    if s.startswith('[') and s.endswith(']'):
+        s = s[1:-1].strip()
+    if s == '...':
+        return obj[...]
+    if ',' in s:
+        dims = [d.strip() for d in s.split(',')]
+        indices = []
+        for d in dims:
+            if ':' in d:
+                indices.append(slice(*_parse_slice(d)))
+            elif d == '':
+                indices.append(slice(None))
+            elif d == '...':
+                indices.append(Ellipsis)
+            else:
+                try:
+                    indices.append(int(d))
+                except ValueError:
+                    indices.append(d)
+        return obj[tuple(indices)]
+    if ':' in s:
+        return obj[slice(*_parse_slice(s))]
+    try:
+        return obj[int(s)]
+    except ValueError:
+        return obj[s]
+    
+
+def py_curry(fn, n):
+    if n <= 1: return fn
+    def _curried(*args):
+        if len(args) >= n: return fn(*args)
+        return py_curry(lambda *rest: fn(*(list(args) + list(rest))), n - len(args))
+    return _curried
+
+# ── Python 导入支持 ──
+def py_import_mod(modname):
+    import importlib
+    mod = importlib.import_module(str(modname))
+    for name in dir(mod):
+        if name.startswith('_'): continue
+        be.define(name, getattr(mod, name))
+    return TRUE
+
+def py_from_import(modname, names):
+    import importlib
+    mod = importlib.import_module(str(modname))
+    def _import_one(name, alias_target):
+        n = _sn(name) if isinstance(name, Sym) else str(name)
+        t = _sn(alias_target) if isinstance(alias_target, Sym) else (str(alias_target) if alias_target else n)
+        be.define(t, getattr(mod, n))
+    cur = names
+    if isinstance(cur, Cell) and isinstance(cur.car, Sym) and cur.car.name == '*':
+        for name in dir(mod):
+            if name.startswith('_'): continue
+            be.define(name, getattr(mod, name))
+        return TRUE
+    while isinstance(cur, Cell):
+        if isinstance(cur.car, Sym) and cur.car.name == ':as':
+            cur = cur.cdr
+            continue
+        nxt = cur.cdr
+        if isinstance(nxt, Cell) and isinstance(nxt.car, Sym) and nxt.car.name == ':as':
+            alias = nxt.cdr.car if isinstance(nxt.cdr, Cell) else None
+            _import_one(cur.car, alias)
+            cur = nxt.cdr.cdr if alias else nxt.cdr
+        else:
+            _import_one(cur.car, None)
+            cur = nxt
+    return TRUE

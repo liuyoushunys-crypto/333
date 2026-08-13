@@ -6,10 +6,11 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Miniscm.Base;
+using Miniscm.Compiler;
 using Miniscm.Types;
 using Miniscm.Eval;
-using Miniscm.Compiler;
-using Void = Miniscm.Types.Void;
+using Void = Miniscm.Base.Void;
 
 namespace Miniscm.Primitives;
 
@@ -350,7 +351,7 @@ public static partial class PrimitiveRegistry
         var radix = args.Length > 1 ? NumericHelper.ToInt(args[1]) : 10;
         string prefix = radix switch { 2 => "#b", 8 => "#o", 16 => "#x", _ => "" };
         var full = prefix + s;
-        return Reader.AtomParser.ParseAtom(full) is Sym ? Const.FALSE : Reader.AtomParser.ParseAtom(full);
+        return AtomParser.ParseAtom(full) is Sym ? Const.FALSE : AtomParser.ParseAtom(full);
     }
 
     static object? PEvenQ(object?[] args)
@@ -801,18 +802,18 @@ public static partial class PrimitiveRegistry
             {
                 var lineSr = sr.ReadLine();
                 if (lineSr is null) return Const.EOF;
-                var exprRead1 = Reader.Parser.Read(lineSr);
+                var exprRead1 = Parser.Read(lineSr);
                 return exprRead1 ?? Const.EOF;
             }
             if (t[2] is StringPort sp)
             {
                 if (sp.Pos >= sp.Data.Length) return Const.EOF;
                 var remaining = sp.Data[sp.Pos..];
-                var tokList = Reader.Tokenizer.TokenizeWithPos(remaining);
+                var tokList = Tokenizer.TokenizeWithPos(remaining);
                 if (tokList.Count == 0) { sp.Pos = sp.Data.Length; return Const.EOF; }
                 var tokens = tokList.Select(t => t.text).ToList();
-                var reader = new Reader.ReaderState(tokens);
-                var expr = Reader.Parser.ParseExpr(reader);
+                var reader = new ReaderState(tokens);
+                var expr = Parser.ParseExpr(reader);
                 int consumed = reader.Pos;
                 if (consumed > 0)
                 {
@@ -827,7 +828,7 @@ public static partial class PrimitiveRegistry
         }
         var line = Console.ReadLine();
         if (line is null) return Const.EOF;
-        var exprRead3 = Reader.Parser.Read(line);
+        var exprRead3 = Parser.Read(line);
         return exprRead3 ?? Const.EOF;
     }
 
@@ -1239,7 +1240,7 @@ public static partial class PrimitiveRegistry
         try
         {
             var src = File.ReadAllText(p);
-            var exprs = Reader.Parser.ReadAll(src);
+            var exprs = Parser.ReadAll(src);
             int n = 0;
             foreach (var expr in exprs)
             {

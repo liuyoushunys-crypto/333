@@ -33,15 +33,15 @@ def eval_qs(expr, env):
     return eval(expr, env)
 
 def sx_expand_call(expr, env):          # (sx-expand-call expr env)
-    from primitives_first import _sx_expand_call
+    from prim import _sx_expand_call
     return _sx_expand_call(expr, env)
 
 def sx_expand_env():                    # (sx-expand-env)
-    from primitives_first import _sx_expand_env
+    from prim import _sx_expand_env
     return _sx_expand_env()
 
 def sx_def_env():                       # (sx-def-env)
-    from primitives_first import _sx_def_env
+    from prim import _sx_def_env
     return _sx_def_env()
 
 def sx_defined(tmpl, env):              # (sx-defined? tmpl env)

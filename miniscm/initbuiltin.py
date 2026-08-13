@@ -1,422 +1,512 @@
-# initenv_ext.py — builtin registration extracted from primitives_ext.py
-import math, sys, time as _time, json as _json, re as _re, os as _os, base64 as _base64
-import random as _random
+# Builtin declarations. Implementations live in primitives_first.py.
+import math
+import io
+import base64 as _base64
 import functools as _functools
-import json
-import random
-import time
+import json as _json
+import os as _os
+import random as _random
+import re as _re
+import time as _time
 from functools import cmp_to_key
 from mtypes import (
-    Sym, Cell, SchemeString, SchemeVector, SchemeBytevector,
-    ErrorObject, NIL, VOID, TRUE, FALSE,EOF, Sym, _lst, _pr, builtin, be,
-    _pr, _so, _sn, _lst, builtin
+    Sym, Cell, SchemeString, SchemeChar, SchemeVector, SchemeBytevector,
+    Promise, SyntaxObject, SchemeException, ErrorObject, NIL, VOID,
+    EOF, TRUE, FALSE, Env, _cell_len, _cells, _sn, _plist, _lst, builtin, be,
+    _pr, _so
 )
-from primitives import *
-from primitives_ext import *
-from primitives import cell_iter, cells, scheme_truthy, cs_char, char_val, call as _scheme_call
-
-
-def _call(proc, *args):
-    return proc(*args)
-
-
-class Hook:
-    def __init__(self): self.procedures = []
-
-
-class RandomSource:
-    def __init__(self, state=None): self.state = int(time.time()) if state is None else int(state)
-
-    def step(self):
-        self.state = (1103515245 * self.state + 12345) % 2147483648
-        return self.state
-
-
-class BinaryHeap:
-    def __init__(self, cmp=lambda a, b: a < b, initial=NIL):
-        self.cmp, self.items = cmp, list(cell_iter(initial))
-        for i in range(len(self.items) // 2 - 1, -1, -1): self._down(i)
-
-    def _down(self, i):
-        n = len(self.items)
-        while True:
-            left, right, best = 2 * i + 1, 2 * i + 2, i
-            if left < n and scheme_truthy(self.cmp(self.items[left], self.items[best])): best = left
-            if right < n and scheme_truthy(self.cmp(self.items[right], self.items[best])): best = right
-            if best == i: return
-            self.items[i], self.items[best], i = self.items[best], self.items[i], best
-
-    def insert(self, value):
-        self.items.append(value); i = len(self.items) - 1
-        while i:
-            p = (i - 1) // 2
-            if not scheme_truthy(self.cmp(self.items[i], self.items[p])): break
-            self.items[i], self.items[p], i = self.items[p], self.items[i], p
-
-
-class Bimap:
-    def __init__(self, init):
-        self.forward, self.reverse = {}, {}
-        for pair in cell_iter(init): self.set(pair.car, pair.cdr)
-    def set(self, key, value):
-        self.forward[key], self.reverse[value] = value, key
-
-    def forward_ref(self, key, default=FALSE):
-        return self.forward.get(key, default)
-
-    def reverse_ref(self, value, default=FALSE):
-        return self.reverse.get(value, default)
-
-
-class Deque:
-    def __init__(self, items=()): self.items = list(items)
-
-
-class Array:
-    def __init__(self, dimensions, value=0):
-        self.dimensions = list(dimensions)
-        def build(ds):
-            if len(ds) == 1: return SchemeVector([value] * ds[0])
-            return SchemeVector([build(ds[1:]) for _ in range(ds[0])])
-        self.value = build(self.dimensions)
-
-
-def _pair_items(m):
-    return [(p.car, p.cdr) for p in cell_iter(m)]
-
-
-def _mapping(*pairs):
-    vals = cells(pairs[0]) if len(pairs) == 1 and isinstance(pairs[0], Cell) else list(pairs)
-    return _lst([Cell(vals[i], vals[i + 1]) for i in range(0, len(vals) - 1, 2)])
-
-
-def _array_dims(x):
-    if not isinstance(x, SchemeVector): return []
-    return [len(x.data)] + _array_dims(x.data[0]) if x.data else [0]
-
-
-
-
-def builtin_remove_heap(h):
-    value = h.items.pop(0)
-    if h.items: h._down(0)
-    return value
-
-
-def _array_ref(a, indices):
-    for i in indices: a = a.data[int(i)]
-    return a
-
-
-def _array_set(a, value, indices):
-    for i in indices[:-1]: a = a.data[int(i)]
-    a.data[int(indices[-1])] = value
-    return VOID
-
-
-def _char_set_integer(cs):
-    values = cs.data if hasattr(cs, 'data') else cs
-    result = 0
-    for i, value in enumerate(values[:256]):
-        if scheme_truthy(value): result = result * 33 + i
-    return result
-
-def rint(s, n): return int(round(s.step() / 2147483648.0 * int(n))) % int(n)
-
-def qremove(q, end=False):
-    if not q['items']: raise ValueError('empty list queue')
-    return q['items'].pop(-1 if end else 0)
-
-def _gen_fold(f, acc, g):
-    while True:
-        x = g()
-        if x is EOF: return acc
-        acc = f(x, acc)
-
-
-def _bit_fold(fn, values):
-    if not values: return -1 if fn(1, 1) == 1 else 0
-    result = int(values[0])
-    for value in values[1:]: result = fn(result, int(value))
-    return result
-
-
-def _loop_n(n):
-    return _loop_n(n - 1) if n else Sym('done')
-
-
-def _json_value(x):
-    if x is TRUE: return True
-    if x is FALSE: return False
-    if x is NIL: return None
-    if isinstance(x, SchemeString): return str(x)
-    if isinstance(x, Cell): return [_json_value(v) for v in cell_iter(x)]
-    if isinstance(x, SchemeVector): return [_json_value(v) for v in x.data]
-    if isinstance(x, Sym): return x.name
-    return x
-
-
-def _map_value(f, value): return EOF if value is EOF else f(value)
-def _filter_value(p, g):
-    while True:
-        value = g()
-        if value is EOF or scheme_truthy(p(value)): return value
-
-
-def _vector_cumulate(f, init, v):
-    result, acc = [], init
-    for value in v.data:
-        acc = f(acc, value); result.append(acc)
-    return SchemeVector(result)
-
-
-def _vector_index_right(p, v, *start):
-    data = v.data; i = int(start[0]) if start else len(data)-1
-    while i >= 0:
-        if scheme_truthy(p(data[i])): return i
-        i -= 1
-    return FALSE
-
-
-def _vector_skip_right(p, v, *start):
-    data = v.data; i = int(start[0]) if start else len(data)-1
-    while i >= 0:
-        if not scheme_truthy(p(data[i])): return i
-        i -= 1
-    return FALSE
-
-
-def _vector_append_subvectors(*args):
-    result = []
-    for i in range(0, len(args), 3): result.extend(args[i].data[int(args[i+1]):int(args[i+2])])
-    return SchemeVector(result)
-
-
-def _reverse_bang(lst):
-    previous = NIL
-    current = lst
-    while isinstance(current, Cell):
-        following = current.cdr
-        current.cdr = previous
-        previous, current = current, following
-    return previous
-
-
-def _gen_take(n, g):
-    left = [n]
-    def out():
-        if left[0] <= 0: return EOF
-        left[0] -= 1; return g()
-    return out
-
-
-def _vec_fold(f, acc, v):
-    for i,x in enumerate(v.data if isinstance(v, SchemeVector) else v): acc = f(i,x,acc)
-    return acc
-
-
-def _vec_fold_right(f, acc, v):
-    data = v.data if isinstance(v, SchemeVector) else v
-    for i in range(len(data)-1,-1,-1): acc = f(i,data[i],acc)
-    return acc
-
-
-def _vec_map_bang(f,v):
-    for i,x in enumerate(v.data): v.data[i] = f(x)
-    return VOID
-
-def drop_gen(n, g):
-    for _ in range(n):
-        if g() is EOF: break
-    return g
-
-def rcons(acc, value):
-    items = list(cell_iter(acc)) if isinstance(acc, Cell) else []
-    return _lst(items + [value])
-def tmap(f):
-    return lambda reducer: lambda acc, value: _scheme_call(reducer, [acc, _scheme_call(f, [value])])
-def tfilter(pred):
-    return lambda reducer: lambda acc, value: _scheme_call(reducer, [acc, value]) if scheme_truthy(_scheme_call(pred, [value])) else acc
-def list_transduce(xform, reducer, init, values):
-    step = _scheme_call(xform, [reducer])
-    acc = init
-    for value in cell_iter(values):
-        acc = _scheme_call(step, [acc, value])
-    return acc
-
-
-class ISet:
-    __slots__ = ('items',)
-    def __init__(self, items=None):
-        self.items = set()
-        if items is not None:
-            for it in items:
-                self.items.add(int(it))
-    def __repr__(self):
-        return '#<iset %s>' % sorted(self.items)
-
-def _unsupported(name):
-    def fail(*args):
-        raise SchemeException(f'{name}: unsupported by this implementation')
-    return fail
-
-def iset_fn(*xs):
-    return ISet(xs)
-def iset_p(x):
-    return TRUE if isinstance(x, ISet) else FALSE
-def iset_contains_p(s, v):
-    return TRUE if int(v) in s.items else FALSE
-def iset_adjoin(s, *xs):
-    n = ISet(); n.items = set(s.items)
-    for x in xs: n.items.add(int(x))
-    return n
-def iset_delete(s, *xs):
-    n = ISet(); n.items = set(s.items)
-    for x in xs: n.items.discard(int(x))
-    return n
-def iset_empty():
-    return ISet()
-def iset_size(s):
-    return len(s.items)
-def iset_empty_p(s):
-    return TRUE if not s.items else FALSE
-def iset_union(a, b):
-    n = ISet(); n.items = a.items | b.items; return n
-def iset_intersection(a, b):
-    n = ISet(); n.items = a.items & b.items; return n
-def iset_difference(a, b):
-    n = ISet(); n.items = a.items - b.items; return n
-def iset_to_list(s):
-    return _lst(sorted(s.items))
-def list_to_iset(xs):
-    return ISet(cell_iter(xs))
-# ═══════════════════════════════════════════════════
-# SRFI-1 风格 update (按索引替换元素，返回新列表)
-#   (update (list 1 2 3) 2 (lambda (x) 4)) => (1 2 4)
-# ═══════════════════════════════════════════════════
-def update_fn(lst, i, proc):
-    xs = list(cell_iter(lst))
-    idx = int(i)
-    xs[idx] = proc(xs[idx])
-    return _lst(xs)
-
-def _append_bang(*xs):
-    return append(*xs)
-
-def _append_reverse_bang(x, y):
-    return append(reverse(x), y)
-
-def _char_set_unfold(stop, mapper, successor, seed, *bases):
-    result = [False] * 256
-    state = seed
-    while not stop(state):
-        ch = mapper(state)
-        cp = ord(cs_char(ch))
-        if cp < 256: result[cp] = True
-        state = successor(state)
-    for base in bases:
-        result = char_set_binop([result, base], lambda a, b: a or b)
-    return result
-
-def _integer_char_set(value):
-    n = int(value)
-    return [bool(n & (1 << i)) for i in range(256)]
-
-def _drop_right_bang(xs, n):
-    items = list(cell_iter(xs))
-    keep = len(items) - int(n)
-    if keep < 0: raise SchemeException('drop-right!: count exceeds list length')
-    cur = xs
-    if keep == 0: return NIL
-    for _ in range(1, keep): cur = cur.cdr
-    cur.cdr = NIL
-    return xs
-
-def _find_tail(pred, xs):
-    cur = xs
-    while isinstance(cur, Cell):
-        if pred(cur.car) is not FALSE: return cur
-        cur = cur.cdr
-    return FALSE
-
-def _fold_right_1(proc, xs):
-    values = list(cell_iter(xs))
-    if not values: raise SchemeException('fold-right-1: empty list')
-    acc = values[-1]
-    for value in reversed(values[:-1]): acc = proc(value, acc)
-    return acc
-
-def _include_ci(path):
-    import pathlib
-    requested = str(path)
-    p = pathlib.Path(requested)
-    if not p.exists():
-        matches = [x for x in p.parent.iterdir() if x.name.lower() == p.name.lower()]
-        if matches: p = matches[0]
-    if not p.exists(): raise SchemeException(f'include-ci: file not found: {requested}')
-    from miniscm import load_file
-    return load_file(str(p))
-
-def _lset_adjoin(eq, xs, *values):
-    result = list(cell_iter(xs))
-    for value in values:
-        if not any(eq(value, old) is TRUE for old in result): result.append(value)
-    return _lst(result)
-
-def _lset_subset(eq, *lists):
-    for left, right in zip(lists, lists[1:]):
-        if any(not any(eq(x, y) is TRUE for y in cell_iter(right)) for x in cell_iter(left)): return FALSE
-    return TRUE
-
-def _random_integers(source, bound):
-    rng = source if isinstance(source, _random.Random) else _random.Random()
-    return lambda n: rng.randrange(int(n))
-
-def _random_reals(source):
-    rng = source if isinstance(source, _random.Random) else _random.Random()
-    return lambda: rng.random()
-
-def _test_equal(actual, expected):
-    return TRUE if actual == expected else FALSE
-
-# ═══════════════════════════════════════════════════
-# sorted-by:  (sorted-by < '(3 1 2)) => (1 2 3)
-# ═══════════════════════════════════════════════════
-def sorted_by_fn(pred, lst):
-    xs = list(cell_iter(lst))
-    def _cmp(a, b):
-        if scheme_truthy(pred(a, b)): return -1
-        if scheme_truthy(pred(b, a)): return 1
-        return 0
-    return _lst(sorted(xs, key=_functools.cmp_to_key(_cmp)))
-
-def _group_by(pred, values):
-    groups = {}
-    order = []
-    for value in cell_iter(values):
-        key = call(pred, [value])
-        key = key.name if isinstance(key, Sym) else key
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(value)
-    return _lst([_lst(groups[key]) for key in order])
-
-def _option(spec, required, handler):
-    return ('option', spec, required, handler)
-
-def hash_table_merge_bang(dst, src):
-    dst.update(src)
-    return dst
-
-# ═══════════════════════════════════════════════════
-# file-exists?: 相对路径解析依次尝试 CWD / 当前加载文件目录 /
-# miniscm 目录 / 仓库根，并对 test<->test1 首段做互换补偿。
-# ═══════════════════════════════════════════════════
-def file_exists_fn(p):
-    from miniscm import _resolve_load_path
-    r = _resolve_load_path(p)
-    return TRUE if (r is not None and _os.path.exists(r)) else FALSE
+from reader import parse_number_scheme
+
+
+
+import prim as _prim
+from prim import *
+from prim import call as _scheme_call
+
+# Include private helpers used by the builtin declarations.
+globals().update(vars(_prim))
+
+def initenv_first():
+    # ── 数值/逻辑 ──
+    builtin('+', add)
+    builtin('-', sub)
+    builtin('=', eq_num)
+    builtin('<', lt)
+    builtin('>', gt)
+    builtin('<=', le)
+    builtin('>=', ge)
+    builtin('number->string', _number_to_string)
+
+    # ── 谓词 ──
+    builtin('eq?', lambda a, b: TRUE if a is b else FALSE)
+    builtin('eqv?', eqv)
+    builtin('equal?', equal)
+    builtin('symbol?', lambda x: TRUE if isinstance(x, Sym) else FALSE)
+    builtin('procedure?', lambda x: TRUE if callable(x) or isinstance(x, tuple) else FALSE)
+    builtin('not', lambda x: TRUE if x is FALSE else FALSE)
+
+    # ── 对与列表 ──
+    builtin('pair?', lambda x: TRUE if isinstance(x, Cell) else FALSE)
+    builtin('null?', lambda x: TRUE if x is NIL else FALSE)
+    builtin('cons', cons)
+    builtin('car', car)
+    builtin('cdr', cdr)
+    builtin('caar', caar)
+    builtin('cadr', cadr)
+    builtin('cdar', cdar)
+    builtin('cddr', cddr)
+    builtin('list', lst)
+    builtin('list?', is_list)
+    builtin('length', lambda lst: _cell_len(lst) if isinstance(lst, Cell) else 0)
+    builtin('append', append)
+    builtin('list-ref', list_ref)
+    builtin('map', map_)
+    builtin('memq', memq)
+    builtin('assq', assq)
+    builtin('for-each', for_each_fn)
+    builtin('filter', filter_)
+    builtin('vector?', lambda x: TRUE if isinstance(x, (list, SchemeVector)) else FALSE)
+    builtin('vector->list', lambda v: _lst(list(v.data if hasattr(v, 'data') else v)))
+    builtin('list->vector', lambda lst: SchemeVector(_cells(lst)))
+
+    # ── 字符串 ──
+    builtin('string->symbol', lambda s: Sym(str(s)) if isinstance(s, (str, SchemeString)) else s)
+    builtin('string-append', lambda *a: SchemeString(''.join(str(x) for x in a)))
+    builtin('display', dsp)
+    builtin('newline', lambda: (sys.stdout.write("\n"), VOID)[-1])
+
+    # ── 其他 ──
+    builtin('void', lambda *a: VOID)
+    builtin('error', error)
+
+    # ── 桥接（实现在 primitives_first.py, 惰性导入 miniscm 避免循环依赖）──
+    builtin('eval', _eval_bridge)
+    builtin('sx-def-env', _sx_def_env)
+    builtin('sx-expand-env', _sx_expand_env)
+    builtin('sx-defined?', _sx_defined)
+    builtin('sx-defmacro', _sx_defmacro)
+    builtin('sx-expand-call', _sx_expand_call)
+
+    # ── 原生宏引擎桥接 (minref.py — boot-min2.scm 精简后宏体调用的原语) ──
+    # 宏元组执行链: (sx-macro-expand 'pat 'body args (sx-expand-env)) →
+    #   minref.sx_macro_expand → eval 宏体 → min-* 原语 → minref/native_syntax。
+    # 非 syntax-rules 宏 (define-macro/quasiquote/syntax-case 等) 全部经由本组原语。
+
+
+    builtin('sx-macro-expand', sx_macro_expand)
+    builtin('qq-walk', qq_walk)
+    builtin('sx-expand', _min_sx_expand)
+    builtin('sx-get-bindings', sx_get_bindings)
+    builtin('sx-gen-temps', sx_gen_temps)
+    builtin('sx-syntax-case', sx_syntax_case)
+    builtin('sx-with-syntax', sx_with_syntax)
+    builtin('sx-let-syntax', sx_let_syntax)
+    builtin('sx-make-macro-binding', sx_make_macro_binding)
+    builtin('qs-expand', qs_expand)
+    builtin('sx-dispatch', sx_dispatch)
+
+def initenv():
+    builtin('NIL', lambda: NIL)
+    builtin('stream-null', NIL)
+    builtin('pi', math.pi)
+    builtin('*', mul)
+    builtin('/', div)
+
+# ── 比较运算符（多参语义）──
+# =、<、>、<=、>=：多参数版本 R7RS 要求全部满足才为真
+#   注意：<、>、<=、>= 拒绝 complex 参数（复数不可比较大小）
+
+# ── 数值谓词 ──
+    builtin('zero?', lambda x: TRUE if x==0 else FALSE)
+    builtin('positive?', lambda x: TRUE if x>0 else FALSE)
+    builtin('negative?', lambda x: TRUE if x<0 else FALSE)
+    builtin('even?', lambda n: TRUE if n%2==0 else FALSE)
+    builtin('odd?', lambda n: TRUE if n%2!=0 else FALSE)
+    # finite?/nan?：处理 NaN 和 ±inf 的判断
+
+# ── 类型谓词 ──
+    builtin('number?', lambda x:TRUE if isinstance(x,(int,float,complex,Fraction)) else FALSE)
+    builtin('complex?', lambda x: TRUE if isinstance(x,(int,float,complex,Fraction)) else FALSE)
+    builtin('real?', lambda x:TRUE if isinstance(x,(int,float,Fraction)) or (isinstance(x,complex) and x.imag==0) else FALSE)
+    builtin('rational?', lambda x:TRUE if isinstance(x,Fraction) or (isinstance(x,int)) else FALSE)
+    builtin('integer?', lambda x:TRUE if isinstance(x,int) or (isinstance(x,Fraction) and x.denominator==1) else (TRUE if isinstance(x,float) and x==int(x) else FALSE))
+    builtin('exact?', lambda x: TRUE if isinstance(x,(int,Fraction)) else FALSE)
+    builtin('inexact?', lambda x: TRUE if isinstance(x,float) or (isinstance(x,complex) and (isinstance(x.real,float) or isinstance(x.imag,float))) else FALSE)
+
+# ── 数值转换 ──
+    builtin('exact->inexact', lambda x: (lambda v: float('inf') if v.bit_length() > 1023 else float(v))(x) if isinstance(x, int) else (float(x) if isinstance(x, Fraction) else x))
+    # inexact->exact：float 使用 limit_denominator(1000000) 近似为 Fraction
+    builtin('inexact->exact', _inexact_to_exact_fn)
+    builtin('string->number', _string_to_number)
+    builtin('numerator', lambda x: int(x) if isinstance(x,int) else (x.numerator if isinstance(x,Fraction) else x))
+    builtin('denominator', lambda x: 1 if isinstance(x,int) else (x.denominator if isinstance(x,Fraction) else x.numerator if isinstance(x,float) and x==int(x) else 1))
+
+# ── 有理数操作 ──
+    builtin('rationalize', lambda x, eps: (Fraction(x).limit_denominator() if float(eps) == 0 else simplest_between(float(x) - float(eps), float(x) + float(eps))) if isinstance(x,(int,float,Fraction)) else x)
+    builtin('acosh', math.acosh)
+    builtin('asinh', math.asinh)
+    builtin('atanh', math.atanh)
+    builtin('inexact-sqrt', lambda x: float(math.sqrt(x)))
+    builtin('div0', lambda x, y: int(x) // int(y))
+    builtin('mod0', lambda x, y: int(x) % int(y))
+    builtin('between?', lambda x, lo, hi: TRUE if lo <= x <= hi else FALSE)
+    builtin('bitwise-bit-set?', lambda x, i: TRUE if (int(x) & (1 << int(i))) else FALSE)
+    builtin('hash-by-identity', lambda x: abs(id(x)))
+    builtin('exact-integer-floor', lambda x, y: int(math.floor(x / y)))
+    builtin('make-record-type', lambda *args: VOID)
+    builtin('bytevector->list', lambda b: _lst(list(b.data)))
+    builtin('car+cdr', lambda p: _lst([p.car, p.cdr]))
+    builtin('append!', lambda *xs: append(*xs))
+    builtin('append-reverse!', lambda x, y: append(reverse(x), y))
+    builtin('assert-violation', lambda *xs: (_ for _ in ()).throw(SchemeException('assertion violation')))
+    builtin('assertion-violation', lambda *xs: (_ for _ in ()).throw(SchemeException('assertion violation')))
+    builtin('available-srfis', lambda: _lst([]))
+    builtin('char-title-case?', lambda c: FALSE)
+    builtin('char-titlecase', lambda c: SchemeChar(c.char.upper()[0] if hasattr(c, 'char') else str(c).upper()[0]))
+    builtin('get-environment-variable', lambda n: SchemeString(os.environ.get(str(n), '')))
+    builtin('get-environment-variables', lambda: _lst([Cell(SchemeString(k), SchemeString(v)) for k, v in os.environ.items()]))
+    builtin('command-line', lambda: _lst([SchemeString(x) for x in sys.argv]))
+    builtin('current-monotonic-time', lambda: time.monotonic())
+    builtin('implementation-version', lambda: SchemeString('miniscm 1.0'))
+    builtin('string-null?', lambda s: TRUE if len(str(s)) == 0 else FALSE)
+    builtin('clamp', lambda x, lo, hi: max(lo, min(hi, x)))
+    builtin('symbol-append', lambda *xs: Sym(''.join(x.name for x in xs)))
+    builtin('immutable-string?', lambda s: TRUE if isinstance(s, SchemeString) else FALSE)
+    builtin('rational-expt', lambda x, n: x ** n)
+    builtin('provide', lambda *xs: VOID)
+    # exact-integer-sqrt：返回 (sqrt, remainder) 二元组（非 tuple，直接返回两个值）
+    builtin('exact-integer-sqrt', lambda x: (math.isqrt(x), x - math.isqrt(x)**2) if isinstance(x,int) else (0, 0))
+
+# ── 整数除法运算 ──
+    # quotient: truncate-division（向零取整），纯整数运算无浮点精度损失
+    builtin('quotient', do_quotient)
+
+    # remainder: truncate-division（符号同被除数）
+    builtin('remainder', trunc_rem)
+    
+    # modulo: floor-division（符号同除数）
+    builtin('modulo', do_modulo)
+
+    builtin('gcd', gcd)
+    builtin('lcm', lcm)
+    builtin('max', lambda *xs: max(cell_iter(xs[0])) if len(xs) == 1 and isinstance(xs[0], Cell) else max(xs))
+    builtin('min', lambda *xs: min(cell_iter(xs[0])) if len(xs) == 1 and isinstance(xs[0], Cell) else min(xs))
+    builtin('sum', lambda *a: sum(a))
+
+# ── 位运算 ──
+    # arithmetic-shift: b>=0 左移 <<，b<0 右移 >>
+    builtin('arithmetic-shift', lambda a,b: a<<b if b>=0 else a>>(-b))
+    builtin('bit-and', AND)
+    builtin('bit-ior', IOR)
+    builtin('bit-xor', XOR)
+    builtin('bit-not', NOT)
+    # 别名：bitwise-*、logand/logior/logxor/lognot/logbit?/logtest
+    builtin('logbit?', lambda n,i: TRUE if n>>i & 1 else FALSE)
+    builtin('logtest', lambda n,m: TRUE if n&m else FALSE)
+
+# ── 复数运算 ──
+    builtin('angle', lambda z: float(math.atan2(z.imag, z.real)) if isinstance(z,complex) else (0.0 if z>=0 else math.pi))
+    builtin('real-part', lambda z: z.real if isinstance(z,complex) else z)
+    builtin('imag-part', lambda z: z.imag if isinstance(z,complex) else 0)
+    builtin('make-polar', lambda r,theta: complex(float(r.numerator)/float(r.denominator) if isinstance(r,Fraction) else float(r), 0) * complex(math.cos(float(theta)), math.sin(float(theta))))
+
+# ── 布尔操作 ──
+    # boolean=? 多参全等
+    builtin('boolean?', lambda x:TRUE if x is TRUE or x is FALSE else FALSE)
+
+# ── eq?/eqv?/equal? ──
+
+# ── 对与列表操作 ──
+    builtin('set-car!', lambda p,v: setattr(p,'car',v) or VOID)
+    builtin('set-cdr!', lambda p,v: setattr(p,'cdr',v) or VOID)
+    builtin('caddr', lambda x: x.cdr.cdr.car)
+    builtin('cadddr', lambda x: x.cdr.cdr.cdr.car)
+    # length: list 返回 _cell_len，非 list 返回 0
+    builtin('list-tail', lambda lst, n: list_drop(lst, int(n)))
+    builtin('memv', memv)
+    builtin('member', lambda x, l: member_py(x, l, equal))
+    builtin('assv', assv)
+    builtin('assoc', assoc)
+    
+    builtin('pair-fold', pair_fold_fn)
+    builtin('pair-fold-right', pair_fold_right_fn)
+    # filter / last / vector->list: 基础原语 (boot-min2 宏引擎依赖,
+    # 原位于 initenv_ext (pyb 模式), 提升为基础 builtin 与 C# 一致)
+    builtin('remove', lambda pred, lst: _lst([x for x in _cells(lst) if pred(x) is FALSE]))
+    builtin('last', lambda lst: (lambda c: c.car if isinstance(c, Cell) else FALSE)(_last_pair(lst)))
+
+    builtin('booleans->integer', booleans_to_integer)
+    builtin('bits->integer', bits_to_integer_lsb)
+    builtin('integer->bits-list', integer_to_bits_list)
+    builtin('list->integer', bits_to_integer_lsb)
+    builtin('integer->bits', lambda n, k=0: integer_to_bits_list(n, k))
+    builtin('bits->list', lambda n, *a: integer_to_bits_list(n, a[0] if a else 0))
+    builtin('list->bits', lambda x: bits_to_integer_lsb(x))
+    builtin('integer->list', lambda n: integer_to_bits_list(int(n)))
+    builtin('split-at', lambda lst, n: list_split_at(lst, int(n)))
+    builtin('break-list', break_list_fn)
+    builtin('span', list_span)
+    builtin('break', lambda pred, lst: list_span(lambda x: FALSE if pred(x) is TRUE else TRUE, lst))
+    builtin('partition', partition_fn)
+    builtin('stream-car', lambda s: s.car if isinstance(s, Cell) else s[0])
+    builtin('stream-cdr', lambda s: do_force(s.cdr) if isinstance(s, Cell) and isinstance(s.cdr, Promise) else (s.cdr if isinstance(s, Cell) else s[1]))
+    builtin('stream-null?', lambda s: TRUE if s is NIL else FALSE)
+    builtin('stream-ref', lambda s, n: stream_ref_fn(s, int(n)))
+    builtin('stream-map', stream_map_fn)
+    builtin('stream-filter', stream_filter_fn)
+    builtin('stream-take', lambda s, n: stream_take_fn(s, int(n)))
+
+# ── 符号操作 ──
+    builtin('string?', lambda x:TRUE if isinstance(x,(str,SchemeString)) else FALSE)
+    # symbol=? 在 primitives_ext.py 和 scm/char-boolean.scm 中, symbol_eq_prim)
+
+# ── 字符操作 ──
+    builtin('char?', lambda x: TRUE if isinstance(x, SchemeChar) or (isinstance(x, tuple) and len(x) > 0 and x[0] == 'char') else FALSE)
+    builtin('char->integer', lambda c: ord(c[1]) if isinstance(c,tuple) else (ord(c.char) if hasattr(c,'char') else 0))
+    builtin('integer->char', lambda n: SchemeChar(chr(n)) if isinstance(n,int) else SchemeChar('?'))
+    # char=? 等需处理四种组合：tuple-tuple/SchemeChar-SchemeChar/tuple-SchemeChar/SchemeChar-tuple
+    builtin('char=?', lambda a,b: TRUE if (isinstance(a,tuple) and a[0]=='char' and isinstance(b,tuple) and b[0]=='char' and a[1]==b[1]) or (hasattr(a,'char') and hasattr(b,'char') and a.char==b.char) or (isinstance(a,tuple) and hasattr(b,'char') and a[1]==b.char) or (hasattr(a,'char') and isinstance(b,tuple) and a.char==b[1]) else FALSE)
+    builtin('char<?', lambda a,b: TRUE if (isinstance(a,tuple) and a[0]=='char' and isinstance(b,tuple) and b[0]=='char' and a[1]<b[1]) or (hasattr(a,'char') and hasattr(b,'char') and a.char<b.char) or (isinstance(a,tuple) and hasattr(b,'char') and a[1]<b.char) or (hasattr(a,'char') and isinstance(b,tuple) and a.char<b[1]) else FALSE)
+    builtin('char>?', lambda a,b: TRUE if (isinstance(a,tuple) and a[0]=='char' and isinstance(b,tuple) and b[0]=='char' and a[1]>b[1]) or (hasattr(a,'char') and hasattr(b,'char') and a.char>b.char) or (isinstance(a,tuple) and hasattr(b,'char') and a[1]>b.char) or (hasattr(a,'char') and isinstance(b,tuple) and a.char>b[1]) else FALSE)
+    builtin('char<=?', lambda a,b: TRUE if (isinstance(a,tuple) and a[0]=='char' and isinstance(b,tuple) and b[0]=='char' and a[1]<=b[1]) or (hasattr(a,'char') and hasattr(b,'char') and a.char<=b.char) or (isinstance(a,tuple) and hasattr(b,'char') and a[1]<=b.char) or (hasattr(a,'char') and isinstance(b,tuple) and a.char<=b[1]) else FALSE)
+    builtin('char>=?', lambda a,b: TRUE if (isinstance(a,tuple) and a[0]=='char' and isinstance(b,tuple) and b[0]=='char' and a[1]>=b[1]) or (hasattr(a,'char') and hasattr(b,'char') and a.char>=b.char) or (isinstance(a,tuple) and hasattr(b,'char') and a[1]>=b.char) or (hasattr(a,'char') and isinstance(b,tuple) and a.char>=b[1]) else FALSE)
+    builtin('char-alphabetic?', lambda c: TRUE if (isinstance(c, tuple) and c[0] == 'char' and c[1].isalpha()) or (hasattr(c, 'char') and c.char.isalpha()) else FALSE)
+    builtin('char-numeric?', lambda c: TRUE if isinstance(c, tuple) and c[0] == 'char' and c[1].isdigit() else (TRUE if hasattr(c, 'char') and c.char.isdigit() else FALSE))
+    builtin('char-whitespace?', lambda c: TRUE if isinstance(c, SchemeChar) and c.char.isspace() or (isinstance(c, tuple) and c[0] == 'char' and c[1].isspace()) else FALSE)
+    builtin('char-upper-case?', lambda x: TRUE if isinstance(x, tuple) and x[1].isupper() else (TRUE if hasattr(x, "char") and x.char.isupper() else FALSE))
+    builtin('char-lower-case?', lambda x: TRUE if isinstance(x, tuple) and x[1].islower() else (TRUE if hasattr(x, "char") and x.char.islower() else FALSE))
+    builtin('char-upcase', lambda c: (SchemeChar(c[1].upper()) if isinstance(c, tuple) and c[0] == 'char' else SchemeChar(c.char.upper())))
+    builtin('char-downcase', lambda c: (SchemeChar(c[1].lower()) if isinstance(c, tuple) and c[0] == 'char' else SchemeChar(c.char.lower())))
+    builtin('char-foldcase', lambda x: SchemeChar((x.char if isinstance(x, SchemeChar) else x[1]).lower()))
+
+# ── 字符串操作 ──
+    # string-length/string-ref/string-set!/string-fill! 等
+    #   SchemeString 通过 .data 列表实现可变性
+    #   string-copy 返回 SchemeString（可变副本），支持 start/end 切片
+    #   make-string: 重复字符构造字符串，默认填充空格
+    builtin('string-length', lambda s: len(str(s)))
+    builtin('string-ref', string_ref_prim)
+    builtin('string-set!', lambda v,i,c: (str_mutate(v), str_set_char(v, i, c), VOID)[-1])
+    builtin('string-fill!', string_fill_prim)
+    builtin('string-copy', lambda s,*a: SchemeString(str(s)) if not a else SchemeString(str(s)[a[0]:a[1]] if len(a)>1 else str(s)[a[0]:]))
+    builtin('make-string', lambda n,*a: SchemeString((char_val(a[0]) if a else ' ') * n))
+    builtin('substring', lambda s,i,j: SchemeString(str(s)[i:j]))
+    builtin('string->list', lambda s: _lst([SchemeChar(c) for c in str(s)]))
+    builtin('symbol->string', str)
+    builtin('string-downcase', lambda s: SchemeString(str(s).lower()))
+    builtin('string-upcase', lambda s: SchemeString(str(s).upper()))
+    builtin('list->string', lambda lst: SchemeString(''.join(c[1] if isinstance(c,tuple) else (c.char if hasattr(c,'char') else str(c)) for c in _plist(lst))))
+    builtin('string->utf8', lambda s, *span: SchemeBytevector(str(s)[int(span[0]) if span else 0:int(span[1]) if len(span) > 1 else None].encode('utf-8')))
+    builtin('utf8->string', lambda s, *span: SchemeString(bytes(s.data)[int(span[0]) if span else 0:int(span[1]) if len(span) > 1 else None].decode('utf-8')) if hasattr(s,'data') else s)
+    builtin('format', format_dispatch)
+
+# ── 向量操作 ──
+    # vector? 接受 list（Python list 作为不可变向量）和 SchemeVector
+    builtin('vector', lambda *a: SchemeVector(list(a)))
+    builtin('vector-ref', lambda v,i: v.data[i] if hasattr(v,'data') else v[i])
+    builtin('vector-length', lambda v: len(v.data) if hasattr(v, 'data') else len(v))
+    builtin('vector-set!', lambda v, i, x: vec_set_elem(v, i, x))
+    # make-vector: 可选的填充值，默认为 NIL；FALSE/NIL 保持原值
+    builtin('make-vector', lambda n, *a: SchemeVector([(NIL if not a else (a[0] if (a[0] is not FALSE) else FALSE)) for _ in range(n)]))
+
+# ── 字节向量操作 ──
+    builtin('bytevector?', lambda x: TRUE if isinstance(x,SchemeBytevector) else FALSE)
+    builtin('bytevector', lambda *a: SchemeBytevector([int(x) for x in a]))
+    builtin('bytevector-length', lambda v: len(v.data) if hasattr(v,'data') else 0)
+    builtin('bytevector-u8-ref', lambda v,i: v.data[i] if hasattr(v,'data') else 0)
+    builtin('bytevector-u8-set!', lambda v,i,x: bv_set_u8(v, i, x) if hasattr(v,'data') else VOID)
+    builtin('bytevector-copy!', lambda target, at, source: [target.data.__setitem__(int(at) + i, b) for i, b in enumerate(source.data)] and VOID)
+    builtin('bytevector-append', lambda *vs: SchemeBytevector([b for v in vs for b in v.data]))
+    builtin('bytevector-s8-ref', lambda v,i: v.data[i] - 256 if v.data[i] >= 128 else v.data[i])
+    builtin('bytevector-s8-set!', lambda v,i,x: bv_set_u8(v, i, int(x) & 255))
+    builtin('list->bytevector', lambda lst: SchemeBytevector([int(x) for x in _cells(lst)]))
+    builtin('make-bytevector', lambda n,*fill: SchemeBytevector([fill[0] if fill else 0]*n))
+
+# ── 端口与 I/O ──
+    # 注意：port? 检查 tuple 格式
+    builtin('port?', lambda x: TRUE if isinstance(x, tuple) and len(x) > 1 and x[0] in ('str-port', 'file-port') else FALSE)
+    builtin('input-port?', lambda x: TRUE if isinstance(x, tuple) and len(x) > 1 and x[0] in ('str-port', 'file-port') else FALSE)
+    builtin('output-port?', lambda x: TRUE if isinstance(x, tuple) and len(x) > 1 and x[0] in ('str-port', 'file-port') else FALSE)
+    builtin('port-open?', lambda x: TRUE if isinstance(x, tuple) and len(x) > 1 and x[0] in ('str-port', 'file-port') else FALSE)
+    builtin('binary-port?', lambda x: TRUE if isinstance(x, tuple) and len(x) > 1 and x[0] in ('bin-file-port', 'bin-str-port') else FALSE)
+    builtin('input-port-open?', lambda x: TRUE if isinstance(x, tuple) and len(x) > 1 and x[0] in ('str-port', 'file-port', 'bin-file-port', 'bin-str-port') else FALSE)
+    builtin('output-port-open?', lambda x: TRUE if isinstance(x, tuple) and len(x) > 1 and x[0] in ('str-port', 'file-port') else FALSE)
+    builtin('current-input-port', lambda: ('str-port', [""]))
+    builtin('current-output-port', lambda: ('str-port', [""]))
+    builtin('eof-object', lambda: EOF)
+    builtin('eof-object?', lambda x:TRUE if x is EOF else FALSE)
+    builtin('open-input-file', lambda n: ("file-port",str(n),"r",open(str(n),'r')))
+    builtin('open-binary-input-file', lambda n: ("bin-file-port",str(n),"rb",open(str(n),'rb')))
+    builtin('open-binary-output-file', lambda n: ("bin-file-port",str(n),"wb",open(str(n),'wb')))
+    builtin('open-output-file', lambda n: ("file-port",str(n),"w",open(str(n),'w')))
+    # open-input-string: 端口为 ('str-port', [字符串, 位置])，位置暂未使用
+    builtin('open-input-string', lambda s: ("str-port", [str(s), 0]))
+    builtin('open-input-bytevector', lambda v: ("bin-str-port", [bytes(v.data), 0]))
+    builtin('open-output-string', lambda *a: ('str-port',['']))
+    builtin('open-output-bytevector', lambda *a: ('byte-port', bytearray()))
+    builtin('get-output-bytevector', lambda p: SchemeBytevector(list(p[1])) if isinstance(p, tuple) and p[0] == 'byte-port' else SchemeBytevector([]))
+    builtin('flush-output-port', lambda *a: VOID)
+    builtin('call-with-input-string', lambda s, proc: proc(('str-port', [str(s), 0])))
+    builtin('call-with-port', lambda p, proc: proc(p))
+    builtin('call-with-output-string', lambda proc: (lambda p: (proc(p), SchemeString(p[1][0]))[1])(('str-port', [''])))
+    builtin('call-with-string-output', lambda proc: (lambda p: (proc(p), SchemeString(p[1][0]))[1])(('str-port', [''])))
+    builtin('call-with-string-output-port', lambda proc: (lambda p: (proc(p), SchemeString(p[1][0]))[1])(('str-port', [''])))
+    builtin('call-with-bytevector-output-port', lambda proc: (lambda p: (proc(p), SchemeBytevector(p[1]))[1])(('byte-port', bytearray())))
+    builtin('read-bytevector', lambda n, p=None: _read_bytevector(int(n), p))
+    builtin('read-bytevector!', _read_bytevector_into)
+    builtin('write-bytevector', _write_bytevector)
+    builtin('with-input-from-string', lambda s, thunk: _with_string_input(str(s), thunk))
+    builtin('delay-force', lambda p: p)
+    builtin('close-input-port', lambda p: p[3].close() if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3 else VOID)
+    builtin('close-output-port', lambda p: p[3].close() if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3 else VOID)
+    builtin('close-port', lambda p: p[3].close() if isinstance(p,tuple) and p[0]=='file-port' and len(p)>3 else VOID)
+    builtin('call-with-input-file', cwif)
+    builtin('call-with-output-file', cwof)
+    builtin('read', read_proc)
+    builtin('read-char', rc)
+    builtin('peek-char', pkc)
+    builtin('write', write_proc)
+    builtin('write-char', wc)
+    builtin('port-position', port_pos)
+    builtin('set-port-position!', set_port_pos)
+    builtin('get-output-string', lambda x: x[1][0] if isinstance(x,tuple) and x[0]=='str-port' and isinstance(x[1],list) else (x[1] if isinstance(x,tuple) and x[0]=='str-port' else (''.join(x.data) if hasattr(x,'data') else '')))
+
+# ── 控制流 ──
+    builtin('call/cc', call_cc)
+    builtin('call-with-current-continuation', call_cc)
+    builtin('call-with-values', cvw)
+    builtin('dynamic-wind', dynamic_wind)
+    # values: 单值直接返回，多值包装为 tuple（cvw 通过 tuple 检测多值）
+    builtin('values', lambda *a: tuple(a) if len(a)!=1 else a[0])
+    builtin('apply', app)
+    builtin('with-exception-handler', with_exception_handler)
+    builtin('raise', do_raise)
+    builtin('error-object?', lambda x: TRUE if isinstance(x, ErrorObject) else FALSE)
+    builtin('error-object-message', lambda x: str(x.message) if isinstance(x, ErrorObject) else str(x))
+
+# ── Promise（惰性求值）──
+    builtin('force', do_force)
+    builtin('make-promise', lambda thunk: Promise(thunk))
+    builtin('promise?', lambda x: TRUE if isinstance(x, Promise) else FALSE)
+
+# ── Syntax 对象操作 ──
+    builtin('syntax?', lambda x: TRUE if isinstance(x,(Sym,SyntaxObject)) else FALSE)
+    builtin('syntax->datum', lambda x: x.expr if isinstance(x,SyntaxObject) else x)
+    builtin('datum->syntax', lambda stx,d: SyntaxObject(d) if not isinstance(d,SyntaxObject) else d)
+    builtin('identifier?', lambda x: TRUE if isinstance(x,(Sym,SyntaxObject)) else FALSE)
+    builtin('bound-identifier=?', id_eq)
+    builtin('free-identifier=?', id_eq)
+
+# ── 环境对象 ──
+    _env_scheme_report = Env(be)
+    _env_null = Env(be)
+    builtin('environment?', lambda x: TRUE if isinstance(x, Env) else FALSE)
+    builtin('scheme-report-environment', lambda *a: _env_scheme_report)
+    builtin('null-environment', lambda *a: _env_null)
+    builtin('interaction-environment', lambda: be)
+    builtin('environment', lambda: be)
+
+# ── 时间 ──
+    builtin('current-second', lambda: time.time())
+    builtin('current-jiffy', lambda: int(time.time()*1e6))
+    builtin('jiffies-per-second', lambda: 1000000)
+
+# ── 杂项 ──
+    builtin('compose', compose_fn)
+    builtin('gensym', lambda *a: next_gensym())
+    builtin('gensym2', lambda: Sym(f'__g{id({})}'))
+    builtin('features', lambda: Cell(Sym('r7rs'), Cell(Sym('miniscm'), NIL)))
+    builtin('defined?', lambda x: TRUE if _sn(x) in be.data else FALSE)
+    builtin('sink', lambda *a: VOID)
+    builtin('helper', lambda *a: VOID)
+    # make-parameter：SRFI-39 参数对象
+    #   返回一个过程：无参调用返回当前值，一参调用设置新值。
+    #   可选 converter 在设置时对值进行转换。
+    builtin('make-parameter', make_param)
+    # make-coroutine-generator (用 Python 线程 + queue 实现真正的 yield 挂起)
+    # proc 接收 yield 函数; 每次调用生成器返回下一个 yield 值, proc 结束后返回 eof
+    builtin('make-coroutine-generator', make_coroutine_generator)
+    builtin('make-compound-condition', lambda *a: ErrorObject('compound', _lst(list(a)) if a else NIL))
+    builtin('extract-condition', lambda *a: FALSE)
+    builtin('record?', lambda x: FALSE)
+    builtin('error-message', lambda x: SchemeString(str(x)))
+    builtin('condition?', lambda x: TRUE if isinstance(x,(SchemeException,ErrorObject)) or (isinstance(x, tuple) and x and x[0] == 'condition') else FALSE)
+    builtin('make-condition-type', lambda name, parent, predicate, fields: ('condition-type', name, [f for f in _plist(fields)]))
+    builtin('make-condition', lambda typ, *fields: ('condition', typ, dict(zip((f.name if isinstance(f, Sym) else str(f) for f in typ[2]), fields[1::2]))))
+    builtin('condition-ref', lambda c, field: (c[2].get(field.name if isinstance(field, Sym) else str(field), next(iter(c[2].values()), FALSE)) if isinstance(c, tuple) and len(c) > 2 and isinstance(c[2], dict) else FALSE))
+    builtin('make-io-error', lambda message, *a: ErrorObject(message, _lst(a)))
+    builtin('io-error?', lambda x: TRUE if isinstance(x, ErrorObject) else FALSE)
+    # weak-box：基于 Cell 实现
+    builtin('make-weak-box', lambda *a: Cell(Sym('weak'), a[0] if a else NIL))
+    builtin('weak-box?', lambda x: isinstance(x, Cell) and x.car is Sym('weak'))
+    builtin('weak-box-ref', lambda x: x.cdr.car if isinstance(x, Cell) and isinstance(x.cdr, Cell) else NIL)
+    builtin('weak-box-set!', lambda v, x: setattr(v, 'cdr', Cell(x, NIL)) or VOID)
+# ── SRFI-111: Boxes ──
+    builtin('box', box)
+    builtin('box?', is_box)
+    builtin('unbox', unbox)
+    builtin('set-box!', do_set_box)
+# ── alist-copy ──
+    builtin('alist-copy', alist_copy_fn)
+    builtin('file-exists?', lambda p: TRUE if os.path.exists(str(p)) else FALSE)
+    builtin('delete-file', lambda p: os.remove(str(p)) or VOID)
+    builtin('rename-file', lambda old,new: os.rename(str(old),str(new)) or VOID)
+    builtin('load', load)
+
+    # ── Hash-table primitives ──
+    # hash-table 使用 Python dict 实现
+    # 注意：dict 的 key 是 Python 对象（Scheme 的 eq?/eqv?/equal? 语义通过 Python 的哈希自动支持）
+    # make-eq-hash-table/make-equal-hash-table/make-eqv-hash-table 均使用同样的 {} 实现
+    builtin('make-hash-table', make_ht)
+    builtin('hash-table?', lambda x: TRUE if isinstance(x, dict) else FALSE)
+    builtin('hash-table-size', lambda ht: len(ht))
+    
+    builtin('hash-table-set!', hash_table_set)
+    builtin('hash-table-ref', lambda ht, k, *default: ht[k] if k in ht else (default[0] if default else FALSE))
+    builtin('hash-table-ref/default', hash_table_ref_default)
+    builtin('hash-table-exists?', lambda ht, k: TRUE if k in ht else FALSE)
+    builtin('hash-table-delete!', lambda ht, k: (ht.pop(k, None), VOID)[-1])
+    builtin('hash-table-copy', lambda ht: dict(ht))
+    builtin('hash-table-keys', hash_table_keys)
+    builtin('hash-table-values', hash_table_values)
+    builtin('hash-table->alist', lambda ht: _lst([Cell(k, v) for k, v in ht.items()]))
+    # alist2ht: 关联列表转 hash-table
+    builtin('alist->hash-table', alist2ht)
+    builtin('hash-table-for-each', lambda f, ht: [f(k, v) for k, v in ht.items()] and VOID)
+
+    # ── 对齐 minischeme Init() 补齐 (Python scm 模式缺失) ──
+    builtin('make-box', box)
+    builtin('-1+', lambda x: x - 1)
+    builtin('1+', lambda x: x + 1)
+    builtin('bit-or', lambda *a: _reduce_bit_or(a))
+    builtin('constantly', lambda x: (lambda *_: x))
+    builtin('current-error-port', lambda: ('str-port', []))
+    builtin('error-object-irritants', lambda e: e.irritants if isinstance(e, ErrorObject) else NIL)
+    builtin('exit', lambda *a: (_sys_exit(int(a[0]) if a else 0)) or VOID)
+    builtin('hash-table-contains?', lambda ht, k: TRUE if k in ht else FALSE)
+    builtin('hash-table-count', lambda ht: len(ht))
+    builtin('hash-table/count', lambda ht: len(ht))
+    builtin('hash-table/put!', lambda ht, k, v: ht.__setitem__(k, v) or VOID)
+    builtin('hash-table/update!', lambda ht, k, f, default=FALSE: ht.__setitem__(k, f(ht.get(k, default))) or VOID)
+    builtin('hash-table/walk', lambda f, ht: ([f(k, v) for k, v in list(ht.items())] and VOID))
+    builtin('hash-table/merge!', hash_table_merge_slash)
+    builtin('string-contains?', lambda s, sub: TRUE if str(sub) in str(s) else FALSE)
+    builtin('bytevector-copy', lambda bv: SchemeBytevector(list(bv.data)) if hasattr(bv, 'data') else SchemeBytevector(list(bv)))
+    builtin('bytevector->u8-list', lambda bv: _lst([int(b) for b in (bv.data if hasattr(bv, 'data') else bv)]))
+    builtin('u8-list->bytevector', lambda lst: SchemeBytevector([int(x) for x in _cells(lst)]))
+    builtin('with-input-from-file', lambda path, thunk: _with_file(path, thunk, 'r', _redirect_in))
+    builtin('with-output-to-file', lambda path, thunk: _with_file(path, thunk, 'w', _redirect_out))
+    builtin('print', lambda x: (be.data['display'](x), VOID)[1])
+    builtin('pretty-print', lambda x: (write_proc(x), VOID)[1])
+    builtin('write-simple', write_proc)
+    builtin('write-shared', write_proc)
+    builtin('write-with-shared-structure', write_proc)
+
+
+
+    # sx-def-env: 返回当前宏定义环境或全局 (C#: CurrentMacroDefEnv ?? GlobalEnv)
+
+    # sx-expand-env: 返回当前宏调用点环境或全局 (C#: CurrentExpandEnv ?? GlobalEnv)
 
 def initenv_ext():
     be.define('NIL', NIL)
@@ -1345,7 +1435,6 @@ def initenv_ext():
     builtin('flonum?', lambda x: TRUE if isinstance(x, float) else FALSE)
     builtin('procedure-rename', lambda p, *name: p); builtin('scheme-implementation-name', lambda: SchemeString('Hermes Scheme')); builtin('scheme-implementation-version', lambda: SchemeString('0.1 (R7RS-small + SRFIs)')); builtin('version', lambda: SchemeString('0.1 (R7RS-small + SRFIs)'))
     # Correct argument order and callback semantics for existing broad registrations.
-    builtin('generator-map', lambda f,g: (lambda: (lambda v: EOF if v is EOF else f(v))(g())))
     builtin('generator-drop', lambda g,n: drop_gen(int(n), g))
     builtin('generator-fold', lambda f,init,g: _gen_fold(f,init,g)); builtin('generator-take', lambda g,n: _gen_take(int(n),g))
     builtin('vector-fold', lambda f,init,v,*more: _vec_fold(f,init,v)); builtin('vector-fold-right', lambda f,init,v: _vec_fold_right(f,init,v))
@@ -1376,3 +1465,51 @@ def initenv_ext():
     builtin('string-transduce', lambda x,r,i,s: list_transduce(x, r, i, _lst([cs_char(c) for c in str(s)])))
 
 
+
+# ── Python 接口支持 ──
+def initenv_py():
+    builtin('py-import', py_import_mod)
+    builtin('py-from', py_from_import)
+
+    # (py-get obj "attr") → 属性访问
+    builtin('py-get', lambda obj, attr: getattr(obj, str(attr)))
+    # (py-set! obj "attr" val) → 属性赋值
+    builtin('py-set!', lambda obj, attr, val: setattr(obj, str(attr), val) or VOID)
+    # (py-call obj "method" args...) → 方法调用
+    builtin('py-call', lambda obj, method, *args: getattr(obj, str(method))(*args))
+    # (py-slice obj "args") → 切片访问 obj["args"]
+    builtin('py-getitem', lambda obj, key: obj[key])
+    builtin('py-setitem', lambda obj, key, val: obj.__setitem__(key, val) or VOID)
+    # (py-new Class args...) — 创建实例
+    builtin('py-new', lambda cls, *args: cls(*args))
+    # (py-dir obj) — 列出属性
+    builtin('py-dir', lambda obj: _lst([SchemeString(n) for n in dir(obj) if not n.startswith('_')]))
+    # (py-exec "code") — 执行 Python 语句
+    builtin('py-exec', lambda code: exec(str(code)) or VOID)
+    # (py-eval "expr") — 求值 Python 表达式，返回结果
+    builtin('py-eval', lambda expr: eval(str(expr)))
+    # (py-len obj) — Python 长度
+    builtin('py-len', lambda obj: len(obj))
+    # (py-str obj) — Python 字符串表示
+    builtin('py-str', lambda obj: SchemeString(str(obj)))
+    # (py-repr obj) — Python 可读表示
+    builtin('py-repr', lambda obj: str(repr(obj)))
+    # (py-type obj) — Python 类型名
+    builtin('py-type', lambda obj: str(type(obj).__name__))
+    # (py-hasattr? obj "attr") — 属性存在检测
+    builtin('py-hasattr?', lambda obj, attr: TRUE if hasattr(obj, str(attr)) else FALSE)
+    # (py->list obj) — Python 可迭代对象转 Scheme 列表
+    builtin('py->list', lambda obj: _lst([x for x in obj]))
+    # (py->str obj) — Python 对象转 Scheme 字符串
+    builtin('py->str', lambda obj: SchemeString(str(obj)))
+    # (list->py obj) — Scheme 列表转 Python list
+    builtin('list->py', lambda lst: [x for x in (_plist(lst) if isinstance(lst, Cell) else [lst]) if x is not NIL])
+    # (py: spec) → slice(start, end, step) — 解析 Python 风格切片元组
+    # (py:partial fn . args) — Python 部分应用
+    builtin('py:partial', lambda fn, *args: (lambda *rest: fn(*(list(args) + list(rest)))))
+    # (py:rpartial fn . args) — Python 右部分应用
+    builtin('py:rpartial', lambda fn, *args: (lambda *rest: fn(*(list(rest) + list(args)))))
+    # (py:curry fn n) — Python 柯里化, n 为参数个数
+    builtin('py:curry', lambda fn, n: py_curry(fn, int(n)))
+    # (pyslice obj spec) → obj[spec] — 切片应用
+    builtin('pyslice', pyslice)

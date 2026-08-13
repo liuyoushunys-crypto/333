@@ -1,4 +1,5 @@
 using System.Numerics;
+using Miniscm.Base;
 
 namespace Miniscm.Types;
 

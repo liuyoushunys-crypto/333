@@ -1,7 +1,7 @@
-using Miniscm.Types;
-using Miniscm.Reader;
+using Miniscm.Base;
 using Miniscm.Compiler;
-using Void = Miniscm.Types.Void;
+using Miniscm.Types;
+using Void = Miniscm.Base.Void;
 
 namespace Miniscm.Eval;
 

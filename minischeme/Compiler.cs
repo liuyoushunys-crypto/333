@@ -3,9 +3,9 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using Miniscm.Eval;
-using Miniscm.Reader;
+using Miniscm.Base;
 using Miniscm.Types;
-using Void = Miniscm.Types.Void;
+using Void = Miniscm.Base.Void;
 namespace Miniscm.Compiler;
 
 class CacheEntry

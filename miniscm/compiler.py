@@ -43,7 +43,7 @@ from mtypes import (
     SYM_QUOTE, SYM_IF, SYM_LAMBDA, SYM_BEGIN, SYM_DEFINE, SYM_SETBANG, _lst,
     SyntaxObject, _pr, Box
 )
-from primitives import vec_set_elem
+from prim import vec_set_elem
 
 
 
@@ -661,7 +661,7 @@ def __mscm_invoke__(proc_val, args_val, env):
             # If we return a TailCall from the continuation, call_cc returns it and the exception
             # handler is no longer on the stack. So we execute the continuation AND all subsequent
             # trampoline steps directly here within a single try/except.
-            from primitives import call_cc as _call_cc_fn
+            from prim import call_cc as _call_cc_fn
             from mtypes import _ContinuationEscape
             if proc_val is _call_cc_fn and args_val and isinstance(args_val[0], CompiledLambda):
                 cont = args_val[0]
@@ -773,7 +773,7 @@ def __mscm_resolve_ic__(cache_cell, env, sym):
 
 def _make_jit_globals(constants):
     """构建 JIT 编译函数的全局环境字典 — 统一构建点"""
-    from primitives import car, cdr, cons
+    from prim import car, cdr, cons
     return {
         '__mscm_consts__': constants,
         'TRUE': TRUE, 'FALSE': FALSE, 'VOID': VOID,

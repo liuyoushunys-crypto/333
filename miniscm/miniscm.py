@@ -321,7 +321,7 @@ def _eval_tuple_lambda(proc_val, _cur, env):
 
 def _eval(expr, env):
     _unbound_sentinel = _UNBOUND
-    from primitives_first import expand_macro
+    from prim import expand_macro
     while True:
         # B0: 符号
         if isinstance(expr, Sym):
@@ -452,7 +452,7 @@ def load_file(path):
     #
     # 返回值是被成功求值的表达式数量。
     with open(path,encoding="utf-8") as f: src=f.read()
-    from primitives_first import clear_macro_caches
+    from prim import clear_macro_caches
     clear_macro_caches()
     exprs=read_all(src); n=0
     for expr in exprs:
@@ -612,9 +612,8 @@ if __name__=='__main__':
     #
     # 库加载失败（如文件不存在）被静默处理（except: pass），
     # 确保解释器即使在库不全的情况下也能启动。
-    from initenv_first import initenv_first
+    from initbuiltin import initenv_first, initenv, initenv_ext, initenv_py
     initenv_first()
-    from initenv import initenv
     initenv()
     # ── Scheme 宏系统桥接原语 (boot-min2 自举所需) ──
     import compiler
@@ -635,7 +634,6 @@ if __name__=='__main__':
     pyb = os.environ.get("MSCM_PYB", "1") == "1"
     import compiler
     compiler.PYB_MODE = 'pyb' if pyb else 'scm'
-    from initenv_ext import initenv_ext
     initenv_ext()
     # if pyb:
     #     pass
@@ -652,7 +650,7 @@ if __name__=='__main__':
 
         # scm 库 parameterize 版 with-output-to-string 需 display 支持端口重定向，
         # Python 的 display 写 sys.stdout，故用原生版（sys.stdout 切换）
-    from primitives import call as _call2
+    from prim import call as _call2
     import io as _io2
     from mtypes import SchemeString as _SS2
     def _wots2(thunk):
@@ -666,8 +664,8 @@ if __name__=='__main__':
             sys.stdout = old
     be.define('with-output-to-string', _wots2)
 
-    # from initenv_py import initenv_py
-    # initenv_py()
+    if pyb:
+        initenv_py()
 
     if len(sys.argv)>1:
         for p in sys.argv[1:]: n=load_file(p); print(f"loaded {n} forms from {p}")

@@ -1,3 +1,4 @@
+using Miniscm.Base;
 using Miniscm.Types;
 
 namespace Miniscm.Compiler;

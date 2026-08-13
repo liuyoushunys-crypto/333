@@ -1,8 +1,9 @@
 using System.Linq;
 using System.Numerics;
 using Miniscm.Eval;
+using Miniscm.Base;
 using Miniscm.Types;
-using Void = Miniscm.Types.Void;
+using Void = Miniscm.Base.Void;
 
 namespace Miniscm.Compiler;
 
