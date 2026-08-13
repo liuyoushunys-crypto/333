@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "set-at" (1 99 3) (set-at (list 1 2 3) 1 99))
+(%test-equal "set-at" '(1 99 3) (set-at (list 1 2 3) 1 99))

@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "call-with-values" (1 2) (call-with-values (lambda () (values 1 2)) list))
+(%test-equal "call-with-values" '(1 2) (call-with-values (lambda () (values 1 2)) list))

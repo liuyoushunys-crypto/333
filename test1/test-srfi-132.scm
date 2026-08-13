@@ -7,5 +7,5 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "list-sort" (1 2 3) (list-sort < '(3 1 2)))
+(%test-equal "list-sort" '(1 2 3) (list-sort < '(3 1 2)))
 (%test-equal "sorted?" #t (sorted? < '(1 2 3)))

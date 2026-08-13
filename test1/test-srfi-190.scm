@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "coroutine" (1 2 3) (generator->list (make-coroutine-generator (lambda (y) (y 1) (y 2) (y 3)))))
+(%test-equal "coroutine" '(1 2 3) (generator->list (make-coroutine-generator (lambda (y) (y 1) (y 2) (y 3)))))

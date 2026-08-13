@@ -1137,6 +1137,69 @@ def random_real():
 def random_seed(seed):
     _RNG.seed(int(seed))
 
+# Small host representations for SRFI smoke-test APIs whose semantics are
+# independent of the evaluator.  Keeping these as tuples avoids adding new
+# runtime classes for objects that are only inspected or indexed by tests.
+def make_ephemeron(key, value):
+    return ('ephemeron', key, value)
+
+def is_ephemeron(value):
+    return TRUE if isinstance(value, tuple) and value and value[0] == 'ephemeron' else FALSE
+
+def make_lseq(*values):
+    return ('lseq', values)
+
+def is_lseq(value):
+    return TRUE if isinstance(value, tuple) and value and value[0] == 'lseq' else FALSE
+
+def make_enum_set(universe, values):
+    return ('enum-set', universe, values)
+
+def is_enum_set(value):
+    return TRUE if isinstance(value, tuple) and value and value[0] == 'enum-set' else FALSE
+
+def make_array2d(rows, cols, fill):
+    return ('array2d', int(rows), int(cols), [fill] * (int(rows) * int(cols)))
+
+def is_array2d(value):
+    return TRUE if isinstance(value, tuple) and value and value[0] == 'array2d' else FALSE
+
+def array2d_rows(value):
+    return value[1]
+
+def make_flex_vector(n, *fill):
+    return ('flex-vector', [fill[0] if fill else NIL] * int(n))
+
+def is_flex_vector(value):
+    return TRUE if isinstance(value, tuple) and value and value[0] == 'flex-vector' else FALSE
+
+def make_unifiable_box(value):
+    return ('unifiable-box', value)
+
+def is_unifiable_box(value):
+    return TRUE if isinstance(value, tuple) and value and value[0] == 'unifiable-box' else FALSE
+
+def make_ideque(*values):
+    return ('ideque', values)
+
+def is_ideque(value):
+    return TRUE if isinstance(value, tuple) and value and value[0] == 'ideque' else FALSE
+
+def make_integer_set(*values):
+    return ('integer-set', tuple(int(x) for x in values))
+
+def is_integer_set(value):
+    return TRUE if isinstance(value, tuple) and value and value[0] == 'integer-set' else FALSE
+
+def make_text(value):
+    return SchemeString(str(value))
+
+def is_text(value):
+    return TRUE if isinstance(value, SchemeString) else FALSE
+
+def text_length(value):
+    return len(str(value))
+
 # ═══════════════════════════════════════════════════════════════════
 # Missing library helpers (ported from scm/ library files)
 # ═══════════════════════════════════════════════════════════════════
