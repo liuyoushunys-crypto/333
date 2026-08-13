@@ -7,4 +7,4 @@
       (begin (display "[FAIL] ") (display name)
              (display "  expected: ") (write expected)
              (display "  actual: ") (write actual) (newline))))
-(%test-equal "base32-encode" "GE======" (base32-encode (list->bytevector '(0 0))))
+(%test-equal "base32-encode" "AAAA====" (base32-encode (list->bytevector '(0 0))))
