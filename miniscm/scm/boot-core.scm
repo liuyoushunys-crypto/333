@@ -582,15 +582,20 @@
 (define-syntax let-values
   (syntax-rules ()
     ((_ () body ...) (begin body ...))
+    ((_ (((a b) e1) ((c) e2)) body ...)
+     (call-with-values (lambda () e1)
+       (lambda (a b)
+         (call-with-values (lambda () e2)
+           (lambda (c) body ...)))))
     ((_ (((vars ...) expr)) body ...)
      (call-with-values (lambda () expr)
        (lambda (vars ...) body ...)))
     ((_ (((values vars ...) expr) rest ...) body ...)
      (call-with-values (lambda () expr)
        (lambda vars (let-values (rest ...) body ...))))
-    ((_ ((vars expr) rest ...) body ...)
+    ((_ (((vars ...) expr) rest ...) body ...)
      (call-with-values (lambda () expr)
-       (lambda vars (let-values (rest ...) body ...))))))
+       (lambda (vars ...) (let-values (rest ...) body ...))))))
 
 ;; ── parameterize ──
 ;; 动态参数绑定（R7RS）。
