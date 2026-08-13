@@ -18,6 +18,8 @@ public static partial class PrimitiveRegistry
         return limit <= 0 ? 0 : _extRandomState % limit;
     }
 
+    private static void SeedRandom(long seed) => _extRandomState = seed;
+
     private static object? RegisterExtMisc()
     {
         foreach (var name in new[] { "append!", "append-reverse!", "assert-violation", "assertion-violation", "bytevector-s8-ref", "bytevector-s8-set!", "call-with-bytevector-output-port", "call-with-string-output-port", "char-set->integer", "char-set-unfold", "concatenate!", "cond-expand-srfi-61", "define-record-type*", "deque-add-back!", "deque-add-front!", "deque-remove-back!", "deque-remove-front!", "drop-right!", "f32vector-set!", "f32vector?", "f64vector-set!", "find-tail", "fold-right-1", "for-all", "gentemp", "include-ci", "integer->char-set", "let*-values", "let-values-helper", "letrec*", "lset-adjoin", "lset<=", "lset=", "make-f32vector", "make-f64vector", "random-source-make-integers", "random-source-make-reals", "record-accessor", "record-constructor", "record-modifier", "record-predicate", "require-extension", "require-srfi", "simple-conditions", "source-file", "srfi-available?", "stream?", "string-normalize-nfc", "string-normalize-nfd", "string-normalize-nfkc", "string-normalize-nfkd", "string-prefix-ci?", "syntax-violation", "test-equal?", "transcript-off", "transcript-on" })
@@ -182,6 +184,7 @@ public static partial class PrimitiveRegistry
         // random
         _b("random-integer", args => NextRandom(NumericHelper.ToInt(args[0])));
         _b("random-real", args => NextRandom(1000000) / 1000000.0);
+        _b("random-seed", args => { SeedRandom(NumericHelper.ToLong(args[0])); return Const.VOID; });
 
         // write-string
         _b("write-string", args =>

@@ -145,7 +145,7 @@ public static partial class PrimitiveRegistry
         _b("list-queue-remove-front!", args => ListQueueRemove(args));
         _b("list-queue-list", args => ListQueueToList(args[0]));
         _b("list-queue-first", args => ListQueueFirst(args[0]));
-        return Const.VOID;
+        throw new SchemeException("list-set!: index out of bounds");
     }
 
     private static object? ConsStar(object?[] args)    {
