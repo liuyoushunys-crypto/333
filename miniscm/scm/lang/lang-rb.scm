@@ -12,7 +12,7 @@
 (define-macro (or-or-set var val) `(if (not ,var) (set! ,var ,val)))
 (define-macro (?? a b) `(let ((v ,a)) (if v v ,b)))
 (define-macro (attr_reader . names) `(begin ,@(map (lambda (n) `(define (,n) ,n)) names)))
-(define-macro (times n . body) `(let loop ((i 0)) (if #{i < ,n} (begin ,@body (loop #{i + 1})) #f)))
+(define-macro (times n . body) `(let loop ((i 0)) (if (< i ,n) (begin ,@body (loop (+ i 1))) #f)))
 (define-macro (each_with_index lst body) `(let loop ((xs ,lst) (i 0)) (if (null? xs) #f (begin (,(car body) (car xs) i) (loop (cdr xs) #{i + 1})))))
 ;; (def fact (n) (if #{n <= 1} 1 (* n (fact #{n - 1})) end)
 ;; (each (lambda (x) (puts #{x * 2})) '(1 2 3))
@@ -24,7 +24,7 @@
 (def fib (n)
   (let ((a 0) (b 1))
     (times n
-      (let ((t #{a + b}))
+    (let ((t (+ a b)))
         (set! a b)
         (set! b t)))
     (puts (string-append "fib(" (number->string n) ") = " (number->string a))))
@@ -32,7 +32,7 @@ end)
 (fib 10)
 
 (def filter-demo (lst)
-  (puts (select lst (lambda (x) #{x > 0})))
+  (puts (filter (lambda (x) (> x 0)) lst))
 end)
 (filter-demo (list 3 -1 0 5 -2 7))
 

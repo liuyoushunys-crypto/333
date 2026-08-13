@@ -17,7 +17,7 @@
 (int add-c (a b) (+ a b))
 (test "add" (add-c 10 20) 30)
 
-(void hello-c () (puts "hello from C"))
+(void hello-c () (display "hello from C"))
 (test "hello" (begin (hello-c) (if #f #f)) (if #f #f))
 
 (display "\n--- ++ / -- operators ---\n")

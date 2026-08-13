@@ -22,31 +22,32 @@
 ;; (print (!! '(10 20 30) 1))
 
 (display "--- demos ---\n")
-(define fib (n)
+(newdefine fib (n)
   (let loop ((a 0) (b 1) (i 0))
-    (if #{i < n}
-      (loop b #{a + b} #{i + 1})
+    (if (< i n)
+      (loop b (+ a b) (+ i 1))
       a)))
 (display (string-append "fib(10) = " (number->string (fib 10))))
 (newline)
 
-(define fact (n)
-  (if #{n <= 1}
+(newdefine fact (n)
+  (if (<= n 1)
     1
-    (* n (fact #{n - 1}))))
+    (* n (fact (- n 1)))))
 (display (string-append "5! = " (number->string (fact 5))))
 (newline)
 
-(define sum-list (lst)
-  (foldl (lambda (x acc) #{x + acc}) 0 lst))
+(newdefine sum-list-loop (xs acc)
+  (if (null? xs) acc (sum-list-loop (cdr xs) (+ (car xs) acc))))
+(newdefine sum-list (lst) (sum-list-loop lst 0))
 (display (string-append "sum = " (number->string (sum-list (list 1 2 3 4 5)))))
 (newline)
 
-(define demo (lst)
-  ($ display
+(newdefine demo (lst)
+  (display
     (format "evens doubled: ~a"
-      (newmap (lambda (x) #{x * 2})
-        (newfilter lst (lambda (x) (zero? #{x % 2}))))))
+      (map (lambda (x) (* x 2))
+           (filter (lambda (x) (zero? (modulo x 2))) lst))))
   (newline))
 (demo (list 1 2 3 4 5 6))
 

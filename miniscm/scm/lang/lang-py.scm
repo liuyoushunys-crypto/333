@@ -32,8 +32,7 @@
 
 (display "Try/except safe-divide:\n")
 (define (py-safe-div x y)
-  (try (return #{x / y})
-    (except (e) (return "error"))))
+  (guard (e (else "error")) (/ x y)))
 (print (py-safe-div 10 3))
 (print (py-safe-div 10 0))
 

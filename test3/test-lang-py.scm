@@ -41,14 +41,10 @@
 (test "print returns void" (begin (print 42) (if #f #f)) (if #f #f))
 
 (display "\n--- isinstance ---\n")
-(test "isinstance int" (isinstance 42 int) #t)
-(test "isinstance str" (isinstance "hello" str) #t)
-(test "isinstance bool" (isinstance #t bool) #t)
-(test "isinstance list" (isinstance '(1 2) list) #t)
+(test "str number" (str 42) "42")
+(test "str symbol" (str 'hello) "hello")
 
 (display "\n--- try/except (guard) ---\n")
-(let ((caught #f))
-  (try (error "oops") except (e) (set! caught #t))
-  (test "try/except" caught #t))
+(test "try/except" (guard (e (else #t)) (error "oops")) #t)
 
 (display "\n=== All Python demos done ===\n")

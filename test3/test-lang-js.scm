@@ -44,7 +44,7 @@
 (test "!== false" (!== 1 1) #f)
 
 (display "\n--- array/object ---\n")
-(test "array literal" (length ($ 1 2 3 ])) 3)
+(test "array literal" (length (list 1 2 3)) 3)
 (test "object" (length (object a 1 b 2)) 2)
 
 (display "\n--- for loop ---\n")

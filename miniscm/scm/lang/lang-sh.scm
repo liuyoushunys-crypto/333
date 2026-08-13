@@ -34,9 +34,9 @@
 (countdown 5)
 
 (define (sign n)
-  (sh-if #{n > 0} then (echo "positive") fi)
-  (sh-if #{n < 0} then (echo "negative") fi)
-  (sh-if (zero? n) then (echo "zero") fi))
+  (if (> n 0) (echo "positive"))
+  (if (< n 0) (echo "negative"))
+  (if (zero? n) (echo "zero")))
 (sign 5)
 (sign -3)
 (sign 0)

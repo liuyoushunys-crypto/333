@@ -32,10 +32,9 @@
 
 (define (classify n)
   (System.out.println
-    (switch #{n % 3}
-      (0 "fizz")
-      (1 (number->string n))
-      (2 (string-append (number->string n) "?")))))
+    (cond ((= (modulo n 3) 0) "fizz")
+          ((= (modulo n 3) 1) (number->string n))
+          (else (string-append (number->string n) "?")))))
 (classify 9)
 (classify 10)
 (classify 11)

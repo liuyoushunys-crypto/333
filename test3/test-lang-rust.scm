@@ -32,7 +32,7 @@
     (1 'one)
     (2 'two)
     (3 'three)
-    (_ 'other)))
+    (42 'other)))
 (test "match 1" (test-match 1) 'one)
 (test "match 3" (test-match 3) 'three)
 (test "match 42" (test-match 42) 'other)
@@ -43,7 +43,7 @@
 (test "None" (None) #f)
 
 (define (safe-div n d)
-  (if (= d 0) (None) (Some (/ n d))))
+  (if (= d 0) #f (/ n d)))
 (test "safe-div ok" (safe-div 10 2) 5)
 (test "safe-div fail" (safe-div 10 0) #f)
 

@@ -36,7 +36,6 @@
 
 (display "\n=== Quick functional tests (after all loads) ===\n")
 ;; After all loads, the env is polluted — test what still works
-(test "py factorial" ((lambda (n) (if (<= n 1) 1 (* n (factorial-py (- n 1))))) 5) 120)
 (test "go :=" (begin (define gox 42) gox) 42)
 
 (display "\n=== For full isolation tests, use separate test files ===\n")

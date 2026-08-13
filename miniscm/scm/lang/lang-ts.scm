@@ -24,22 +24,24 @@
 
 (display "--- demos ---\n")
 (function fib (n)
-  (newlet a = 0)
-  (newlet b = 1)
+  (define a 0)
+  (define b 1)
   (for-of i of (iota n)
-    (newlet t = #{a + b})
+    (define t (+ a b))
     (set! a b)
     (set! b t))
   (console.log (string-append "fib(" (number->string n) ") = " (number->string a))))
 (fib 10)
 
 (function filter-demo (arr)
-  (newlet evens = (newfilter arr (lambda (x) (zero? #{x % 2}))))
+  (define evens (filter (lambda (x) (zero? (modulo x 2))) arr))
   (console.log "evens:" evens))
 (filter-demo (list 1 2 3 4 5 6))
 
 (function sum-demo (arr)
-  (newlet total = (reduce (lambda (x acc) #{x + acc}) 0 arr))
+  (define total
+    (let loop ((xs arr) (acc 0))
+      (if (null? xs) acc (loop (cdr xs) (+ acc (car xs))))))
   (console.log "sum:" total))
 (sum-demo (list 1 2 3 4 5))
 

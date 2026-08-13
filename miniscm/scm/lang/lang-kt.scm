@@ -5,7 +5,6 @@
 (define-syntax println (syntax-rules () ((_ x) (begin (display x) (newline)))))
 (define-syntax for-in (syntax-rules (in) ((_ var in lst body ...) (for-each (lambda (var) body ...) lst))))
 (define-syntax while (syntax-rules () ((_ cond body ...) (let loop () (if cond (begin body ... (loop)) #f)))))
-(define-syntax if (syntax-rules () ((_ c t e) (if c t e))))
 (define-macro (when val . arms) `(cond ,@(map (lambda (a) `((equal? ,val (quote ,(car a))) ,@(cdr a))) arms) (else (error "when: no match"))))
 (define-macro (!! x) x)
 (define-macro (elvis a b) `(let ((v ,a)) (if v v ,b)))
@@ -38,10 +37,9 @@
 (chain-demo (list 1 2 3 4 5 6))
 
 (fun classify (n)
-  (println (when #{n % 3}
-    (0 "fizz")
-    (1 (number->string n))
-    (2 (string-append (number->string n) "?")))))
+  (println (cond ((= (modulo n 3) 0) "fizz")
+                 ((= (modulo n 3) 1) (number->string n))
+                 (else (string-append (number->string n) "?")))))
 (classify 9)
 (classify 10)
 (classify 11)

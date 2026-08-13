@@ -9,7 +9,7 @@
 (define-syntax push! (syntax-rules () ((_ vec val) (set! vec (append vec (list val))))))
 (define-syntax pop! (syntax-rules () ((_ vec) (let ((v (car (reverse vec)))) (set! vec (reverse (cdr (reverse vec)))) v))))
 (define-macro (comp expr for var in lst) `(map (lambda (,var) ,expr) ,lst))
-(define-syntax typeof (syntax-rules () ((_ x) (cond ((number? x) 'Int64) ((float? x) 'Float64) ((string? x) 'String) ((boolean? x) 'Bool) ((pair? x) 'Array) ((procedure? x) 'Function) (else 'Any)))))
+(define-syntax typeof (syntax-rules () ((_ x) (cond ((string? x) 'String) ((procedure? x) 'Function) ((number? x) 'Int64) ((boolean? x) 'Bool) ((pair? x) 'Array) (else 'Any)))))
 (define-syntax ^ (syntax-rules () ((_ x n) (expt x n))))
 ;; (function fact (n) (if #{n <= 1} 1 (* n (fact #{n - 1}))) end)
 ;; (println (fact 10))
