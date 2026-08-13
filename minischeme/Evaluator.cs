@@ -483,6 +483,7 @@ public static class Evaluator
             {
                 var parameters = lambdaArgs.Car;
                 var parameterNames = new HashSet<string>();
+                if (parameters is Sym restParam) parameterNames.Add(restParam.Name);
                 foreach (var p in parameters.Cells())
                 {
                     if (p is Sym ps) parameterNames.Add(ps.Name);

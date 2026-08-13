@@ -92,7 +92,7 @@ c""")
   """a
 """)
 
-(display "=== edge: standalone #| without |# ==="\n)
+(display "=== edge: standalone #| without |# ===\n")
 #|
 This is a block comment
 spanning multiple lines
