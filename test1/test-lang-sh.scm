@@ -16,7 +16,7 @@
 (display "\n--- sh-var ---\n")
 (sh-var name = "Scheme")
 (test "sh-var string" name "Scheme")
-(sh-var count = 42)
+(sh-var count  = 42)
 (test "sh-var number" count 42)
 
 (display "\n--- test ---\n")
