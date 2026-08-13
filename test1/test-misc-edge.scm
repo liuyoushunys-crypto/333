@@ -1,7 +1,7 @@
 ;; test-misc-edge.scm
 ;; Edge-case tests for untested functions in scm/misc.scm
 
-(define (t-eq label actual expected)
+(define (t-eq label expected actual)
   (if (equal? actual expected)
       (begin (display "[PASS] ") (display label) (newline))
       (begin (display "[FAIL] ") (display label)

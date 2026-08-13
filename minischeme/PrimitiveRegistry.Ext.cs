@@ -42,7 +42,7 @@ public static partial class PrimitiveRegistry
         _b("bimap-forward", args => ((SchemeBimap)args[0]!).Forward.TryGetValue(args[1]!, out var value) ? value : Const.FALSE);
         _b("bimap-reverse", args => ((SchemeBimap)args[0]!).Reverse.TryGetValue(args[1]!, out var value) ? value : Const.FALSE);
         _b("for-all", args => PEvery(args));
-        Evaluator.GlobalEnv.Define("char-set:symbol", MakeCharSet("$%&*+-./:<=>?@^_~"));
+        Evaluator.GlobalEnv.Define("char-set:symbol", MakeCharSet("!$%&*+-./:<=>?@^_~"));
 
         // SRFI-35/36: error conditions
         _b("make-error-condition", args =>
