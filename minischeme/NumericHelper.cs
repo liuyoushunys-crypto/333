@@ -297,7 +297,15 @@ public static class NumericHelper
     public static object? Modulo(object? a, object? b)
     {
         if (a is SchemeFraction || b is SchemeFraction)
-            return Remainder(a, b);
+        {
+            var left = ToFraction(a); var right = ToFraction(b);
+            var den = left.Den * right.Num;
+            if (den == 0) throw new DivideByZeroException();
+            var num = left.Num * right.Den;
+            var q = num / den;
+            if (num % den != 0 && (num < 0) != (den < 0)) q--;
+            return Sub(a, Mul(q <= long.MaxValue && q >= long.MinValue ? (object?)(long)q : q, b));
+        }
         var ia = ToBigInt(a); var ib = ToBigInt(b);
         var r = ((ia % ib) + ib) % ib;
         return r <= long.MaxValue && r >= long.MinValue ? (long)r : r;

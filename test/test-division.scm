@@ -27,3 +27,5 @@
 (dv-check "-7/3" -7 3)
 (dv-check "7/-3" 7 -3)
 (dv-check "frac" 7/3 2/3)
+(dv-check "negative-frac" -7/3 2/3)
+(dv-check "negative-divisor-frac" 7/3 -2/3)
