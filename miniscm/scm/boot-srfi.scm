@@ -4,6 +4,13 @@
 ;; 使各 SRFI 测试能够找到所需的过程。
 ;; ============================================================
 
+;; ── SRFI-197: pipeline ──
+(define-syntax |>
+  (syntax-rules ()
+    ((_ x) x)
+    ((_ x (f . args) rest ...) (|> (f x . args) rest ...))
+    ((_ x f rest ...) (|> (f x) rest ...))))
+
 ;; ── SRFI-137: min/max 接受单个列表参数 ──
 (define (min . args)
   (let ((xs (if (and (= (length args) 1) (list? (car args))) (car args) args)))

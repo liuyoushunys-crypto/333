@@ -19,6 +19,17 @@
 import sys, os
 sys.setrecursionlimit(3000)
 
+def _resolve_load_path(path):
+    raw = os.fspath(str(path))
+    candidates = [raw]
+    if not os.path.isabs(raw):
+        base = os.path.dirname(os.path.abspath(__file__))
+        candidates.extend((os.path.join(base, raw), os.path.join(os.path.dirname(base), raw)))
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+    return None
+
 
 from mtypes import (
     SYM_SETF, SYM_THE_ENVIRONMENT, SYM_UNQUOTE, SYM_UNSPLICE, SYM_USYNTAX,
